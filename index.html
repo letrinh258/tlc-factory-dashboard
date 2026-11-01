@@ -857,8 +857,12 @@ const api={
     for(let i=0;i<lines.length;i++){r=await SB.from("production_lines").update({name:lines[i]}).eq("id",i+1);if(r.error)throw r.error}},
   async admin(action,payload){
     if(RUN==="DEMO")return demoAdmin(action,payload);
-    const{data,error}=await SB.functions.invoke("admin-users",{body:{action,...payload}});
-    if(error){let m=error.message;try{const j=await error.context.json();m=j.error||m}catch(e){}throw new Error(m)}
+    const call=()=>SB.functions.invoke("admin-users",{body:{action,...payload}});
+    let{data,error}=await call();
+    const msgOf=async e=>{let m=e.message;try{const j=await e.context.clone().json();m=j.error||m}catch(_){}return m};
+    // Phiên vừa được làm mới có thể gửi kèm mã cũ: làm mới phiên rồi thử lại 1 lần
+    if(error&&/Phiên đăng nhập không hợp lệ|Chưa đăng nhập/.test(await msgOf(error))){await SB.auth.refreshSession();({data,error}=await call())}
+    if(error)throw new Error(await msgOf(error));
     if(data&&data.error)throw new Error(data.error);return data},
   async changePassword(cur,nw){if(RUN==="DEMO")return;
     const{error}=await SB.auth.updateUser({password:nw,current_password:cur});if(error)throw error;const r=await SB.rpc("mark_password_changed");if(r.error)throw r.error}
