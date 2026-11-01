@@ -1557,10 +1557,11 @@ function bindSummary(){
 }
 
 /* ---------- thông báo trong ứng dụng (LIVE) ---------- */
+const ALERT_SEV={task_over:"bad",missing:"bad",line_missing:"bad",recon:"bad",dept_task_over:"bad",task_over_all:"bad",
+  dept_issue_red:"bad",issue_red_all:"bad",cd_open:"bad",low_prod:"warn",ng_op:"warn",ng_sup:"warn",fives_over:"warn",shortage:"warn"};
 async function loadAlertsLive(){
   try{const a=await rpc("my_alerts");const el=$("#bellN");el.hidden=!a.length;el.textContent=a.length;
-    const kindSev={task_over:"bad",missing:"bad"};
-    $("#notif").innerHTML=`<h4>Thông báo</h4>`+(a.length?`<div class="alerts">${a.map(x=>`<div class="alert ${kindSev[x.kind]||""}"><span class="sv"></span><div class="b"><div class="t">${esc(x.title)}</div><div class="d">${esc(x.detail||"")}</div></div></div>`).join("")}</div>`:`<div class="empty">Không có thông báo</div>`);
+    $("#notif").innerHTML=`<h4>Thông báo</h4>`+(a.length?`<div class="alerts">${a.map(x=>`<div class="alert ${ALERT_SEV[x.kind]||""}" ${x.mod?`data-goto="${x.mod}" style="cursor:pointer"`:""}><span class="sv"></span><div class="b"><div class="t">${esc(x.title)}</div><div class="d">${esc(x.detail||"")}</div></div></div>`).join("")}</div>`:`<div class="empty">Không có thông báo</div>`);
   }catch(e){}
 }
 
@@ -2232,8 +2233,10 @@ function startApp(){
 $("#logout").onclick=()=>logout();
 $("#bell").onclick=e=>{e.stopPropagation();const p=$("#notif");p.hidden=!p.hidden;$("#bell").setAttribute("aria-expanded",String(!p.hidden))};
 document.addEventListener("click",e=>{const p=$("#notif");if(!p.hidden&&!p.contains(e.target)&&e.target!==$("#bell")){p.hidden=true;$("#bell").setAttribute("aria-expanded","false")}});
+$("#notif").addEventListener("click",e=>{const b=e.target.closest("[data-goto]");if(!b)return;const m=b.dataset.goto;if(allowedMods().includes(m)){$("#notif").hidden=true;$("#bell").setAttribute("aria-expanded","false");ST.screen=m;render();window.scrollTo(0,0)}});
 function tick(){const d=new Date();$("#clock").textContent=["CN","T2","T3","T4","T5","T6","T7"][d.getDay()]+" "+String(d.getDate()).padStart(2,"0")+"/"+String(d.getMonth()+1).padStart(2,"0")+"/"+d.getFullYear()+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0")}
 tick();setInterval(tick,30000);
+setInterval(()=>{if(RUN==="LIVE"&&ME)loadAlertsLive()},120000);
 (async()=>{if(SB){try{const{data}=await SB.auth.getSession();if(data&&data.session){RUN="LIVE";await afterLogin();return}}catch(e){}}showLogin()})();
 
 </script>
