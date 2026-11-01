@@ -1,4 +1,4 @@
-"""Kiểm thử GĐ5C: 5S."""
+"""Kiểm thử GĐ5C: 3S."""
 import subprocess, uuid, re, datetime, json
 D="/var/tmp/tlcpg"
 def psql(sql, role=None, uid=None):
@@ -17,39 +17,31 @@ for u,pos,role in [("trinhlh","GDNM","admin"),("ducmv","NV-QAC","staff"),("hungn
 A,Q,H,TT,K=[U[x] for x in ["trinhlh","ducmv","hungnv","tuanlv","hapt"]];AU="authenticated"
 rc,o,e=psql("select public.tlc_today()");T=o[0];TD=datetime.date.fromisoformat(T)
 SX=psql("select public.dept_id_of('SX')")[2] or psql("select public.dept_id_of('SX')")[1][0];QAC=psql("select public.dept_id_of('QAC')")[1][0]
-sc={f"S{g}-{i}":4 for g in range(1,6) for i in range(1,6)};sc["S3-1"]=2;sc["S1-1"]=5
-S=json.dumps(sc)
-rc,o,e=psql(f"select public.save_5s_audit(null,'{T}',{QAC},'Khu kiểm hàng','{S}',null)",AU,Q);check("QAC KHÔNG tự đánh giá BP mình",rc!=0,e)
-bad=dict(sc);bad.pop("S5-5")
-rc,o,e=psql(f"select public.save_5s_audit(null,'{T}',{SX},'Line 1','{json.dumps(bad)}',null)",AU,Q);check("Chấm thiếu tiêu chí bị từ chối",rc!=0 and "25" in e,e)
-bad=dict(sc);bad["S5-5"]=6
-rc,o,e=psql(f"select public.save_5s_audit(null,'{T}',{SX},'Line 1','{json.dumps(bad)}',null)",AU,Q);check("Điểm ngoài 1–5 bị từ chối",rc!=0,e)
-rc,o,e=psql(f"select public.save_5s_audit(null,'{TD-datetime.timedelta(8)}',{SX},'Line 1','{S}',null)",AU,Q);check("Ngày quá 7 ngày bị từ chối",rc!=0,e)
-rc,o,e=psql(f"select public.save_5s_audit(null,'{T}',{SX},'Line 1 – khu lắp ráp','{S}',null)",AU,Q);aid=o[0] if o else None;check("QAC đánh giá 5S Phòng SX",rc==0,e)
-rc,o,e=psql(f"select total from public.fives_audits where id={aid}");check("Tổng điểm % đúng (99/125=79,2%)",o==["79.2"],o)
-rc,o,e=psql(f"select public.save_5s_audit({aid},'{T}',{SX},'Line 1 – khu lắp ráp','{S}','sửa')",AU,H);check("Người khác KHÔNG sửa phiếu",rc!=0,e)
-rc,o,e=psql(f"select public.add_5s_finding({aid},'S3-1','Sàn dính dầu dưới máy ép','{T}')",AU,Q);fid=o[0] if o else None;check("Người đánh giá ghi lỗi",rc==0,e)
-rc,o,e=psql(f"select public.add_5s_finding({aid},'S3-1','x','{T}')",AU,H);check("BP nhận KHÔNG tự ghi lỗi",rc!=0,e)
-rc,o,e=psql(f"insert into public.attachments(entity,entity_id,storage_path,uploaded_by) values('fsb',{fid},'fsb/{fid}/1.jpg','{Q}')",AU,Q);check("Người đánh giá tải ảnh trước",rc==0,e)
-rc,o,e=psql(f"insert into public.attachments(entity,entity_id,storage_path,uploaded_by) values('fsb',{fid},'fsb/{fid}/2.jpg','{H}')",AU,H);check("BP nhận KHÔNG tải ảnh trước",rc!=0,e)
-rc,o,e=psql("select count(*) from public.attachments where entity='fsb'",AU,TT);check("Tổ trưởng SX (BP nhận) xem ảnh trước",o==["1"],o)
-rc,o,e=psql("select count(*) from public.attachments where entity='fsb'",AU,K);check("Kho (BP khác) KHÔNG xem ảnh",o==["0"],o)
-rc,o,e=psql("select count(*) from public.fives_findings",AU,K);check("Kho KHÔNG xem lỗi 5S của SX",o==["0"],o)
-rc,o,e=psql(f"select public.update_5s_finding({fid},'counter','','Tuấn',null,null)",AU,TT);check("Đối sách trống bị từ chối",rc!=0,e)
-rc,o,e=psql(f"select public.update_5s_finding({fid},'counter','Thay gioăng, đặt khay hứng dầu','Tuấn',null,null)",AU,TT);check("BP nhận nhập đối sách",rc==0,e)
-rc,o,e=psql(f"select public.update_5s_finding({fid},'counter','x','y',null,null)",AU,K);check("BP khác KHÔNG nhập đối sách",rc!=0,e)
-rc,o,e=psql(f"select public.update_5s_finding({fid},'request_close','Thay gioăng','Tuấn',null,null)",AU,TT);check("Đề nghị đóng khi chưa có ảnh sau bị từ chối",rc!=0 and "ảnh" in e,e)
-rc,o,e=psql(f"insert into public.attachments(entity,entity_id,storage_path,uploaded_by) values('fsa',{fid},'fsa/{fid}/1.jpg','{TT}')",AU,TT);check("BP nhận tải ảnh sau",rc==0,e)
-rc,o,e=psql(f"select public.update_5s_finding({fid},'request_close','Thay gioăng','Tuấn',null,null)",AU,TT);check("Đề nghị đóng",rc==0,e)
-rc,o,e=psql(f"select public.update_5s_finding({fid},'close',null,null,null,'OK')",AU,TT);check("BP nhận KHÔNG tự đóng",rc!=0,e)
-rc,o,e=psql(f"select public.update_5s_finding({fid},'reopen',null,null,null,'')",AU,Q);check("Trả lại phải có lý do",rc!=0,e)
-rc,o,e=psql(f"select public.update_5s_finding({fid},'close',null,null,null,'Đã kiểm tra')",AU,Q);check("Người đánh giá xác nhận đóng",rc==0,e)
-rc,o,e=psql(f"select status from public.fives_findings where id={fid}");check("Trạng thái Đã đóng",o==["closed"],o)
-rc,o,e=psql(f"insert into public.attachments(entity,entity_id,storage_path,uploaded_by) values('fsa',{fid},'fsa/{fid}/2.jpg','{TT}')",AU,TT);check("Lỗi đã đóng KHÔNG thêm ảnh",rc!=0,e)
-rc,o,e=psql(f"select public.add_5s_finding({aid},'S2-1','Lối đi bị lấn','{TD-datetime.timedelta(1)}')",AU,Q);check("Hạn trước ngày đánh giá bị từ chối",rc!=0,e)
-psql(f"update public.fives_audits set audit_date='{TD-datetime.timedelta(3)}' where id={aid}")
-rc,o,e=psql(f"select public.add_5s_finding({aid},'S2-1','Lối đi bị lấn','{TD-datetime.timedelta(1)}')",AU,Q);check("Ghi lỗi thứ 2",rc==0,e)
-rc,o,e=psql(f"select dept_name,audits,last_total,open_findings,overdue_findings,closed_findings,by_group->>'S3' from public.fives_board('{TD-datetime.timedelta(6)}','{T}') where audits>0",AU,K)
-check("Bảng điểm công khai: SX 79,2% · 1 lỗi mở quá hạn · 1 đóng · S3=72%",o==["Phòng Sản xuất|1|79.2|1|1|1|72"],o)
-rc,o,e=psql(f"select count(*) from public.fives_board('{T}','{T}')",AU,K);check("Bảng điểm có đủ 10 BP",o==["10"],o)
+def add(uid,dept,s,desc="Lỗi",due=None,d=None,area="Line 1"):
+    return psql(f"select public.add_3s_finding('{d or T}',{dept},'{area}','{s}','{desc}','{due or T}')",AU,uid)
+rc,o,e=add(Q,QAC,"S1");check("QAC KHÔNG tự ghi lỗi BP mình",rc!=0,e)
+rc,o,e=add(Q,SX,"S4");check("Chỉ nhận S1/S2/S3",rc!=0,e)
+rc,o,e=add(Q,SX,"S1",d=str(TD-datetime.timedelta(8)));check("Ngày quá 7 ngày bị từ chối",rc!=0,e)
+rc,o,e=add(Q,SX,"S3",desc="",);check("Thiếu mô tả bị từ chối",rc!=0,e)
+rc,o,e=add(Q,SX,"S3","Sàn dính dầu dưới máy ép");f1=o[0] if o else None;check("QAC ghi lỗi Sạch sẽ cho SX",rc==0,e)
+rc,o,e=add(Q,SX,"S2","Thùng linh kiện không nhãn");f2=o[0] if o else None
+rc,o,e=add(Q,SX,"S2","Lối đi bị lấn",area="Line 2");f3=o[0] if o else None
+rc,o,e=add(Q,SX,"S1","Phế liệu chưa dọn");f4=o[0] if o else None
+rc,o,e=psql("select count(*) from public.fives_audits");check("Gom phiên theo ngày × BP × khu vực (2 phiên)",o==["2"],o)
+rc,o,e=psql(f"insert into public.attachments(entity,entity_id,storage_path,uploaded_by) values('fsb',{f1},'fsb/{f1}/1.jpg','{Q}')",AU,Q);check("Người ghi tải 1 ảnh",rc==0,e)
+rc,o,e=psql(f"insert into public.attachments(entity,entity_id,storage_path,uploaded_by) values('fsb',{f1},'fsb/{f1}/2.jpg','{Q}')",AU,Q);check("Ảnh thứ 2 cho 1 lỗi bị từ chối",rc!=0 and "1 ảnh" in e,e)
+rc,o,e=psql(f"insert into public.attachments(entity,entity_id,storage_path,uploaded_by) values('fsb',{f2},'fsb/{f2}/1.jpg','{H}')",AU,H);check("BP nhận KHÔNG tải ảnh lỗi",rc!=0,e)
+rc,o,e=psql("select count(*) from public.attachments where entity='fsb'",AU,TT);check("BP nhận xem ảnh lỗi",o==["1"],o)
+rc,o,e=psql("select count(*) from public.fives_findings",AU,K);check("BP khác KHÔNG xem chi tiết lỗi",o==["0"],o)
+rc,o,e=psql(f"select public.update_5s_finding({f1},'counter','','Tuấn',null,null)",AU,TT);check("Đối sách trống bị từ chối",rc!=0,e)
+rc,o,e=psql(f"select public.update_5s_finding({f1},'request_close','Đặt khay hứng dầu','Tuấn',null,null)",AU,TT);check("BP nhận đề nghị đóng (không cần ảnh sau)",rc==0,e)
+rc,o,e=psql(f"select public.update_5s_finding({f1},'close',null,null,null,'OK')",AU,TT);check("BP nhận KHÔNG tự đóng",rc!=0,e)
+rc,o,e=psql(f"select public.update_5s_finding({f1},'reopen',null,null,null,'')",AU,Q);check("Trả lại phải có lý do",rc!=0,e)
+rc,o,e=psql(f"select public.update_5s_finding({f1},'close',null,null,null,'Đã kiểm tra')",AU,Q);check("Người ghi xác nhận đóng",rc==0,e)
+rc,o,e=psql(f"select public.update_5s_finding({f4},'delete',null,null,null,null)",AU,Q);check("Người ghi xóa lỗi ghi nhầm",rc==0,e)
+psql(f"update public.fives_findings set due_date='{TD-datetime.timedelta(1)}' where id={f3}")
+rc,o,e=psql(f"select dept_name,s1,s2,s3,total,open_findings,overdue_findings,closed_findings,no_photo from public.fives_board('{TD-datetime.timedelta(6)}','{T}') where total>0",AU,K)
+check("Thống kê công khai: SX S1=0 S2=2 S3=1 · 2 mở · 1 quá hạn · 1 đóng · 2 thiếu ảnh",o==["Phòng Sản xuất|0|2|1|3|2|1|1|2"],o)
+rc,o,e=psql(f"select count(*) from public.fives_board('{T}','{T}')",AU,K);check("Bảng có đủ 10 BP",o==["10"],o)
+rc,o,e=psql(f"insert into public.attachments(entity,entity_id,storage_path,uploaded_by) values('fsb',{f1},'fsb/{f1}/3.jpg','{Q}')",AU,Q);check("Lỗi đã đóng KHÔNG thay ảnh",rc!=0,e)
 print(f"\n{sum(res)}/{len(res)} PASS")
