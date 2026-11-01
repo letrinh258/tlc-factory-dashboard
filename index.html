@@ -139,7 +139,11 @@ input.err,select.err{border-color:var(--bad);background:var(--bad-bg)}
 .msg{font-size:12px;font-weight:600} .msg.bad{color:var(--bad)} .msg.ok{color:var(--ok)} .msg.warn{color:var(--warn)}
 .ph-card{background:var(--surface);border:1px dashed var(--line);border-radius:10px;padding:18px}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:9px 16px;border-radius:8px;font-weight:600;font-size:13px;z-index:60}
-.fld{display:grid;gap:4px} .fld label{font-size:12px;font-weight:600;color:var(--muted)}
+[hidden]{display:none!important}
+.fld{display:grid;gap:4px;min-width:0} .fld label{font-size:12px;font-weight:600;color:var(--muted)}
+.fld input,.fld select,.fld textarea{width:100%;min-width:0;box-sizing:border-box}
+textarea{font:inherit;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:6px 8px}
+.fbar select{max-width:100%}
 .login{min-height:100vh;display:grid;place-items:center;padding-block:24px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));background:linear-gradient(160deg,var(--navy) 0 38%,var(--bg) 38%)}
 .lcard{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:22px;width:min(400px,100%);box-shadow:0 18px 40px rgba(16,32,80,.18)}
 .lcard form{display:grid;gap:12px}
@@ -1088,14 +1092,479 @@ function viewMine(){
 }
 
 /* ============================================================
+   GIAI ĐOẠN 4 – BÁO CÁO NGÀY 14 VỊ TRÍ · GIAO VIỆC · TỔNG HỢP
+   Báo cáo theo đúng 5 mục form BCN. Nhập tới đâu, tổng hợp tới đó. Khóa sau 23:59.
+   ============================================================ */
+const L4={
+  muc:["Đỏ","Vàng","Xanh"], mucDb:{"Đỏ":"red","Vàng":"yellow","Xanh":"green"}, mucVn:{red:"Đỏ",yellow:"Vàng",green:"Xanh"},
+  anhHuong:["Giao hàng","Chất lượng","Chi phí","An toàn","Năng suất","Nhân sự","Khác"],
+  vdTT:[["open","Mới"],["processing","Đang xử lý"],["waiting","Chờ BP khác"],["resolved","Đã xử lý"],["closed","Đã đóng"]],
+  nguon:["Chỉ đạo Cố vấn","Chỉ đạo PGĐNM","Việc giao thêm"],
+  taskTT:[["new","Mới giao"],["accepted","Đã tiếp nhận"],["doing","Đang làm"],["blocked","Chờ BP khác"],["pending_confirm","Đề nghị đóng"],["done","Đã đóng"],["cancelled","Đã hủy"]],
+  planTT:[["doing","Đang làm"],["waiting","Chờ BP khác"],["pending_confirm","Đề nghị đóng"],["closed","Đã đóng"]],
+  uuTien:["1-Cao","2-Trung bình","3-Thấp"], sanSang:["Đủ","Thiếu"],
+  srLoai:["Hỗ trợ","Quyết định"], srKhan:["Khẩn – trong ngày","Trong 2-3 ngày","Trong tuần","Không gấp"], srAi:["PGĐNM","Cố vấn","CEO / Tập đoàn","BP khác"],
+  srTT:["Chờ phản hồi","Đã quyết định","Đã hỗ trợ","Đã đóng"]
+};
+const ttName=(list,v)=>(list.find(x=>x[0]===v)||[v,v||"—"])[1];
+const yymmdd=iso=>iso.slice(2,4)+iso.slice(5,7)+iso.slice(8,10);
+const ddmm=iso=>iso.slice(8,10)+iso.slice(5,7);
+function liveOnly(title){return `<h2 class="sec" style="margin-top:0">${title}</h2><div class="ph-card"><b>Chức năng này cần máy chủ.</b><p class="small" style="margin:6px 0 0">Bản DEMO không lưu dữ liệu. Dùng bản chạy thật tại letrinh258.github.io/tlc-factory-dashboard với tài khoản được cấp.</p></div>`}
+function opt(list,v,blank){return (blank?`<option value="">${blank}</option>`:"")+list.map(x=>{const[k,n]=Array.isArray(x)?x:[x,x];return `<option value="${esc(k)}" ${String(v??"")===String(k)?"selected":""}>${esc(n)}</option>`}).join("")}
+function rq(){throw new Error("x")}
+async function rpc(fn,args){const{data,error}=await SB.rpc(fn,args||{});if(error)throw error;return data}
+async function q(p){const{data,error}=await p;if(error)throw error;return data}
+
+/* ---------- trạng thái chung màn báo cáo ---------- */
+const RP={code:null,date:null,codes:[],editIssue:null,editPlan:null,editSr:null,unlockOpen:false,photo:null};
+function reportCodesForMe(sum){ // mã được xem: GĐNM 14, TBP theo bộ phận, người nhập theo vị trí
+  return sum.map(s=>s.report_code);
+}
+async function loadRP(){
+  const today=ME.today||todayISO();
+  if(!RP.date)RP.date=today;
+  const sum=await rpc("daily_summary",{d:RP.date});
+  RP.codes=sum.map(s=>({code:s.report_code,name:s.position_name,dept:s.dept_name}));
+  const mine=await rpc("my_report_codes");RP.mine=mine||[];
+  if(!RP.code||!RP.codes.some(c=>c.code===RP.code))RP.code=(RP.mine[0])||(RP.codes[0]||{}).code||null;
+  return sum;
+}
+function canEditRP(){return RP.editable}
+
+/* ============================================================
+   MÀN BÁO CÁO HẰNG NGÀY
+   ============================================================ */
+async function viewDaily(){
+  if(RUN!=="LIVE")return liveOnly("Báo cáo hằng ngày");
+  await loadRP();
+  if(!RP.code)return `<h2 class="sec" style="margin-top:0">Báo cáo hằng ngày</h2><div class="ph-card">Vị trí của bạn không thuộc 14 vị trí báo cáo ngày. Việc được giao xem ở <b>Công việc của tôi</b>.</div>`;
+  const C=RP.code,D=RP.date,today=ME.today||todayISO();
+  const ed=await rpc("can_edit_code",{p_code:C,d:D});RP.editable=!!ed;
+  const[rep,iss,s3,plans,srs,metricsCfg,unl]=await Promise.all([
+    q(SB.from("daily_reports").select("id,metrics,last_edit_at,last_edit_by").eq("report_code",C).eq("report_date",D).maybeSingle()),
+    q(SB.from("issues").select("*").eq("report_code",C).eq("open_date",D).order("code")),
+    rpc("report_section3",{p_code:C,d:D}),
+    q(SB.from("plan_items").select("*").eq("report_code",C).eq("report_date",D).order("code")),
+    q(SB.from("support_requests").select("*").eq("report_code",C).eq("report_date",D).order("id")),
+    q(SB.from("app_settings").select("value").eq("key","report_metrics").maybeSingle()),
+    q(SB.from("report_unlocks").select("until_at,reason").eq("report_code",C).eq("report_date",D).order("until_at",{ascending:false}).limit(1))
+  ]);
+  RP.data={rep,iss,s3,plans,srs};
+  const pos=RP.codes.find(c=>c.code===C)||{};
+  const metrics=((metricsCfg||{}).value||{})[C]||[];
+  const mv=(rep&&rep.metrics)||{};
+  const isAdmin=ME.role==="admin";
+  const lockTxt=ed?(D===today?`<span class="pill p-ok">Đang mở · tự khóa lúc 23:59</span>`:`<span class="pill p-warn">GĐNM đã mở khóa đến ${new Date(unl[0].until_at).toLocaleString("vi-VN")}</span>`):`<span class="pill p-none">${D>today?"Chưa đến ngày":"Đã khóa"}</span>`;
+  const summary={red:iss.concat([]).filter(i=>i.severity==="red"&&!["resolved","closed"].includes(i.status)).length,
+    cross:iss.filter(i=>i.cross_dept&&!["resolved","closed"].includes(i.status)).length,
+    open:s3.length,cd:s3.filter(r=>r.entity==="task").length,over:s3.filter(r=>r.overdue).length,wait:srs.filter(s=>s.status==="Chờ phản hồi").length};
+  const ro=!ed?"disabled":"";
+  return `<h2 class="sec" style="margin-top:0">Báo cáo ngày – ${esc(pos.name||C)} <small>Mã: ${esc(C)} · ${esc(pos.dept||"")}</small></h2>
+  <div class="fbar" style="position:static">
+    <span class="flabel">Vị trí</span><select id="rpCode">${RP.codes.map(c=>`<option value="${esc(c.code)}" ${c.code===C?"selected":""}>${esc(c.code)} – ${esc(c.name)}</option>`).join("")}</select>
+    <span class="flabel">Ngày</span><div class="datebox"><button type="button" id="rpPrev" aria-label="Ngày trước">‹</button><input type="date" id="rpDate" value="${D}" max="${today}"><button type="button" id="rpNext" aria-label="Ngày sau">›</button></div>
+    ${lockTxt}
+    <span class="small">${rep&&rep.last_edit_at?"Cập nhật lần cuối "+new Date(rep.last_edit_at).toLocaleTimeString("vi-VN",{hour:"2-digit",minute:"2-digit"}):(D<today?'<span class="pill p-bad">CHƯA BÁO CÁO</span>':"Chưa nhập")}</span>
+    ${isAdmin&&!ed&&D<today?`<button class="btn ghost" type="button" id="rpUnlockBtn">Mở khóa ngày này</button>`:""}
+  </div>
+  ${RP.unlockOpen?`<div class="card" style="margin-bottom:10px"><h3>Mở khóa báo cáo ${esc(C)} ngày ${dmyS(D)}</h3><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
+    <div class="fld"><label for="ulH">Trong (giờ)</label><input id="ulH" value="4" inputmode="numeric" style="width:80px"></div>
+    <div class="fld" style="flex:1;min-width:200px"><label for="ulR">Lý do</label><input id="ulR" placeholder="vd: bổ sung số liệu ca tối"></div>
+    <button class="btn" type="button" id="ulGo">Mở khóa</button><span class="msg" id="ulMsg"></span></div></div>`:""}
+  <div class="alert" style="margin-bottom:12px"><span class="sv" style="background:var(--accent)"></span><div class="b"><div class="t">Tóm tắt (tự động)</div><div class="d">Vấn đề ĐỎ đang mở: <b>${summary.red}</b> · Liên phòng ban: <b>${summary.cross}</b> · Việc tồn đang mở: <b>${summary.open}</b> · Chỉ đạo / việc giao: <b>${summary.cd}</b> · <span style="color:var(--bad)">Quá hạn: <b>${summary.over}</b></span> · Chờ hỗ trợ / quyết định: <b>${summary.wait}</b></div></div></div>
+
+  <h2 class="sec">1. Kế hoạch & kết quả hôm nay <small>Số liệu chốt cuối ngày · người báo cáo chịu trách nhiệm</small></h2>
+  <div class="card">${metrics.length?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px">${metrics.map(([k,n,u])=>`<div class="fld"><label for="m_${k}">${esc(n)} <span class="small">(${esc(u)})</span></label><input id="m_${k}" data-m="${k}" value="${mv[k]??""}" inputmode="decimal" ${ro}></div>`).join("")}</div>
+   <div class="fld" style="margin-top:10px"><label for="m_note">Ghi chú số liệu / chênh lệch</label><input id="m_note" value="${esc(mv._note||"")}" ${ro}></div>
+   ${ed?`<div style="margin-top:10px;display:flex;gap:8px;align-items:center"><button class="btn" type="button" id="m_save">Lưu mục 1</button><span class="msg" id="m_msg" role="status"></span></div>`:""}`:`<p class="small" style="margin:0">Chưa cấu hình chỉ số cho vị trí này.</p>`}
+   <p class="small" style="margin:8px 0 0">Bảng chuyên môn đầy đủ (theo line, đơn hàng, vật tư thiếu…) và tự đối chiếu với bộ phận khác: Giai đoạn 5.</p></div>
+
+  <h2 class="sec">2. Vấn đề phát sinh <small>Đỏ/Vàng phải có người phụ trách – hạn – kết quả cần đạt · Đỏ bắt buộc có phương án B</small></h2>
+  ${tblIssues(iss,ed)}
+  ${ed?formIssue():""}
+
+  <h2 class="sec">3. Việc chưa hoàn thành & tiếp nhận chỉ đạo <small>Hệ thống tự điền · cập nhật tiến độ MỖI NGÀY đến khi đóng</small></h2>
+  ${tblS3(s3,ed,isAdmin)}
+
+  <h2 class="sec">4. Kế hoạch ngày mai <small>Mỗi việc có kết quả đầu ra đo được · chưa xong tự chuyển mục 3</small></h2>
+  ${tblPlans(plans,ed)}
+  ${ed?formPlan():""}
+
+  <h2 class="sec">5. Nội dung cần hỗ trợ / ra quyết định <small>Luôn kèm phương án đề xuất và ảnh hưởng nếu không xử lý</small></h2>
+  ${tblSr(srs,ed,isAdmin)}
+  ${ed?formSr():""}
+  <div id="photoHost"></div>`;
+}
+/* --- mục 2 --- */
+function tblIssues(rows,ed){
+  if(!rows.length)return `<div class="empty">Chưa có vấn đề trong ngày</div>`;
+  return `<div class="tbl"><table><tr><th>Mã</th><th>Mô tả</th><th>Mức</th><th>Ảnh hưởng</th><th>Liên PB</th><th>Người PT</th><th>Hạn</th><th>Trạng thái</th><th>Hành động tạm thời</th><th>Kết quả cần đạt</th><th>Phương án B</th><th></th></tr>
+  ${rows.map(i=>`<tr><td class="mono">${esc(i.code)}</td><td>${esc(i.description)}</td><td><span class="pill p-${i.severity==="red"?"bad":i.severity==="yellow"?"warn":"ok"}">${L4.mucVn[i.severity]}</span></td><td>${esc(i.impact||"")}</td><td>${i.cross_dept?"Có":"Không"}</td><td>${esc(i.owner_name||"")}</td><td class="num">${i.due_date?dm(i.due_date):"—"}</td><td>${ttName(L4.vdTT,i.status)}</td><td>${esc(i.temp_action||"")}</td><td>${esc(i.result_target||"")}</td><td>${esc(i.plan_b||"")}</td>
+   <td style="white-space:nowrap">${ed&&i.status!=="closed"?`<button class="btn ghost" type="button" data-ei="${i.id}" style="padding:3px 9px">Sửa</button>`:""}<button class="btn ghost" type="button" data-ph="issue:${i.id}:${esc(i.code)}" style="padding:3px 9px">Ảnh</button></td></tr>`).join("")}</table></div>`;
+}
+function formIssue(){
+  const i=RP.editIssue||{};
+  return `<form class="card" id="fIssue" novalidate style="margin-top:8px"><h3>${i.id?"Sửa vấn đề "+esc(i.code):"Thêm vấn đề"}</h3>
+   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px">
+    <div class="fld" style="grid-column:1/-1"><label for="i_desc">Mô tả vấn đề (hiện tượng – số lượng – vị trí) *</label><input id="i_desc" value="${esc(i.description||"")}"></div>
+    <div class="fld"><label for="i_sev">Mức độ *</label><select id="i_sev">${opt(L4.muc,L4.mucVn[i.severity]||"Vàng")}</select></div>
+    <div class="fld"><label for="i_imp">Ảnh hưởng</label><select id="i_imp">${opt(L4.anhHuong,i.impact,"—")}</select></div>
+    <div class="fld"><label for="i_cross">Liên phòng ban?</label><select id="i_cross">${opt(["Không","Có"],i.cross_dept?"Có":"Không")}</select></div>
+    <div class="fld"><label for="i_dept">BP liên quan</label><select id="i_dept">${opt(REF.depts.map(d=>[d.id,d.name]),(i.coop_dept_ids||[])[0],"—")}</select></div>
+    <div class="fld"><label for="i_own">Người phụ trách</label><input id="i_own" value="${esc(i.owner_name||"")}"></div>
+    <div class="fld"><label for="i_due">Hạn xử lý</label><input id="i_due" type="date" value="${i.due_date||""}"></div>
+    <div class="fld"><label for="i_st">Trạng thái</label><select id="i_st">${opt(L4.vdTT.filter(x=>x[0]!=="closed"),i.status||"open")}</select></div>
+    <div class="fld" style="grid-column:span 2"><label for="i_tmp">Hành động tạm thời đã làm / tiếp theo</label><input id="i_tmp" value="${esc(i.temp_action||"")}"></div>
+    <div class="fld" style="grid-column:span 2"><label for="i_res">Kết quả cần đạt</label><input id="i_res" value="${esc(i.result_target||"")}"></div>
+    <div class="fld" style="grid-column:span 2"><label for="i_pb">Phương án B (bắt buộc nếu Đỏ)</label><input id="i_pb" value="${esc(i.plan_b||"")}"></div>
+   </div><div style="display:flex;gap:8px;margin-top:8px;align-items:center"><button class="btn" type="submit">${i.id?"Lưu thay đổi":"Thêm vấn đề"}</button>${i.id?`<button class="btn ghost" type="button" id="i_cancel">Hủy sửa</button>`:""}<span class="msg" id="i_msg" role="status"></span></div></form>`;
+}
+/* --- mục 3 --- */
+function tblS3(rows,ed,isAdmin){
+  if(!rows.length)return `<div class="empty">Không có việc tồn hay chỉ đạo đang mở</div>`;
+  const stOpts=r=>r.entity==="task"?[["doing","Đang làm"],["blocked","Chờ BP khác"],["pending_confirm","Đề nghị đóng"]]:r.entity==="issue"?L4.vdTT.filter(x=>x[0]!=="closed"):L4.planTT.filter(x=>x[0]!=="closed");
+  const stShow=r=>r.entity==="task"?ttName(L4.taskTT,r.status):r.entity==="issue"?ttName(L4.vdTT,r.status):ttName(L4.planTT,r.status);
+  return `<div class="tbl"><table><tr><th>Mã</th><th>Nội dung (nguyên văn)</th><th>Nguồn</th><th>Người giao</th><th>Ngày PS</th><th class="num">Tồn</th><th>Hạn</th><th class="num">%</th><th>Tiến độ xử lý đến hôm nay</th><th>Kết quả cần đạt</th><th>Trạng thái</th><th>Ngày HT</th><th>Lý do chưa xong & hành động tiếp theo</th><th></th></tr>
+  ${rows.map((r,ix)=>{const closed=["done","closed","cancelled"].includes(r.status);const can=ed&&!closed;const k=r.entity+r.id;
+    return `<tr${r.overdue?' style="background:var(--bad-bg)"':""}><td class="mono">${esc(r.code)}${r.overdue?'<div><span class="pill p-bad">QUÁ HẠN</span></div>':""}</td><td style="min-width:200px">${esc(r.content)}</td><td>${esc(r.source||"")}</td><td>${esc(r.giver||"")}</td><td class="num">${r.start_date?dm(r.start_date):""}</td><td class="num">${r.days_open??""}</td>
+    <td class="num">${r.due_effective?dm(r.due_effective):"—"}${r.due_original&&r.due_original!==r.due_effective?`<div class="small">ban đầu ${dm(r.due_original)}</div>`:""}${r.requested_due?`<div><span class="pill p-warn">Xin lùi ${dm(r.requested_due)}</span></div>`:""}</td>
+    <td class="num">${can?`<input id="u_p_${k}" value="${r.u_progress??""}" inputmode="numeric" style="width:60px">`:(r.u_progress??"")}</td>
+    <td style="min-width:200px">${can?`<textarea id="u_n_${k}" rows="2" style="width:100%">${esc(r.u_note||"")}</textarea>`:esc(r.u_note||"")}</td>
+    <td>${esc(r.result_target||"")}</td>
+    <td>${can?(r.entity==="task"&&r.status==="new"?`<button class="btn" type="button" data-acc="${r.id}" style="padding:4px 9px">Tiếp nhận</button>`:`<select id="u_s_${k}">${opt(stOpts(r),r.u_status||r.status)}</select>`):stShow(r)}</td>
+    <td>${can?`<input type="date" id="u_d_${k}" value="${r.u_done||""}">`:(r.u_done?dm(r.u_done):"")}</td>
+    <td style="min-width:200px">${can?`<input type="date" id="u_nd_${k}" value="${r.u_new_due||""}" title="Hạn mới (nếu lùi)" aria-label="Hạn mới"><textarea id="u_x_${k}" rows="2" style="width:100%" placeholder="${r.overdue?"Bắt buộc: lý do + hành động":"Lý do / hành động"}">${esc(r.u_next||"")}</textarea>`:esc(r.u_next||"")}</td>
+    <td style="white-space:nowrap">${can&&!(r.entity==="task"&&r.status==="new")?`<button class="btn" type="button" data-s3="${ix}" style="padding:4px 9px">Lưu</button>`:""}
+      <button class="btn ghost" type="button" data-ph="${r.entity}:${r.id}:${esc(r.code)}" style="padding:3px 9px">Ảnh (${r.photos||0})</button>
+      ${isAdmin&&!closed?adminActs(r):""}<div class="msg" id="u_m_${k}" role="status"></div></td></tr>`}).join("")}</table></div>
+  <p class="small">Việc quá hạn: bắt buộc ghi Hạn mới + Lý do / hành động tiếp theo. Hạn mới của chỉ đạo / việc giao phải được người giao duyệt. Xong việc: ghi Ngày hoàn thành và chọn "Đề nghị đóng"; chỉ người giao / GĐNM được đóng.</p>`;
+}
+function adminActs(r){
+  let h="";
+  if(r.entity==="task"){
+    if(r.status==="pending_confirm")h+=`<button class="btn ghost" type="button" data-dec="close:${r.id}" style="padding:3px 9px;color:var(--ok)">Đóng</button><button class="btn ghost" type="button" data-dec="reopen:${r.id}" style="padding:3px 9px">Trả lại</button>`;
+    if(r.requested_due)h+=`<button class="btn ghost" type="button" data-dec="approve_due:${r.id}" style="padding:3px 9px">Duyệt hạn</button><button class="btn ghost" type="button" data-dec="reject_due:${r.id}" style="padding:3px 9px">Từ chối hạn</button>`;
+  }else if(["resolved","pending_confirm"].includes(r.status)||true){h+=`<button class="btn ghost" type="button" data-close="${r.entity}:${r.id}" style="padding:3px 9px;color:var(--ok)">Đóng</button>`}
+  return h;
+}
+/* --- mục 4 --- */
+function tblPlans(rows,ed){
+  if(!rows.length)return `<div class="empty">Chưa có kế hoạch ngày mai</div>`;
+  return `<div class="tbl"><table><tr><th>Mã</th><th>Ca / giờ</th><th>Công việc</th><th class="num">SL / chỉ tiêu</th><th>ĐVT</th><th>Ưu tiên</th><th>Phụ thuộc BP</th><th>Người PT</th><th>Hạn HT</th><th>Điều kiện</th><th>Đang thiếu</th><th>Kết quả đầu ra</th><th>Rủi ro</th><th></th></tr>
+  ${rows.map(p=>`<tr><td class="mono">${esc(p.code)}</td><td>${esc(p.slot||"")}</td><td>${esc(p.content)}</td><td class="num">${p.target_qty??""}</td><td>${esc(p.uom||"")}</td><td>${esc(p.priority||"")}</td><td>${esc(p.dep_dept||"")}</td><td>${esc(p.owner_name||"")}</td><td class="num">${p.due_date?dm(p.due_date):""}</td><td>${p.ready==="Thiếu"?'<span class="pill p-warn">Thiếu</span>':esc(p.ready||"")}</td><td>${esc(p.missing||"")}</td><td>${esc(p.result_target||"")}</td><td>${esc(p.risk||"")}</td>
+   <td>${ed&&p.status!=="closed"?`<button class="btn ghost" type="button" data-ep="${p.id}" style="padding:3px 9px">Sửa</button>`:""}</td></tr>`).join("")}</table></div>`;
+}
+function formPlan(){
+  const p=RP.editPlan||{};
+  return `<form class="card" id="fPlan" novalidate style="margin-top:8px"><h3>${p.id?"Sửa kế hoạch "+esc(p.code):"Thêm việc cho ngày mai"}</h3>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px">
+   <div class="fld"><label for="p_slot">Ca / giờ</label><input id="p_slot" value="${esc(p.slot||"")}" placeholder="vd 8:00–10:00"></div>
+   <div class="fld" style="grid-column:span 2"><label for="p_ct">Công việc *</label><input id="p_ct" value="${esc(p.content||"")}"></div>
+   <div class="fld"><label for="p_qty">SL / chỉ tiêu</label><input id="p_qty" value="${p.target_qty??""}" inputmode="decimal"></div>
+   <div class="fld"><label for="p_uom">ĐVT</label><input id="p_uom" value="${esc(p.uom||"")}"></div>
+   <div class="fld"><label for="p_pri">Ưu tiên</label><select id="p_pri">${opt(L4.uuTien,p.priority||"2-Trung bình")}</select></div>
+   <div class="fld"><label for="p_dep">Phụ thuộc BP</label><input id="p_dep" value="${esc(p.dep_dept||"")}"></div>
+   <div class="fld"><label for="p_own">Người phụ trách</label><input id="p_own" value="${esc(p.owner_name||"")}"></div>
+   <div class="fld"><label for="p_due">Hạn hoàn thành</label><input id="p_due" type="date" value="${p.due_date||""}"></div>
+   <div class="fld"><label for="p_rdy">Điều kiện sẵn sàng</label><select id="p_rdy">${opt(L4.sanSang,p.ready||"Đủ")}</select></div>
+   <div class="fld"><label for="p_mis">Đang thiếu gì (bắt buộc nếu Thiếu)</label><input id="p_mis" value="${esc(p.missing||"")}"></div>
+   <div class="fld" style="grid-column:span 2"><label for="p_res">Kết quả đầu ra cần đạt *</label><input id="p_res" value="${esc(p.result_target||"")}"></div>
+   <div class="fld" style="grid-column:span 2"><label for="p_risk">Rủi ro / ghi chú</label><input id="p_risk" value="${esc(p.risk||"")}"></div>
+  </div><div style="display:flex;gap:8px;margin-top:8px;align-items:center"><button class="btn" type="submit">${p.id?"Lưu thay đổi":"Thêm kế hoạch"}</button>${p.id?`<button class="btn ghost" type="button" id="p_cancel">Hủy sửa</button><button class="btn ghost" type="button" id="p_del" style="color:var(--bad)">Xóa dòng</button>`:""}<span class="msg" id="p_msg" role="status"></span></div></form>`;
+}
+/* --- mục 5 --- */
+function tblSr(rows,ed,isAdmin){
+  if(!rows.length)return `<div class="empty">Không có nội dung cần hỗ trợ / quyết định</div>`;
+  return `<div class="tbl"><table><tr><th>Loại</th><th>Nội dung</th><th>Mức khẩn</th><th>Cần ai</th><th>Hạn phản hồi</th><th>Phương án đề xuất & ảnh hưởng</th><th>Trạng thái</th><th>Phản hồi / quyết định</th><th></th></tr>
+  ${rows.map(s=>`<tr><td>${esc(s.kind)}</td><td>${esc(s.content)}</td><td>${esc(s.urgency||"")}</td><td>${esc(s.need_who||"")}</td><td class="num">${s.respond_by?dm(s.respond_by):""}</td><td>${esc(s.proposal||"")}</td>
+   <td><span class="pill p-${s.status==="Chờ phản hồi"?"warn":"ok"}">${esc(s.status)}</span></td>
+   <td style="min-width:220px">${isAdmin?`<textarea id="sr_d_${s.id}" rows="2" style="width:100%">${esc(s.decision||"")}</textarea><select id="sr_s_${s.id}">${opt(L4.srTT,s.status)}</select> <button class="btn" type="button" data-srd="${s.id}" style="padding:4px 9px">Lưu quyết định</button><div class="msg" id="sr_m_${s.id}"></div>`:esc(s.decision||"")+(s.decider?`<div class="small">${esc(s.decider)} · ${s.decided_date?dm(s.decided_date):""}</div>`:"")}</td>
+   <td>${ed&&s.status==="Chờ phản hồi"&&!isAdmin?`<button class="btn ghost" type="button" data-esr="${s.id}" style="padding:3px 9px">Sửa</button>`:""}</td></tr>`).join("")}</table></div>`;
+}
+function formSr(){
+  const s=RP.editSr||{};
+  return `<form class="card" id="fSr" novalidate style="margin-top:8px"><h3>${s.id?"Sửa nội dung":"Thêm nội dung cần hỗ trợ / quyết định"}</h3>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px">
+   <div class="fld"><label for="s_kind">Loại</label><select id="s_kind">${opt(L4.srLoai,s.kind||"Hỗ trợ")}</select></div>
+   <div class="fld" style="grid-column:span 2"><label for="s_ct">Nội dung *</label><input id="s_ct" value="${esc(s.content||"")}"></div>
+   <div class="fld"><label for="s_urg">Mức khẩn</label><select id="s_urg">${opt(L4.srKhan,s.urgency||"Trong 2-3 ngày")}</select></div>
+   <div class="fld"><label for="s_who">Cần ai</label><select id="s_who">${opt(L4.srAi,s.need_who||"PGĐNM")}</select></div>
+   <div class="fld"><label for="s_by">Hạn cần phản hồi</label><input id="s_by" type="date" value="${s.respond_by||""}"></div>
+   <div class="fld"><label for="s_dept">BP liên quan</label><input id="s_dept" value="${esc(s.dept||"")}"></div>
+   <div class="fld"><label for="s_prop_by">Người đề xuất</label><input id="s_prop_by" value="${esc(s.proposer||ME.full_name)}"></div>
+   <div class="fld" style="grid-column:1/-1"><label for="s_prop">Phương án đề xuất & ảnh hưởng nếu không xử lý *</label><input id="s_prop" value="${esc(s.proposal||"")}"></div>
+  </div><div style="display:flex;gap:8px;margin-top:8px;align-items:center"><button class="btn" type="submit">${s.id?"Lưu thay đổi":"Thêm"}</button>${s.id?`<button class="btn ghost" type="button" id="s_cancel">Hủy sửa</button><button class="btn ghost" type="button" id="s_del" style="color:var(--bad)">Xóa</button>`:""}<span class="msg" id="s_msg" role="status"></span></div></form>`;
+}
+function setMsg(id,t,cls){const m=$("#"+id);if(m){m.className="msg "+(cls||"");m.textContent=t}}
+function markErr(ids){ids.forEach(i=>{const e=$("#"+i);if(e)e.classList.add("err")})}
+function numOrNull(v){v=String(v??"").trim().replace(",",".");if(v==="")return null;const n=Number(v);return isFinite(n)?n:NaN}
+
+function bindDaily(){
+  if(RUN!=="LIVE"||!RP.code)return;
+  const C=RP.code,D=RP.date,today=ME.today||todayISO();
+  $("#rpCode").onchange=e=>{RP.code=e.target.value;RP.editIssue=RP.editPlan=RP.editSr=null;render()};
+  $("#rpDate").onchange=e=>{if(/^\d{4}-\d{2}-\d{2}$/.test(e.target.value)&&e.target.value<=today){RP.date=e.target.value;render()}else e.target.classList.add("err")};
+  $("#rpPrev").onclick=()=>{RP.date=addDays(RP.date,-1);render()};
+  $("#rpNext").onclick=()=>{if(RP.date<today){RP.date=addDays(RP.date,1);render()}};
+  const ub=$("#rpUnlockBtn");if(ub)ub.onclick=()=>{RP.unlockOpen=!RP.unlockOpen;render()};
+  const ug=$("#ulGo");if(ug)ug.onclick=async()=>{const h=parseInt($("#ulH").value,10),r=$("#ulR").value.trim();
+    if(!(h>=1&&h<=48)){markErr(["ulH"]);return setMsg("ulMsg","Số giờ 1–48","bad")}if(r.length<3){markErr(["ulR"]);return setMsg("ulMsg","Ghi lý do","bad")}
+    try{await rpc("unlock_report",{p_code:C,p_date:D,p_hours:h,p_reason:r});RP.unlockOpen=false;toast("Đã mở khóa");render()}catch(e){setMsg("ulMsg",sbErr(e),"bad")}};
+  // mục 1
+  const ms=$("#m_save");if(ms)ms.onclick=async()=>{const vals={};let bad=[];document.querySelectorAll("[data-m]").forEach(el=>{el.classList.remove("err");const n=numOrNull(el.value);if(Number.isNaN(n)||(n!=null&&n<0))bad.push(el.id);else if(n!=null)vals[el.dataset.m]=n});
+    if(bad.length){markErr(bad);return setMsg("m_msg","Ô đỏ: chỉ nhập số ≥ 0","bad")}
+    const note=$("#m_note").value.trim();if(note)vals._note=note;
+    ms.disabled=true;setMsg("m_msg","Đang lưu…");
+    try{await rpc("touch_report",{p_code:C,p_date:D});await q(SB.from("daily_reports").update({metrics:vals}).eq("report_code",C).eq("report_date",D).select("id"));setMsg("m_msg","Đã lưu "+new Date().toLocaleTimeString("vi-VN"),"ok")}catch(e){setMsg("m_msg",sbErr(e),"bad")}finally{ms.disabled=false}};
+  // mục 2
+  const fi=$("#fIssue");if(fi){
+    fi.addEventListener("submit",async e=>{e.preventDefault();document.querySelectorAll("#fIssue .err").forEach(x=>x.classList.remove("err"));
+      const sev=L4.mucDb[$("#i_sev").value],desc=$("#i_desc").value.trim(),pb=$("#i_pb").value.trim(),own=$("#i_own").value.trim(),due=$("#i_due").value,res=$("#i_res").value.trim();
+      const bad=[];if(desc.length<5)bad.push("i_desc");if(sev==="red"&&!pb)bad.push("i_pb");if(sev!=="green"){if(!own)bad.push("i_own");if(!due)bad.push("i_due");if(!res)bad.push("i_res")}
+      if(bad.length){markErr(bad);return setMsg("i_msg",sev==="red"&&!pb?"Vấn đề Đỏ bắt buộc có Phương án B; Đỏ/Vàng phải có người phụ trách, hạn, kết quả cần đạt.":"Đỏ/Vàng phải có người phụ trách, hạn, kết quả cần đạt; mô tả tối thiểu 5 ký tự.","bad")}
+      const cross=$("#i_cross").value==="Có",dep=$("#i_dept").value;
+      const row={description:desc,severity:sev,impact:$("#i_imp").value||null,cross_dept:cross,coop_dept_ids:dep?[+dep]:[],owner_name:own||null,due_date:due||null,status:$("#i_st").value,temp_action:$("#i_tmp").value.trim()||null,result_target:res||null,plan_b:pb||null};
+      setMsg("i_msg","Đang lưu…");
+      try{await rpc("touch_report",{p_code:C,p_date:D});
+        if(RP.editIssue)await q(SB.from("issues").update(row).eq("id",RP.editIssue.id).select("id"));
+        else{const code=await rpc("next_code",{p_prefix:C+"-"+yymmdd(D)+"-"});await q(SB.from("issues").insert({...row,code,report_code:C,open_date:D,dept_id:ME.dept_id,created_by:ME.id}).select("id"))}
+        RP.editIssue=null;toast("Đã lưu vấn đề");render()}catch(err){setMsg("i_msg",sbErr(err),"bad")}});
+    const ic=$("#i_cancel");if(ic)ic.onclick=()=>{RP.editIssue=null;render()};
+  }
+  document.querySelectorAll("[data-ei]").forEach(b=>b.onclick=()=>{RP.editIssue=RP.data.iss.find(i=>String(i.id)===b.dataset.ei);render().then(()=>$("#fIssue").scrollIntoView({block:"center"}))});
+  // mục 3
+  document.querySelectorAll("[data-acc]").forEach(b=>b.onclick=async()=>{b.disabled=true;try{await rpc("accept_task",{p_id:+b.dataset.acc});toast("Đã tiếp nhận");render()}catch(e){toast(sbErr(e));b.disabled=false}});
+  document.querySelectorAll("[data-s3]").forEach(b=>b.onclick=async()=>{const r=RP.data.s3[+b.dataset.s3],k=r.entity+r.id,mid="u_m_"+k;
+    ["u_p_","u_n_","u_nd_","u_x_","u_d_"].forEach(p=>{const e=$("#"+p+k);if(e)e.classList.remove("err")});
+    const p=numOrNull($("#u_p_"+k).value),note=$("#u_n_"+k).value.trim(),nd=$("#u_nd_"+k).value||null,nx=$("#u_x_"+k).value.trim(),st=$("#u_s_"+k).value,dd=$("#u_d_"+k).value||null;
+    if(Number.isNaN(p)||(p!=null&&(p<0||p>100))){markErr(["u_p_"+k]);return setMsg(mid,"% từ 0–100","bad")}
+    if(!note){markErr(["u_n_"+k]);return setMsg(mid,"Ghi tiến độ hôm nay","bad")}
+    if(r.overdue&&st!=="pending_confirm"&&(!nd||!nx)){markErr(["u_nd_"+k,"u_x_"+k]);return setMsg(mid,"Quá hạn: ghi Hạn mới + Lý do","bad")}
+    if(nd&&nd<D){markErr(["u_nd_"+k]);return setMsg(mid,"Hạn mới phải từ hôm nay","bad")}
+    if((st==="pending_confirm"||st==="resolved")&&!dd){markErr(["u_d_"+k]);return setMsg(mid,"Ghi Ngày hoàn thành","bad")}
+    b.disabled=true;setMsg(mid,"Đang lưu…");
+    try{await rpc("save_update",{p_entity:r.entity,p_id:r.id,p_code:C,d:D,p_progress:p,p_note:note,p_new_due:nd,p_next:nx||null,p_status:st,p_done:dd});setMsg(mid,"Đã lưu","ok");toast("Đã lưu "+r.code)}
+    catch(e){setMsg(mid,sbErr(e),"bad")}finally{b.disabled=false}});
+  document.querySelectorAll("[data-dec]").forEach(b=>b.onclick=()=>decideTask(b.dataset.dec,b));
+  document.querySelectorAll("[data-close]").forEach(b=>b.onclick=async()=>{const[en,id]=b.dataset.close.split(":");const note=await askInline(b,"Kết quả xác nhận khi đóng");if(note==null)return;
+    try{await rpc("close_item",{p_entity:en,p_id:+id,p_note:note});toast("Đã đóng");render()}catch(e){toast(sbErr(e))}});
+  // mục 4
+  const fp=$("#fPlan");if(fp){
+    fp.addEventListener("submit",async e=>{e.preventDefault();document.querySelectorAll("#fPlan .err").forEach(x=>x.classList.remove("err"));
+      const ct=$("#p_ct").value.trim(),res=$("#p_res").value.trim(),rdy=$("#p_rdy").value,mis=$("#p_mis").value.trim(),qty=numOrNull($("#p_qty").value);const bad=[];
+      if(ct.length<3)bad.push("p_ct");if(!res)bad.push("p_res");if(rdy==="Thiếu"&&!mis)bad.push("p_mis");if(Number.isNaN(qty)||(qty!=null&&qty<0))bad.push("p_qty");
+      if(bad.length){markErr(bad);return setMsg("p_msg","Ô đỏ: công việc, kết quả đầu ra bắt buộc; điều kiện Thiếu phải ghi thiếu gì; SL là số.","bad")}
+      let pd=addDays(D,1);if(D0(pd).getUTCDay()===0)pd=addDays(pd,1);
+      const row={slot:$("#p_slot").value.trim()||null,content:ct,target_qty:qty,uom:$("#p_uom").value.trim()||null,priority:$("#p_pri").value,dep_dept:$("#p_dep").value.trim()||null,owner_name:$("#p_own").value.trim()||null,due_date:$("#p_due").value||pd,ready:rdy,missing:mis||null,result_target:res,risk:$("#p_risk").value.trim()||null};
+      setMsg("p_msg","Đang lưu…");
+      try{await rpc("touch_report",{p_code:C,p_date:D});
+        if(RP.editPlan)await q(SB.from("plan_items").update(row).eq("id",RP.editPlan.id).select("id"));
+        else{const code=await rpc("next_code",{p_prefix:C+"-"+yymmdd(D)+"-K"});await q(SB.from("plan_items").insert({...row,code,report_code:C,report_date:D,plan_date:pd}).select("id"))}
+        RP.editPlan=null;toast("Đã lưu kế hoạch");render()}catch(err){setMsg("p_msg",sbErr(err),"bad")}});
+    const pc=$("#p_cancel");if(pc)pc.onclick=()=>{RP.editPlan=null;render()};
+    const pdl=$("#p_del");if(pdl)pdl.onclick=async()=>{if(pdl.dataset.c!=="1"){pdl.dataset.c="1";pdl.textContent="Xác nhận xóa?";return}
+      try{await q(SB.from("plan_items").delete().eq("id",RP.editPlan.id).select("id"));RP.editPlan=null;toast("Đã xóa dòng");render()}catch(e){setMsg("p_msg",sbErr(e),"bad")}};
+  }
+  document.querySelectorAll("[data-ep]").forEach(b=>b.onclick=()=>{RP.editPlan=RP.data.plans.find(p=>String(p.id)===b.dataset.ep);render().then(()=>$("#fPlan").scrollIntoView({block:"center"}))});
+  // mục 5
+  const fs=$("#fSr");if(fs){
+    fs.addEventListener("submit",async e=>{e.preventDefault();document.querySelectorAll("#fSr .err").forEach(x=>x.classList.remove("err"));
+      const ct=$("#s_ct").value.trim(),pr=$("#s_prop").value.trim();const bad=[];if(ct.length<5)bad.push("s_ct");if(pr.length<5)bad.push("s_prop");
+      if(bad.length){markErr(bad);return setMsg("s_msg","Ghi nội dung và phương án đề xuất (kèm ảnh hưởng nếu không xử lý).","bad")}
+      const row={kind:$("#s_kind").value,content:ct,urgency:$("#s_urg").value,need_who:$("#s_who").value,respond_by:$("#s_by").value||null,dept:$("#s_dept").value.trim()||null,proposer:$("#s_prop_by").value.trim()||null,proposal:pr};
+      setMsg("s_msg","Đang lưu…");
+      try{await rpc("touch_report",{p_code:C,p_date:D});
+        if(RP.editSr)await q(SB.from("support_requests").update(row).eq("id",RP.editSr.id).select("id"));
+        else await q(SB.from("support_requests").insert({...row,report_code:C,report_date:D}).select("id"));
+        RP.editSr=null;toast("Đã lưu");render()}catch(err){setMsg("s_msg",sbErr(err),"bad")}});
+    const sc=$("#s_cancel");if(sc)sc.onclick=()=>{RP.editSr=null;render()};
+    const sd=$("#s_del");if(sd)sd.onclick=async()=>{if(sd.dataset.c!=="1"){sd.dataset.c="1";sd.textContent="Xác nhận xóa?";return}
+      try{await q(SB.from("support_requests").delete().eq("id",RP.editSr.id).select("id"));RP.editSr=null;toast("Đã xóa");render()}catch(e){setMsg("s_msg",sbErr(e),"bad")}};
+  }
+  document.querySelectorAll("[data-esr]").forEach(b=>b.onclick=()=>{RP.editSr=RP.data.srs.find(s=>String(s.id)===b.dataset.esr);render().then(()=>$("#fSr").scrollIntoView({block:"center"}))});
+  document.querySelectorAll("[data-srd]").forEach(b=>b.onclick=async()=>{const id=b.dataset.srd,dec=$("#sr_d_"+id).value.trim(),st=$("#sr_s_"+id).value;
+    if(st!=="Chờ phản hồi"&&!dec){markErr(["sr_d_"+id]);return setMsg("sr_m_"+id,"Ghi nội dung quyết định","bad")}
+    try{await q(SB.from("support_requests").update({decision:dec||null,status:st,decider:ME.full_name,decided_by:ME.id,decided_date:ME.today}).eq("id",id).select("id"));setMsg("sr_m_"+id,"Đã lưu","ok");toast("Đã lưu quyết định")}catch(e){setMsg("sr_m_"+id,sbErr(e),"bad")}});
+  bindPhotos();
+}
+// hộp nhập nhanh ngay cạnh nút (thay cho prompt bị chặn)
+function askInline(btn,label){return new Promise(res=>{const box=document.createElement("div");box.style.cssText="display:flex;gap:4px;margin-top:4px";
+  box.innerHTML=`<input placeholder="${esc(label)}" style="min-width:160px"><button class="btn" type="button" style="padding:3px 8px">OK</button><button class="btn ghost" type="button" style="padding:3px 8px">Hủy</button>`;
+  btn.after(box);const[i,ok,no]=box.children;i.focus();
+  ok.onclick=()=>{if(!i.value.trim()){i.classList.add("err");return}box.remove();res(i.value.trim())};no.onclick=()=>{box.remove();res(null)}})}
+async function decideTask(spec,btn){const[act,id]=spec.split(":");let note=null;
+  if(act==="close"||act==="reopen"||act==="cancel"){note=await askInline(btn,act==="close"?"Kết quả xác nhận":"Lý do");if(note==null)return}
+  try{await rpc("task_decide",{p_id:+id,p_action:act,p_note:note});toast({close:"Đã đóng việc",reopen:"Đã trả lại",approve_due:"Đã duyệt hạn mới",reject_due:"Đã từ chối hạn mới",cancel:"Đã hủy việc"}[act]);render()}catch(e){toast(sbErr(e))}}
+
+/* ---------- ảnh minh chứng: tối đa 3 / việc, tự nén ~300 KB, xóa ảnh không xóa việc ---------- */
+async function compressImage(file){
+  const img=await new Promise((ok,no)=>{const u=URL.createObjectURL(file);const i=new Image();i.onload=()=>{URL.revokeObjectURL(u);ok(i)};i.onerror=()=>no(new Error("Không đọc được ảnh"));i.src=u});
+  let w=img.naturalWidth,h=img.naturalHeight,max=1600;const sc=Math.min(1,max/Math.max(w,h));w=Math.round(w*sc);h=Math.round(h*sc);
+  const c=document.createElement("canvas");c.width=w;c.height=h;c.getContext("2d").drawImage(img,0,0,w,h);
+  let qy=0.82,blob;for(let k=0;k<8;k++){blob=await new Promise(r=>c.toBlob(r,"image/jpeg",qy));if(blob.size<=300*1024)break;
+    if(qy>0.5)qy-=0.1;else{c.width=Math.round(c.width*0.8);c.height=Math.round(c.height*0.8);c.getContext("2d").drawImage(img,0,0,c.width,c.height)}}
+  return blob;
+}
+async function openPhotos(entity,id,code){
+  RP.photo={entity,id:+id,code};const host=$("#photoHost")||document.body;
+  const rows=await q(SB.from("attachments").select("id,storage_path,file_name,created_at").eq("entity",entity).eq("entity_id",id).order("created_at"));
+  let urls={};if(rows.length){const{data}=await SB.storage.from("evidence").createSignedUrls(rows.map(r=>r.storage_path),3600);(data||[]).forEach(d=>{if(d.signedUrl)urls[d.path]=d.signedUrl})}
+  $("#drawerHost").innerHTML=`<div class="ovl" id="ovl"><div class="drawer" role="dialog" aria-modal="true" aria-label="Ảnh minh chứng">
+   <header><div><div class="small">Ảnh minh chứng · tối đa 3 ảnh</div><h2>${esc(code)}</h2></div><button class="x" id="dclose" type="button">Đóng</button></header>
+   <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px">${rows.map(r=>`<div class="card"><img src="${urls[r.storage_path]||""}" alt="Ảnh minh chứng ${esc(code)}" style="width:100%;border-radius:6px;aspect-ratio:4/3;object-fit:cover;background:var(--sunk)">
+     <div class="small" style="margin:6px 0">${new Date(r.created_at).toLocaleString("vi-VN")}</div><button class="btn ghost" type="button" data-delph="${r.id}" style="color:var(--bad)">Xóa ảnh</button></div>`).join("")||'<div class="empty">Chưa có ảnh</div>'}</div>
+   ${rows.length<3?`<div class="card" style="margin-top:12px"><label class="btn" for="phFile" style="display:inline-block">Chụp / chọn ảnh</label><input type="file" id="phFile" accept="image/*" capture="environment" hidden><span class="msg" id="phMsg" role="status" style="margin-left:8px"></span><p class="small" style="margin:8px 0 0">Ảnh tự nén còn khoảng 300 KB trước khi tải lên. Còn thêm được ${3-rows.length} ảnh.</p></div>`:`<p class="small">Đã đủ 3 ảnh. Xóa ảnh cũ để thêm ảnh mới. Xóa ảnh không làm mất nội dung, tiến độ, lịch sử của việc.</p>`}
+  </div></div>`;
+  const close=()=>{$("#drawerHost").innerHTML="";render()};$("#dclose").onclick=close;$("#ovl").onclick=e=>{if(e.target.id==="ovl")close()};
+  const f=$("#phFile");if(f)f.onchange=async()=>{const file=f.files[0];if(!file)return;if(!/^image\//.test(file.type)){setMsg("phMsg","Chỉ nhận file ảnh","bad");return}
+    setMsg("phMsg","Đang nén và tải lên…");
+    try{const blob=await compressImage(file);const path=`${entity}/${id}/${Date.now()}.jpg`;
+      const up=await SB.storage.from("evidence").upload(path,blob,{contentType:"image/jpeg",upsert:false});if(up.error)throw up.error;
+      const ins=await SB.from("attachments").insert({entity,entity_id:+id,storage_path:path,file_name:file.name,uploaded_by:ME.id});
+      if(ins.error){await SB.storage.from("evidence").remove([path]);throw ins.error}
+      toast(`Đã tải ảnh (${Math.round(blob.size/1024)} KB)`);openPhotos(entity,id,code)}catch(e){setMsg("phMsg",sbErr(e),"bad")}};
+  document.querySelectorAll("[data-delph]").forEach(b=>b.onclick=async()=>{if(b.dataset.c!=="1"){b.dataset.c="1";b.textContent="Xác nhận xóa?";return}
+    const r=rows.find(x=>String(x.id)===b.dataset.delph);
+    try{const rm=await SB.storage.from("evidence").remove([r.storage_path]);if(rm.error)throw rm.error;await q(SB.from("attachments").delete().eq("id",r.id).select("id"));toast("Đã xóa ảnh, nội dung việc giữ nguyên");openPhotos(entity,id,code)}catch(e){toast(sbErr(e))}});
+}
+function bindPhotos(){document.querySelectorAll("[data-ph]").forEach(b=>b.onclick=()=>{const[en,id,...c]=b.dataset.ph.split(":");openPhotos(en,id,c.join(":")).catch(e=>toast(sbErr(e)))})}
+
+/* ============================================================
+   GIAO VIỆC (GĐNM, TBP)
+   ============================================================ */
+const GV={f:"open",pos:"",q:""};
+async function viewTasks(){
+  if(RUN!=="LIVE")return liveOnly("Giao việc");
+  const today=ME.today||todayISO();
+  const sum=await rpc("daily_summary",{d:today});const codes=sum.map(s=>({code:s.report_code,name:s.position_name,dept:s.dept_name}));
+  const tasks=await q(SB.from("tasks").select("id,code,kind,source,title,content,objective,report_code,dept_id,assigner_id,assigned_date,due_date,original_due,requested_due,requested_reason,priority,status,progress,result,done_date,close_note,updated_at").order("assigned_date",{ascending:false}).limit(400));
+  const ids=tasks.map(t=>t.id);let lastUp={};
+  if(ids.length){const ups=await q(SB.from("item_updates").select("entity_id,update_date,progress,note").eq("entity","task").in("entity_id",ids).order("update_date",{ascending:false}));ups.forEach(u=>{if(!lastUp[u.entity_id])lastUp[u.entity_id]=u})}
+  const ppl=await api.profiles();const nm=id=>(ppl.find(p=>p.id===id)||{}).full_name||"";
+  const isOver=t=>!["done","cancelled"].includes(t.status)&&t.due_date<today;
+  let rows=tasks.filter(t=>GV.f==="all"?true:GV.f==="open"?!["done","cancelled"].includes(t.status):GV.f==="over"?isOver(t):GV.f==="confirm"?t.status==="pending_confirm":GV.f==="due"?!!t.requested_due:GV.f==="done"?t.status==="done":true)
+    .filter(t=>!GV.pos||t.report_code===GV.pos).filter(t=>!GV.q||(t.code+" "+t.title+" "+(t.content||"")).toLowerCase().includes(GV.q.toLowerCase()));
+  rows.sort((a,b)=>(isOver(b)-isOver(a))||(a.due_date<b.due_date?-1:1));
+  const cnt=k=>tasks.filter(t=>k==="over"?isOver(t):k==="confirm"?t.status==="pending_confirm":k==="due"?!!t.requested_due:false).length;
+  const canAssignCodes=ME.role==="admin"?codes:codes.filter(c=>(ME.approves_depts||[]).includes(REF.positions.find(p=>p.report_code===c.code)?.dept_id));
+  return `<h2 class="sec" style="margin-top:0">Giao việc & chỉ đạo <small>Mã CĐddmm-NN / GVddmm-NN · việc quá hạn tự hiện đầu danh sách và ở mục 3 báo cáo ngày hôm sau</small></h2>
+  <form class="card" id="fTask" novalidate style="margin-bottom:12px"><h3>Giao việc mới</h3>
+   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px">
+    <div class="fld"><label for="t_kind">Loại</label><select id="t_kind">${opt([["CĐ","Chỉ đạo (CĐ)"],["GV","Việc giao thêm (GV)"]],"CĐ")}</select></div>
+    <div class="fld"><label for="t_src">Nguồn</label><select id="t_src">${opt(L4.nguon,ME.role==="admin"?"Chỉ đạo Cố vấn":"Việc giao thêm")}</select></div>
+    <div class="fld"><label for="t_to">Giao cho vị trí *</label><select id="t_to">${opt(canAssignCodes.map(c=>[c.code,c.code+" – "+c.name]),"","— Chọn vị trí —")}</select></div>
+    <div class="fld"><label for="t_due">Hạn hoàn thành *</label><input id="t_due" type="date" min="${today}"></div>
+    <div class="fld"><label for="t_pri">Ưu tiên</label><select id="t_pri">${opt([["urgent","Khẩn"],["high","Cao"],["normal","Bình thường"],["low","Thấp"]],"normal")}</select></div>
+    <div class="fld" style="grid-column:1/-1"><label for="t_ct">Nội dung chỉ đạo / việc (nguyên văn) *</label><textarea id="t_ct" rows="2"></textarea></div>
+    <div class="fld" style="grid-column:1/-1"><label for="t_obj">Kết quả cần đạt (đo được) *</label><input id="t_obj"></div>
+   </div><div style="display:flex;gap:8px;margin-top:8px;align-items:center"><button class="btn" type="submit" id="t_btn">Giao việc</button><span class="msg" id="t_msg" role="status"></span></div></form>
+  <div class="tools"><div class="seg" role="group" aria-label="Lọc">${[["open","Đang mở"],["over",`Quá hạn (${cnt("over")})`],["confirm",`Chờ đóng (${cnt("confirm")})`],["due",`Xin lùi hạn (${cnt("due")})`],["done","Đã đóng"],["all","Tất cả"]].map(([k,n])=>`<button type="button" data-gvf="${k}" aria-pressed="${GV.f===k}">${n}</button>`).join("")}</div>
+   <select id="gvPos" aria-label="Lọc vị trí">${opt(codes.map(c=>[c.code,c.code+" – "+c.name]),GV.pos,"Mọi vị trí")}</select>
+   <input id="gvQ" type="search" placeholder="Tìm mã, nội dung" value="${esc(GV.q)}" style="flex:1;min-width:150px" aria-label="Tìm việc"></div>
+  <div class="tbl"><table><tr><th>Mã</th><th>Nội dung</th><th>Vị trí</th><th>Người giao</th><th>Ngày giao</th><th>Hạn</th><th class="num">%</th><th>Cập nhật gần nhất</th><th>Kết quả cần đạt</th><th>Trạng thái</th><th>Thao tác</th></tr>
+  ${rows.map(t=>{const u=lastUp[t.id];const ov=isOver(t);const mine=ME.role==="admin"||t.assigner_id===ME.id;
+    return `<tr${ov?' style="background:var(--bad-bg)"':""}><td class="mono">${esc(t.code)}</td><td style="min-width:200px">${esc(t.content||t.title)}</td><td class="mono">${esc(t.report_code||"")}</td><td>${esc(nm(t.assigner_id))}</td><td class="num">${dm(t.assigned_date)}</td>
+     <td class="num">${dm(t.due_date)}${t.original_due&&t.original_due!==t.due_date?`<div class="small">ban đầu ${dm(t.original_due)}</div>`:""}${t.requested_due?`<div><span class="pill p-warn">Xin ${dm(t.requested_due)}</span></div><div class="small">${esc(t.requested_reason||"")}</div>`:""}</td>
+     <td class="num">${u&&u.progress!=null?u.progress:(t.progress||0)}</td><td style="min-width:180px">${u?`<span class="small">${dm(u.update_date)}</span> ${esc(u.note||"")}`:'<span class="small">Chưa cập nhật</span>'}</td><td>${esc(t.objective||"")}</td>
+     <td>${ov?'<span class="pill p-bad">QUÁ HẠN</span> ':""}<span class="pill p-${t.status==="done"?"ok":t.status==="pending_confirm"?"warn":"acc"}">${ttName(L4.taskTT,t.status)}</span>${t.close_note?`<div class="small">${esc(t.close_note)}</div>`:""}</td>
+     <td style="white-space:nowrap">${mine&&!["done","cancelled"].includes(t.status)?`${t.status==="pending_confirm"?`<button class="btn ghost" type="button" data-dec="close:${t.id}" style="padding:3px 9px;color:var(--ok)">Đóng</button><button class="btn ghost" type="button" data-dec="reopen:${t.id}" style="padding:3px 9px">Trả lại</button>`:""}
+       ${t.requested_due?`<button class="btn ghost" type="button" data-dec="approve_due:${t.id}" style="padding:3px 9px">Duyệt hạn</button><button class="btn ghost" type="button" data-dec="reject_due:${t.id}" style="padding:3px 9px">Từ chối</button>`:""}
+       <button class="btn ghost" type="button" data-dec="cancel:${t.id}" style="padding:3px 9px;color:var(--bad)">Hủy</button>`:""}
+       <button class="btn ghost" type="button" data-ph="task:${t.id}:${esc(t.code)}" style="padding:3px 9px">Ảnh</button></td></tr>`}).join("")||'<tr><td colspan="11"><div class="empty">Không có việc phù hợp</div></td></tr>'}</table></div>`;
+}
+function bindTasks(){
+  if(RUN!=="LIVE")return;
+  $("#fTask").addEventListener("submit",async e=>{e.preventDefault();document.querySelectorAll("#fTask .err").forEach(x=>x.classList.remove("err"));
+    const to=$("#t_to").value,due=$("#t_due").value,ct=$("#t_ct").value.trim(),obj=$("#t_obj").value.trim(),today=ME.today||todayISO();const bad=[];
+    if(!to)bad.push("t_to");if(!due||due<today)bad.push("t_due");if(ct.length<5)bad.push("t_ct");if(obj.length<3)bad.push("t_obj");
+    if(bad.length){markErr(bad);return setMsg("t_msg","Ô đỏ: chọn vị trí, hạn từ hôm nay, nội dung và kết quả cần đạt.","bad")}
+    const kind=$("#t_kind").value;$("#t_btn").disabled=true;setMsg("t_msg","Đang giao…");
+    try{const code=await rpc("next_code",{p_prefix:kind+ddmm(today)+"-"});const pos=REF.positions.find(p=>p.report_code===to);
+      await q(SB.from("tasks").insert({code,kind,source:$("#t_src").value,title:ct.slice(0,120),content:ct,objective:obj,report_code:to,dept_id:pos?pos.dept_id:null,assigner_id:ME.id,due_date:due,original_due:due,priority:$("#t_pri").value,scope:"person"}).select("id"));
+      toast("Đã giao "+code);render()}catch(err){setMsg("t_msg",sbErr(err),"bad");$("#t_btn").disabled=false}});
+  document.querySelectorAll("[data-gvf]").forEach(b=>b.onclick=()=>{GV.f=b.dataset.gvf;render()});
+  $("#gvPos").onchange=e=>{GV.pos=e.target.value;render()};
+  $("#gvQ").oninput=e=>{GV.q=e.target.value;const p=e.target.selectionStart;render().then(()=>{const n=$("#gvQ");if(n){n.focus();n.setSelectionRange(p,p)}})};
+  document.querySelectorAll("[data-dec]").forEach(b=>b.onclick=()=>decideTask(b.dataset.dec,b));
+  bindPhotos();
+}
+
+/* ============================================================
+   CÔNG VIỆC CỦA TÔI (bản LIVE)
+   ============================================================ */
+async function viewMineLive(){
+  const codes=await rpc("my_report_codes");const today=ME.today||todayISO();
+  let tasks=[];if(codes.length)tasks=await q(SB.from("tasks").select("id,code,title,content,objective,report_code,due_date,requested_due,status,progress").in("report_code",codes).not("status","in","(done,cancelled)").order("due_date"));
+  return `<h2 class="sec" style="margin-top:0">Công việc của tôi <small>${esc(ME.full_name)} · ${esc(ME.position_name)}${codes.length?" · báo cáo: "+codes.join(", "):""}</small></h2>
+  <div class="two" style="margin-top:0">
+   <div><h3 style="font-size:13px">1. Hôm nay tôi phải làm gì? <small class="small">${tasks.length} việc / chỉ đạo đang mở</small></h3>
+    ${tasks.length?`<div class="alerts">${tasks.map(t=>{const ov=t.due_date<today;return `<div class="alert ${ov?"bad":""}"><span class="sv" ${ov?"":'style="background:var(--accent)"'}></span><div class="b"><div class="t"><span>${esc(t.code)} · ${esc(t.title)}</span><span class="k">${ov?"QUÁ HẠN":"Hạn "+dm(t.due_date)}</span></div>
+      <div class="d">Kết quả cần đạt: ${esc(t.objective||"—")} · Tiến độ ${t.progress||0}% · ${ttName(L4.taskTT,t.status)}${t.requested_due?" · đang xin lùi đến "+dm(t.requested_due):""}</div>
+      ${t.status==="new"?`<button class="btn" type="button" data-acc="${t.id}" style="padding:4px 10px;margin-top:6px">Tiếp nhận</button>`:""}</div></div>`}).join("")}</div>`:`<div class="empty">Không có việc đang mở</div>`}</div>
+   <div><h3 style="font-size:13px">2–4. Đã làm gì, kết quả, vướng mắc</h3>
+    <div class="card"><p style="margin:0 0 8px">Cập nhật tiến độ, kết quả, ảnh minh chứng và vướng mắc trong <b>Báo cáo hằng ngày</b> (mục 1–5).</p>
+    ${codes.length?`<button class="btn" type="button" id="goDaily">Mở báo cáo hôm nay</button>`:'<p class="small">Vị trí của bạn không nộp báo cáo ngày; việc được giao hiện ở danh sách bên trái.</p>'}
+    <button class="btn ghost" type="button" id="chgPw" style="margin-left:6px">Đổi mật khẩu</button></div></div></div>`;
+}
+function bindMineLive(){
+  document.querySelectorAll("[data-acc]").forEach(b=>b.onclick=async()=>{b.disabled=true;try{await rpc("accept_task",{p_id:+b.dataset.acc});toast("Đã tiếp nhận");render()}catch(e){toast(sbErr(e));b.disabled=false}});
+  const g=$("#goDaily");if(g)g.onclick=()=>{RP.date=ME.today;ST.screen="daily";render()};
+  $("#chgPw").onclick=()=>showPw(false);
+}
+
+/* ============================================================
+   TỔNG HỢP BÁO CÁO NGÀY (GĐNM; TBP xem bộ phận mình)
+   ============================================================ */
+const SM={date:null};
+async function viewSummary(){
+  if(RUN!=="LIVE")return liveOnly("Tổng hợp báo cáo ngày");
+  const today=ME.today||todayISO();if(!SM.date)SM.date=today;const D=SM.date;
+  const[sum,reds,pend,srs]=await Promise.all([rpc("daily_summary",{d:D}),
+    q(SB.from("issues").select("code,report_code,description,owner_name,due_date,plan_b,status").eq("severity","red").not("status","in","(resolved,closed)").lte("open_date",D).order("due_date")),
+    q(SB.from("tasks").select("id,code,title,report_code,status,requested_due,requested_reason,due_date").or("status.eq.pending_confirm,requested_due.not.is.null").order("due_date")),
+    q(SB.from("support_requests").select("id,report_code,kind,content,proposal,urgency,respond_by,status,report_date").eq("status","Chờ phản hồi").order("report_date"))]);
+  const closed=D<today,entered=sum.filter(s=>s.entered).length;
+  const st=s=>s.entered?`<span class="pill p-ok">Đã nhập ${new Date(s.last_edit_at).toLocaleTimeString("vi-VN",{hour:"2-digit",minute:"2-digit"})}</span>`:closed?`<span class="pill p-bad">CHƯA BÁO CÁO</span>`:`<span class="pill p-none">Chưa nhập</span>`;
+  return `<h2 class="sec" style="margin-top:0">Tổng hợp báo cáo ngày <small>tự động từ báo cáo các vị trí · ${closed?"ngày đã khóa":"đang trong ngày, khóa lúc 23:59"}</small></h2>
+  <div class="fbar" style="position:static"><span class="flabel">Ngày</span><div class="datebox"><button type="button" id="smPrev" aria-label="Ngày trước">‹</button><input type="date" id="smDate" value="${D}" max="${today}"><button type="button" id="smNext" aria-label="Ngày sau">›</button></div>
+   <span class="period">${dowVN(D)} ${dmyS(D)} <small>· đã nhập ${entered}/${sum.length} vị trí</small></span></div>
+  <div class="tbl"><table><tr><th>Vị trí</th><th>Bộ phận</th><th>Tình trạng</th><th>Người nhập</th><th class="num">Đỏ đang mở</th><th class="num">Vàng đang mở</th><th class="num">Quá hạn</th><th class="num">Chờ quyết định</th><th></th></tr>
+  ${sum.map(s=>`<tr><td><b class="mono">${esc(s.report_code)}</b> ${esc(s.position_name)}</td><td>${esc(s.dept_name)}</td><td>${st(s)}</td><td>${esc(s.editor||"")}</td>
+   <td class="num"${s.red_open?' style="color:var(--bad);font-weight:700"':""}>${s.red_open}</td><td class="num">${s.yellow_open}</td><td class="num"${s.overdue?' style="color:var(--bad);font-weight:700"':""}>${s.overdue}</td><td class="num">${s.waiting_decision}</td>
+   <td><button class="btn ghost" type="button" data-open="${esc(s.report_code)}" style="padding:3px 9px">Xem báo cáo</button></td></tr>`).join("")}</table></div>
+  <div class="two">
+   <div><h2 class="sec">Vấn đề ĐỎ đang mở <small>${reds.length}</small></h2>${reds.length?`<div class="alerts">${reds.map(i=>`<div class="alert bad"><span class="sv"></span><div class="b"><div class="t"><span>${esc(i.code)} · ${esc(i.description)}</span><span class="k">${i.due_date?"Hạn "+dm(i.due_date):""}</span></div><div class="d">Phụ trách: ${esc(i.owner_name||"—")} · Phương án B: ${esc(i.plan_b||"—")}</div></div></div>`).join("")}</div>`:`<div class="empty">Không có</div>`}</div>
+   <div><h2 class="sec">Chờ GĐNM xử lý <small>${pend.length+srs.length}</small></h2>${pend.length+srs.length?`<div class="alerts">
+    ${pend.map(t=>`<div class="alert"><span class="sv"></span><div class="b"><div class="t"><span>${esc(t.code)} · ${esc(t.title)}</span><span class="k">${t.status==="pending_confirm"?"Đề nghị đóng":"Xin lùi hạn "+dm(t.requested_due)}</span></div><div class="d">${esc(t.report_code||"")} ${t.requested_reason?"· "+esc(t.requested_reason):""} · xử lý ở màn Giao việc</div></div></div>`).join("")}
+    ${srs.map(s=>`<div class="alert"><span class="sv"></span><div class="b"><div class="t"><span>${esc(s.kind)}: ${esc(s.content)}</span><span class="k">${esc(s.report_code)} · ${esc(s.urgency||"")}</span></div><div class="d">Đề xuất: ${esc(s.proposal||"")} <button class="btn ghost" type="button" data-opensr="${esc(s.report_code)}|${s.report_date}" style="padding:2px 8px;margin-left:6px">Quyết định</button></div></div></div>`).join("")}</div>`:`<div class="empty">Không có</div>`}</div>
+  </div>`;
+}
+function bindSummary(){
+  if(RUN!=="LIVE")return;const today=ME.today||todayISO();
+  $("#smDate").onchange=e=>{if(e.target.value&&e.target.value<=today){SM.date=e.target.value;render()}};
+  $("#smPrev").onclick=()=>{SM.date=addDays(SM.date,-1);render()};$("#smNext").onclick=()=>{if(SM.date<today){SM.date=addDays(SM.date,1);render()}};
+  document.querySelectorAll("[data-open]").forEach(b=>b.onclick=()=>{RP.code=b.dataset.open;RP.date=SM.date;ST.screen="daily";render();window.scrollTo(0,0)});
+  document.querySelectorAll("[data-opensr]").forEach(b=>b.onclick=()=>{const[c,d]=b.dataset.opensr.split("|");RP.code=c;RP.date=d;ST.screen="daily";render().then(()=>{const h=[...document.querySelectorAll("h2.sec")].find(x=>x.textContent.startsWith("5."));if(h)h.scrollIntoView()})});
+}
+
+/* ---------- thông báo trong ứng dụng (LIVE) ---------- */
+async function loadAlertsLive(){
+  try{const a=await rpc("my_alerts");const el=$("#bellN");el.hidden=!a.length;el.textContent=a.length;
+    const kindSev={task_over:"bad",missing:"bad"};
+    $("#notif").innerHTML=`<h4>Thông báo</h4>`+(a.length?`<div class="alerts">${a.map(x=>`<div class="alert ${kindSev[x.kind]||""}"><span class="sv"></span><div class="b"><div class="t">${esc(x.title)}</div><div class="d">${esc(x.detail||"")}</div></div></div>`).join("")}</div>`:`<div class="empty">Không có thông báo</div>`);
+  }catch(e){}
+}
+
+/* ============================================================
    KHUNG ỨNG DỤNG: SIDEBAR THEO VAI TRÒ, THÔNG BÁO
    ============================================================ */
-const MODS=[["dash","Tổng quan nhà máy",2],["mydept","Bộ phận của tôi",3],["task","Giao việc",4],["mine","Công việc của tôi",3],["daily","Báo cáo hằng ngày",4],["sx","Sản xuất",5],["qc","Chất lượng",5],["kho","Kho",5],["kh","Kế hoạch",5],["kt","Kỹ thuật",5],["bt","Bảo trì",5],["gt","Giá thành",5],["bh","Bảo hành",5],["ns","Nhân sự",5],["kpi","KPI",6],["5s","5S",5],["vd","Vấn đề và cải tiến",6],["lich","Lịch điều hành",6],["acc","Quản lý tài khoản",3],["cfg","Cấu hình hệ thống",3]];
+const MODS=[["dash","Tổng quan nhà máy",2],["sum","Tổng hợp báo cáo ngày",4],["mydept","Bộ phận của tôi",3],["task","Giao việc",4],["mine","Công việc của tôi",3],["daily","Báo cáo hằng ngày",4],["sx","Sản xuất",5],["qc","Chất lượng",5],["kho","Kho",5],["kh","Kế hoạch",5],["kt","Kỹ thuật",5],["bt","Bảo trì",5],["gt","Giá thành",5],["bh","Bảo hành",5],["ns","Nhân sự",5],["kpi","KPI",6],["5s","5S",5],["vd","Vấn đề và cải tiến",6],["lich","Lịch điều hành",6],["acc","Quản lý tài khoản",3],["cfg","Cấu hình hệ thống",3]];
 const DEPT_MOD={SX:"sx",QAC:"qc",KHO:"kho",KHSX:"kh",KT:"kt",CD:"bt",KTGT:"gt",BHM:"bh",BHN:"bh",HCNS:"ns"};
+const BUILT=["dash","sum","mydept","task","mine","daily","acc","cfg"];
 function allowedMods(){
   if(!ME)return[];if(ME.role==="admin")return MODS.map(m=>m[0]).filter(k=>k!=="mydept");
   const a=[];const approver=ME.role==="head"||(ME.approves_depts||[]).length;
-  if(approver)a.push("mydept","task");a.push("mine","daily");
+  if(approver)a.push("sum","mydept","task");a.push("mine","daily");
   const dm=DEPT_MOD[ME.dept_code];if(dm)a.push(dm);
   (ME.approves_depts||[]).forEach(id=>{const c=(REF.depts.find(d=>d.id===id)||{}).code;const k=DEPT_MOD[c];if(k&&!a.includes(k))a.push(k)});
   a.push("kpi","5s","vd","lich");return a;
@@ -1103,12 +1572,13 @@ function allowedMods(){
 function homeMod(){return ME.role==="admin"?"dash":((ME.role==="head"||(ME.approves_depts||[]).length)?"mydept":"mine")}
 function renderSide(){
   const allow=allowedMods();const list=MODS.filter(m=>allow.includes(m[0]));
-  const grp=k=>["dash","mydept","task","mine","daily"].includes(k)?"Điều hành":["acc","cfg","kpi","lich","vd","5s"].includes(k)?(["acc","cfg"].includes(k)?"Quản trị":"Theo dõi"):"Bộ phận";
+  const grp=k=>["dash","sum","mydept","task","mine","daily"].includes(k)?"Điều hành":["acc","cfg","kpi","lich","vd","5s"].includes(k)?(["acc","cfg"].includes(k)?"Quản trị":"Theo dõi"):"Bộ phận";
   let last="";$("#side").innerHTML=list.map(([k,n,g])=>{const gname=grp(k);const h=gname!==last?`<div class="grp">${gname}</div>`:"";last=gname;
-    return h+`<button type="button" data-mod="${k}" aria-current="${ST.screen===k}"><span>${n}</span>${g>3?`<span class="ph">GĐ${g}</span>`:""}</button>`}).join("");
+    return h+`<button type="button" data-mod="${k}" aria-current="${ST.screen===k}"><span>${n}</span>${!BUILT.includes(k)?`<span class="ph">GĐ${g}</span>`:""}</button>`}).join("");
   $("#side").querySelectorAll("button").forEach(b=>b.onclick=()=>{ST.screen=b.dataset.mod;ACC_SECRET=null;accConfirm=null;render();window.scrollTo(0,0)});
 }
 function updateBell(){
+  if(RUN==="LIVE"){loadAlertsLive();return}
   const el=$("#bellN");if(ME&&ME.role==="admin"){if(!A)compute();const n=ALERTS.length;el.hidden=!n;el.textContent=n;
     $("#notif").innerHTML=`<h4>Thông báo · ${esc(periodLabel())}</h4>`+(n?alertsHTML(ALERTS):`<div class="empty">Không có thông báo</div>`)}
   else{el.hidden=true;$("#notif").innerHTML=`<h4>Thông báo</h4><div class="empty">Thông báo việc mới, sắp đến hạn, quá hạn có ở Giai đoạn 4.</div>`}
@@ -1123,7 +1593,11 @@ async function render(){
     else if(ST.screen==="cfg"){const h=await viewConfig();if(seq!==renderSeq)return;main.innerHTML=h;bindConfig()}
     else if(ST.screen==="acc"){const h=await viewAccounts();if(seq!==renderSeq)return;main.innerHTML=h;bindAccounts()}
     else if(ST.screen==="mydept"){const h=await viewMyDept();if(seq!==renderSeq)return;main.innerHTML=h}
+    else if(ST.screen==="mine"&&RUN==="LIVE"){const h=await viewMineLive();if(seq!==renderSeq)return;main.innerHTML=h;bindMineLive()}
     else if(ST.screen==="mine"){main.innerHTML=viewMine();$("#chgPw").onclick=()=>showPw(false)}
+    else if(ST.screen==="daily"){const h=await viewDaily();if(seq!==renderSeq)return;main.innerHTML=h;bindDaily()}
+    else if(ST.screen==="task"){const h=await viewTasks();if(seq!==renderSeq)return;main.innerHTML=h;bindTasks()}
+    else if(ST.screen==="sum"){const h=await viewSummary();if(seq!==renderSeq)return;main.innerHTML=h;bindSummary()}
     else main.innerHTML=`<h2 class="sec" style="margin-top:0">${mod[1]}</h2><div class="ph-card"><b>Xây ở Giai đoạn ${mod[2]}.</b><p class="small" style="margin:6px 0 0">Nội dung và phân quyền đã chốt ở Giai đoạn 1. Bạn thấy mục này vì vai trò của bạn được phép dùng nó.</p></div>`;
   }catch(err){main.innerHTML=`<div class="alert bad"><span class="sv"></span><div class="b"><div class="t">Không tải được dữ liệu</div><div class="d">${esc(sbErr(err))}</div></div></div>`}
   updateBell();
@@ -1133,7 +1607,7 @@ function startApp(){
   $("#user").innerHTML=`${esc(ME.full_name)}<small>${esc(ME.username)} · ${esc(ME.position_name)}</small>`;
   const c=$("#conn");c.classList.toggle("live",RUN==="LIVE");
   c.textContent=RUN==="LIVE"?"Đã kết nối máy chủ · số liệu SX mẫu đến GĐ5":"DEMO · dùng thử, không lưu máy chủ";
-  ST.screen=homeMod();cfgTab="tbp";accQ="";accDept="";ACC_SECRET=null;accConfirm=null;render();
+  ST.screen=homeMod();cfgTab="tbp";RP.code=null;RP.date=null;RP.editIssue=RP.editPlan=RP.editSr=null;SM.date=null;GV.f="open";GV.pos="";GV.q="";accQ="";accDept="";ACC_SECRET=null;accConfirm=null;render();
 }
 $("#logout").onclick=()=>logout();
 $("#bell").onclick=e=>{e.stopPropagation();const p=$("#notif");p.hidden=!p.hidden;$("#bell").setAttribute("aria-expanded",String(!p.hidden))};
