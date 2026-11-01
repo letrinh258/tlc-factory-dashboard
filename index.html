@@ -2062,6 +2062,93 @@ function bind5s(){
       await rpc("update_5s_finding",{p_id:+id,p_action:act,p_counter:g("fc_"),p_owner:g("fo_"),p_due:g("fd_")||null,p_note:g("fv_")});
       toast({counter:"Đã lưu đối sách",request_close:"Đã đề nghị đóng",close:"Đã xác nhận đóng",reopen:"Đã trả lại",delete:"Đã xóa lỗi"}[act]);render()}catch(e){setMsg(m,sbErr(e),"bad")}});
 }
+/* ============================================================
+   TỔNG QUAN NHÀ MÁY – SỐ LIỆU THẬT (từ Form A–E, 3S, giao việc, báo cáo ngày)
+   ============================================================ */
+const LD={period:"day",date:null,scope:"all",demo:false};
+function ldTile(label,val,unit,dec,state,sub,mod,stateTxt){
+  return `<button class="kpi ${state}" type="button" ${mod?`data-goto="${mod}"`:""} aria-label="${esc(label)}">
+   <div class="lbl"><span>${label}</span><span class="pill p-${state}">${stateTxt||SLBL[state]}</span></div>
+   <div class="val">${val==null?"—":fmt(val,dec)} <small>${unit}</small></div>${sub?`<div class="scope">${sub}</div>`:""}</button>`}
+const ldPct=(a,b)=>b?a/b*100:null;
+function ldTrend(cur,prev,dec,dir){if(cur==null||prev==null)return "";const d=cur-prev;if(!d)return "Kỳ trước ■";return `<span class="${(d>0)===(dir>0)?"up":"dn"}">Kỳ trước ${d>0?"▲":"▼"} ${fmt(Math.abs(d),dec)}</span>`}
+async function viewDashLive(){
+  const today=ME.today||todayISO();if(!LD.date)LD.date=today;
+  const[d1,d2]=range(LD.period,LD.date);const p1=range(LD.period,addDays(d1,-1));const line=LD.scope==="all"?null:+LD.scope;
+  const[S,P,sum]=await Promise.all([rpc("dash_summary",{d1,d2,p_line:line}),rpc("dash_summary",{d1:p1[0],d2:p1[1],p_line:line}),
+    rpc("daily_summary",{d:d2>today?today:d2}).catch(()=>[])]);
+  const pr=S.prod,pp=P.prod,has=pr.rows>0;const out=x=>x.good+x.ng_op+x.ng_sup;
+  const kh=x=>x.plan_rows?ldPct(x.good,x.plan):null,ng=x=>out(x)?(x.ng_op+x.ng_sup)/out(x)*100:null,ns=x=>x.man_hours?x.std_hours/x.man_hours*100:null;
+  const lbl=LD.period==="day"?`${dowVN(d1)} ${dmy(d1)}`:LD.period==="week"?`Tuần ${dm(d1)} – ${dm(d2)}/${d2.slice(0,4)}`:`Tháng ${d1.slice(5,7)}/${d1.slice(0,4)}`;
+  const nLines=(CFG.lines||[]).length||10;const repLines=S.lines.filter(l=>l.n_rows).length;
+  const entered=sum.filter(s=>s.entered).length;const closed=d2<today||(d2===today&&sxDeadlinePassed(today,today));
+  // cảnh báo tự sinh từ số liệu thật
+  const AL=[];const add=(sev,t,d,mod)=>AL.push({sev,t,d,mod});
+  if(LD.period==="day"&&closed&&repLines<(line?1:nLines))add("bad",`${(line?1:nLines)-repLines} line chưa nhập báo cáo SX ngày ${dm(d2)}`,S.lines.filter(l=>!l.n_rows).map(l=>l.name).join(", "),"sx");
+  if(S.recon_flags)add("bad",`${S.recon_flags} điểm lệch giữa các bộ phận`,"SX ↔ Kho TP, NG SX ↔ QAC, dừng máy SX ↔ Cơ điện – cần giải trình","sx");
+  if(S.tasks.overdue)add("bad",`${S.tasks.overdue} việc / chỉ đạo quá hạn`,`${S.tasks.pending_close} việc chờ đóng · ${S.tasks.due_req} xin lùi hạn chờ duyệt`,"task");
+  if(S.issues_red)add("bad",`${S.issues_red} vấn đề mức ĐỎ đang mở`,"Từ mục 2 báo cáo ngày các vị trí","sum");
+  if(S.cd.open)add("bad",`${S.cd.open} sự cố máy chưa xử lý xong`,"Phiếu Cơ điện chưa có giờ kết thúc","bt");
+  const jns=judge("prod",ns(pr),1);if(has&&jns.s!=="ok")add(jns.s,`Năng suất ${fmt(ns(pr),0)}% định mức`,`Mục tiêu ${fmt(CFG.th.prod.tgt,0)}% · xem mã năng suất thấp bên dưới`,"sx");
+  const jop=judge("defOp",ldPct(pr.ng_op,out(pr)),-1);if(has&&jop.s!=="ok")add(jop.s,`NG thao tác ${fmt(ldPct(pr.ng_op,out(pr)),2)}%`,`Mục tiêu ≤ ${fmt(CFG.th.defOp.tgt,2)}%`,"qc");
+  const jsu=judge("defSup",ldPct(pr.ng_sup,out(pr)),-1);if(has&&jsu.s!=="ok")add(jsu.s,`NG nhà cung cấp ${fmt(ldPct(pr.ng_sup,out(pr)),2)}%`,`Mục tiêu ≤ ${fmt(CFG.th.defSup.tgt,2)}%`,"qc");
+  if(S.fives_overdue)add("warn",`${S.fives_overdue} lỗi 3S quá hạn khắc phục`,"","5s");
+  if(S.wh.shortage_items)add("warn",`${S.wh.shortage_items} mã vật tư thiếu`,"Kho linh kiện báo trong kỳ","kho");
+  if(LD.period==="day"&&closed&&sum.length&&entered<sum.length)add("warn",`${sum.length-entered}/${sum.length} vị trí chưa nhập báo cáo ngày`,sum.filter(s=>!s.entered).map(s=>s.report_code).join(", "),"sum");
+  const tr=S.trend;const mx=Math.max(1,...tr.map(t=>Math.max(+t.good||0,+t.plan||0)));
+  const lineOpt=`<option value="all">Toàn nhà máy</option>`+(CFG.lines||[]).map((l,i)=>`<option value="${i+1}" ${LD.scope===String(i+1)?"selected":""}>${esc(l)}</option>`).join("");
+  return `<div class="fbar" role="region" aria-label="Bộ lọc"><span class="flabel">Kỳ</span>
+   <div class="seg">${[["day","Ngày"],["week","Tuần"],["month","Tháng"]].map(([k,n])=>`<button type="button" data-lper="${k}" aria-pressed="${LD.period===k}">${n}</button>`).join("")}</div>
+   <div class="datebox"><button type="button" id="ldPrev" aria-label="Kỳ trước">‹</button><input type="date" id="ldDate" value="${LD.date}" max="${today}"><button type="button" id="ldNext" aria-label="Kỳ sau">›</button></div>
+   <span class="flabel">Phạm vi</span><select id="ldScope">${lineOpt}</select>
+   <span class="period">${lbl} <small>· ${pr.days} ngày có số liệu SX · số liệu thật</small></span>
+   <button class="btn ghost" type="button" id="ldDemo" style="margin-left:auto">Xem bản mẫu GĐ2</button></div>
+  ${has?"":`<div class="empty" style="margin-bottom:12px">Kỳ này chưa có báo cáo sản xuất. Các ô còn số là từ bộ phận khác.</div>`}
+  <h2 class="sec">Chỉ số điều hành <small>Bấm thẻ để mở màn hình nhập liệu tương ứng</small></h2>
+  <div class="kpis">
+   ${ldTile("Sản lượng đạt",has?pr.good:null,"sp",0,judge("out",kh(pr),1).s,`KH ${pr.plan_rows?fmt(pr.plan):"chưa có"} · ${ldTrend(has?pr.good:null,pp.rows?pp.good:null,0,1)}`,"sx")}
+   ${ldTile("Hoàn thành KH",kh(pr),"%",1,judge("out",kh(pr),1).s,`MT ${fmt(CFG.th.out.tgt,0)}% · ${ldTrend(kh(pr),kh(pp),1,1)}${pr.plan_rows<pr.rows?` · ${pr.rows-pr.plan_rows} dòng chưa có KH`:""}`,"sx")}
+   ${ldTile("Tỷ lệ NG (SX báo)",has?ng(pr):null,"%",2,judge("def",ng(pr),-1).s,has?`<span class="pill p-${jop.s}">Thao tác ${fmt(ldPct(pr.ng_op,out(pr)),2)}%</span> <span class="pill p-${jsu.s}">NCC ${fmt(ldPct(pr.ng_sup,out(pr)),2)}%</span>`:"","qc")}
+   ${ldTile("Năng suất",has?ns(pr):null,"% định mức",1,jns.s,has?`${fmt(pr.std_hours,0)} giờ chuẩn / ${fmt(pr.man_hours,0)} giờ công${pr.no_norm?` · ${pr.no_norm} dòng mã thiếu ĐM`:""} · ${ldTrend(ns(pr),ns(pp),1,1)}`:"","sx")}
+   ${ldTile("Dừng máy (Cơ điện)",S.cd.stops?S.cd.downtime:(has?0:null),"phút",0,S.cd.stops||has?judge("dt",S.cd.downtime,-1,Math.max(1,pr.days)*(line?0.1:1)).s:"none",`${S.cd.stops} sự cố · SX báo ${fmt(pr.downtime)} phút`,"bt")}
+   ${ldTile("Kiểm PQC (QAC)",S.qc.pqc_insp||null,"sp",0,S.qc.pqc_insp?judge("def",ldPct(S.qc.pqc_op+S.qc.pqc_sup,S.qc.pqc_insp),-1).s:"none",S.qc.pqc_insp?`NG ${fmt(ldPct(S.qc.pqc_op+S.qc.pqc_sup,S.qc.pqc_insp),2)}% · thao tác ${fmt(S.qc.pqc_op)} · NCC ${fmt(S.qc.pqc_sup)} · IQC ${fmt(S.qc.iqc_insp)}`:"QAC chưa nhập","qc")}
+   ${ldTile("Vắng mặt",S.hr.days?S.hr.absent_pct:null,"%",1,S.hr.days?"ok":"none",S.hr.days?`TB ${fmt(S.hr.absent_avg,0)}/${fmt(S.hr.total)} người · nghỉ việc ${fmt(S.hr.quits)} · tuyển mới ${fmt(S.hr.new)}${line?" · toàn NM":""}`:"HCNS chưa nhập","ns",S.hr.days?"Đã nhập":"Chưa có dữ liệu")}
+   ${ldTile("Lỗi 3S trong kỳ",S.fives.s1+S.fives.s2+S.fives.s3,"lỗi",0,S.fives_overdue?"bad":(S.fives.open?"warn":"ok"),`Sàng lọc ${S.fives.s1} · Sắp xếp ${S.fives.s2} · Sạch sẽ ${S.fives.s3} · ${S.fives_overdue} quá hạn${line?" · toàn NM":""}`,"5s",S.fives_overdue?"Quá hạn":S.fives.open?"Đang mở":"Ổn")}
+   ${ldTile("Việc quá hạn",S.tasks.overdue,"việc",0,S.tasks.overdue?"bad":"ok",`${S.tasks.open} đang mở · ${S.tasks.done_in} đóng trong kỳ`,"task",S.tasks.overdue?"Cần xử lý":"Ổn")}
+   ${ldTile("Đối chiếu lệch",S.recon_flags,"điểm",0,S.recon_flags?"bad":"ok","SX ↔ Kho TP · NG ↔ QAC · dừng máy ↔ CĐ","sx",S.recon_flags?"Lệch":"Khớp")}
+   ${ldTile("OTD · Tồn kho · Giá thành · Bảo hành",null,"",0,"none","Chờ dữ liệu Bravo / KTGT – đang hiện ở bản mẫu GĐ2",null,"Chưa nối")}
+  </div>
+  <div class="two" style="margin-top:4px">
+   <div><h2 class="sec">Cần GĐNM can thiệp <small>${AL.length} cảnh báo · tự sinh từ số liệu thật</small></h2>
+    ${AL.length?AL.map(a=>`<div class="alert ${a.sev}" style="margin-bottom:8px;cursor:pointer" data-goto="${a.mod}"><span class="sv"></span><div class="b"><div class="t">${esc(a.t)}</div>${a.d?`<div class="d">${esc(a.d)}</div>`:""}</div></div>`).join(""):'<div class="empty">Không có cảnh báo</div>'}</div>
+   <div><h2 class="sec">Báo cáo ngày ${dm(d2>today?today:d2)} <small>${entered}/${sum.length} vị trí đã nhập</small></h2>
+    <div class="tbl"><table><tr><th>Vị trí</th><th>Tên</th><th>Trạng thái</th></tr>${sum.map(s=>`<tr><td class="mono">${esc(s.report_code)}</td><td>${esc(s.position_name)}</td><td>${s.entered?`<span class="pill p-ok">Đã nhập ${s.last_edit_at?new Date(s.last_edit_at).toLocaleTimeString("vi-VN",{hour:"2-digit",minute:"2-digit"}):""}</span>`:closed?'<span class="pill p-bad">CHƯA BÁO CÁO</span>':'<span class="pill p-none">Chưa nhập</span>'}</td></tr>`).join("")}</table></div></div>
+  </div>
+  <h2 class="sec">Theo line <small>${repLines}/${S.lines.length} line có báo cáo trong kỳ</small></h2>
+  <div class="tbl"><table><tr><th>Line</th><th class="num">KH</th><th class="num">Đạt</th><th class="num">% KH</th><th class="num">NG thao tác</th><th class="num">NG NCC</th><th class="num">Năng suất / ĐM</th><th class="num">Dừng SX báo</th><th class="num">Dừng CĐ</th></tr>
+  ${S.lines.map(l=>`<tr><td><b>${esc(l.name)}</b></td><td class="num">${l.plan_rows?fmt(l.plan):"—"}</td><td class="num">${l.n_rows?fmt(l.good):"—"}</td><td class="num">${kh(l)!=null?`<span class="pill p-${judge("out",kh(l),1).s}">${fmt(kh(l),1)}%</span>`:"—"}</td>
+   <td class="num">${l.n_rows?fmt(ldPct(l.ng_op,out(l)),2)+"%":"—"}</td><td class="num">${l.n_rows?fmt(ldPct(l.ng_sup,out(l)),2)+"%":"—"}</td><td class="num">${ns(l)!=null?`<span class="pill p-${judge("prod",ns(l),1).s}">${fmt(ns(l),0)}%</span>`:"—"}</td>
+   <td class="num">${l.n_rows?fmt(l.dt_sx)+"'":"—"}</td><td class="num">${l.dt_cd?fmt(l.dt_cd)+"'":"—"}</td></tr>`).join("")}</table></div>
+  ${tr.length>1?`<h2 class="sec">Diễn biến theo ngày <small>cột = sản lượng đạt · vạch = kế hoạch · số = năng suất % định mức</small></h2>
+  <div class="card" style="display:flex;gap:6px;align-items:flex-end;overflow-x:auto;min-height:150px">${tr.map(t=>{const h=(+t.good||0)/mx*110,hp=(+t.plan||0)/mx*110,n=t.man_hours?t.std_hours/t.man_hours*100:null;
+    return `<div style="flex:1 0 26px;display:flex;flex-direction:column;align-items:center;gap:3px" title="${dmy(t.d)}: đạt ${fmt(t.good)} / KH ${fmt(t.plan)}"><span class="small">${n==null?"":fmt(n,0)}</span>
+     <div style="position:relative;width:18px;height:110px"><div style="position:absolute;bottom:0;width:100%;height:${h}px;background:var(--${judge("prod",n,1).s==="none"?"accent":judge("prod",n,1).s});border-radius:3px 3px 0 0"></div>${t.plan?`<div style="position:absolute;bottom:${hp}px;left:-3px;right:-3px;border-top:2px solid var(--fg)"></div>`:""}</div>
+     <span class="small">${t.d.slice(8,10)}</span></div>`}).join("")}</div>`:""}
+  <div class="two" style="margin-top:4px">
+   <div><h2 class="sec">Lỗi theo loại (QAC PQC)</h2>${S.defects.length?(()=>{const m=Math.max(...S.defects.map(x=>+x.qty));return `<div class="card">${S.defects.map(x=>`<div style="display:flex;align-items:center;gap:8px;margin:4px 0"><span style="flex:0 0 46%;min-width:0">${esc(x.name)} <span class="small">${x.source==="op"?"thao tác":"NCC"}</span></span><span style="flex:1;background:var(--sunk);border-radius:4px;height:10px"><span style="display:block;height:10px;border-radius:4px;width:${x.qty/m*100}%;background:var(--${x.source==="op"?"warn":"bad"})"></span></span><b class="num">${fmt(x.qty)}</b></div>`).join("")}</div>`})():'<div class="empty">QAC chưa nhập phiếu PQC trong kỳ</div>'}</div>
+   <div><h2 class="sec">Mã sản lượng lớn nhất</h2>${S.top_codes.length?`<div class="tbl"><table><tr><th>Mã</th><th class="num">Đạt</th><th class="num">NG</th><th class="num">NS / ĐM</th></tr>${S.top_codes.map(c=>`<tr><td class="mono" title="${esc(c.name||"")}">${esc(c.code)}</td><td class="num">${fmt(c.good)}</td><td class="num">${fmt(+c.ng_op + +c.ng_sup)}</td><td class="num">${c.prod_pct==null?"—":`<span class="pill p-${judge("prod",+c.prod_pct,1).s}">${fmt(+c.prod_pct,0)}%</span>`}${c.no_norm?' <span class="pill p-warn">thiếu ĐM</span>':""}</td></tr>`).join("")}</table></div>`:'<div class="empty">Chưa có báo cáo sản xuất</div>'}</div>
+  </div>`;
+}
+function bindDashLive(){
+  const today=ME.today||todayISO();
+  document.querySelectorAll("[data-lper]").forEach(b=>b.onclick=()=>{LD.period=b.dataset.lper;render()});
+  $("#ldDate").onchange=e=>{LD.date=e.target.value||today;render()};
+  const step=dir=>{if(LD.period==="day")return addDays(LD.date,dir);if(LD.period==="week")return addDays(LD.date,7*dir);const d=D0(LD.date.slice(0,8)+"01");d.setUTCMonth(d.getUTCMonth()+dir);return isoOf(d)};
+  $("#ldPrev").onclick=()=>{LD.date=step(-1);render()};$("#ldNext").onclick=()=>{const s=step(1);LD.date=s>today?today:s;render()};
+  $("#ldScope").onchange=e=>{LD.scope=e.target.value;render()};
+  $("#ldDemo").onclick=()=>{LD.demo=true;render()};
+  document.querySelectorAll("[data-goto]").forEach(b=>b.onclick=()=>{const m=b.dataset.goto;if(allowedMods().includes(m)){ST.screen=m;render();window.scrollTo(0,0)}});
+}
 const MODS=[["dash","Tổng quan nhà máy",2],["sum","Tổng hợp báo cáo ngày",4],["mydept","Bộ phận của tôi",3],["task","Giao việc",4],["mine","Công việc của tôi",3],["daily","Báo cáo hằng ngày",4],["sx","Sản xuất",5],["qc","Chất lượng",5],["kho","Kho",5],["kh","Kế hoạch",5],["kt","Kỹ thuật",5],["bt","Bảo trì",5],["gt","Giá thành",5],["bh","Bảo hành",5],["ns","Nhân sự",5],["kpi","KPI",6],["5s","3S",5],["vd","Vấn đề và cải tiến",6],["lich","Lịch điều hành",6],["acc","Quản lý tài khoản",3],["cfg","Cấu hình hệ thống",3]];
 const DEPT_MOD={SX:"sx",QAC:"qc",KHO:"kho",KHSX:"kh",KT:"kt",CD:"bt",KTGT:"gt",BHM:"bh",BHN:"bh",HCNS:"ns"};
 const BUILT=["dash","sum","mydept","task","mine","daily","sx","qc","bt","kho","ns","5s","acc","cfg"];
@@ -2093,7 +2180,8 @@ async function render(){
   if(!allowedMods().includes(ST.screen))ST.screen=homeMod();
   const mod=MODS.find(x=>x[0]===ST.screen)||MODS[0];const main=$("#main");
   try{
-    if(ST.screen==="dash"){main.innerHTML=viewDash();bindDash()}
+    if(ST.screen==="dash"&&RUN==="LIVE"&&!LD.demo){const h=await viewDashLive();if(seq!==renderSeq)return;main.innerHTML=h;bindDashLive()}
+    else if(ST.screen==="dash"){main.innerHTML=(RUN==="LIVE"?`<div class="alert warn" style="margin-bottom:10px"><span class="sv"></span><div class="b"><div class="t">Đang xem BẢN MẪU GĐ2 – số liệu giả lập</div><div class="d"><button class="btn" type="button" id="ldBack" style="margin-top:4px">Về số liệu thật</button></div></div></div>`:"")+viewDash();bindDash();const lb=$("#ldBack");if(lb)lb.onclick=()=>{LD.demo=false;render()}}
     else if(ST.screen==="cfg"){const h=await viewConfig();if(seq!==renderSeq)return;main.innerHTML=h;bindConfig()}
     else if(ST.screen==="acc"){const h=await viewAccounts();if(seq!==renderSeq)return;main.innerHTML=h;bindAccounts()}
     else if(ST.screen==="mydept"){const h=await viewMyDept();if(seq!==renderSeq)return;main.innerHTML=h}
@@ -2116,8 +2204,8 @@ function startApp(){
   showView("appView");
   $("#user").innerHTML=`${esc(ME.full_name)}<small>${esc(ME.username)} · ${esc(ME.position_name)}</small>`;
   const c=$("#conn");c.classList.toggle("live",RUN==="LIVE");
-  c.textContent=RUN==="LIVE"?"Đã kết nối máy chủ · số liệu SX mẫu đến GĐ5":"DEMO · dùng thử, không lưu máy chủ";
-  ST.screen=homeMod();cfgTab="tbp";RP.code=null;RP.date=null;RP.editIssue=RP.editPlan=RP.editSr=null;SM.date=null;SXF.date=null;SXF.line=null;SXF.edit=null;SXF.assignOpen=false;SXF.unlockOpen=false;SX_CACHE=null;Object.keys(FM).forEach(k=>delete FM[k]);NM.q="";NM.f="all";NM.page=0;NM.dirty={};NM.bulkOpen=false;FS.date=null;FS.per="week";FS.tab="stat";FS.fstat="open";FS.fs="";FS.newOpen=false;FS.newS="";FS_CRIT=null;GV.f="open";GV.pos="";GV.q="";accQ="";accDept="";ACC_SECRET=null;accConfirm=null;render();
+  c.textContent=RUN==="LIVE"?"Đã kết nối máy chủ · số liệu thật":"DEMO · dùng thử, không lưu máy chủ";
+  ST.screen=homeMod();cfgTab="tbp";RP.code=null;RP.date=null;RP.editIssue=RP.editPlan=RP.editSr=null;SM.date=null;SXF.date=null;SXF.line=null;SXF.edit=null;SXF.assignOpen=false;SXF.unlockOpen=false;SX_CACHE=null;Object.keys(FM).forEach(k=>delete FM[k]);NM.q="";NM.f="all";NM.page=0;NM.dirty={};NM.bulkOpen=false;FS.date=null;FS.per="week";FS.tab="stat";FS.fstat="open";FS.fs="";FS.newOpen=false;FS.newS="";FS_CRIT=null;LD.period="day";LD.date=null;LD.scope="all";LD.demo=false;GV.f="open";GV.pos="";GV.q="";accQ="";accDept="";ACC_SECRET=null;accConfirm=null;render();
 }
 $("#logout").onclick=()=>logout();
 $("#bell").onclick=e=>{e.stopPropagation();const p=$("#notif");p.hidden=!p.hidden;$("#bell").setAttribute("aria-expanded",String(!p.hidden))};
