@@ -1,4 +1,6 @@
 -- Danh mục sản phẩm từ Báo cáo định mức Bravo 8 (xuất 26/10/2026). Chạy lại được.
+-- Định mức GĐNM đã sửa trong Cấu hình (norm_manual) được giữ nguyên khi nạp lại.
+alter table public.products add column if not exists norm_manual boolean not null default false;
 insert into public.products(code,name,norm_per_hour,is_semi,source,synced_at) values
 ('ARM-041-VTL','ARM-041-VTL',null,false,'bravo-xlsx',now()),
 ('TLC-AMC-VV-07W-04','Âm tràn mặt cong 7w trung tính - mặt vàng',181,false,'bravo-xlsx',now()),
@@ -1647,4 +1649,4 @@ insert into public.products(code,name,norm_per_hour,is_semi,source,synced_at) va
 ('TLC-DLL-RN3000','Thanh ray nam châm âm trần RN3000',null,false,'bravo-xlsx',now()),
 ('VP107-WM-VTL','VP107-WM-VTL',null,false,'bravo-xlsx',now()),
 ('WM12','WM12-T100LED-VTL',null,false,'bravo-xlsx',now())
-on conflict (code) do update set name=excluded.name, norm_per_hour=excluded.norm_per_hour, is_semi=excluded.is_semi, source=excluded.source, synced_at=excluded.synced_at;
+on conflict (code) do update set name=excluded.name, norm_per_hour=case when public.products.norm_manual then public.products.norm_per_hour else excluded.norm_per_hour end, is_semi=excluded.is_semi, source=excluded.source, synced_at=excluded.synced_at;

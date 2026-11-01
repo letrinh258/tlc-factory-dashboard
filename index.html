@@ -942,11 +942,12 @@ if(SB)SB.auth.onAuthStateChange(ev=>{if(ev==="SIGNED_OUT"&&RUN==="LIVE"){ME=null
 const THN={out:["Hoàn thành KH sản lượng","%",1],def:["Tỷ lệ lỗi tổng","%",-1],defOp:["Tỷ lệ NG thao tác","%",-1],defSup:["Tỷ lệ NG nhà cung cấp","%",-1],prod:["Năng suất theo định mức từng mã","%",1],otd:["OTD","%",1],inv:["Giá trị tồn tối đa","tỷ đ",-1],cogs:["COGS / doanh thu","%",-1],dt:["Dừng máy toàn NM / ngày","phút",-1],fpy:["FPY","%",1],hr:["Đáp ứng nhân lực","%",1],war:["Thời gian xử lý bảo hành","ngày",-1],warRate:["Tỷ lệ lỗi bảo hành (BH / bán ra)","%",-1]};
 const HSTAT={on:"Đang làm việc",leave:"Nghỉ tạm thời",vacant:"Nghỉ việc / chưa tuyển"};
 let cfgTab="tbp",CFG_CACHE=null;
-const CFGTABS=[["tbp","Trưởng bộ phận & kiêm nhiệm"],["kpi","Ngưỡng KPI"],["line","Line & quy tắc"],["bravo","Kết nối Bravo"]];
+const CFGTABS=[["tbp","Trưởng bộ phận & kiêm nhiệm"],["kpi","Ngưỡng KPI"],["line","Line & quy tắc"],["norm","Định mức năng suất"],["bravo","Kết nối Bravo"]];
 const dmyS=iso=>iso?iso.slice(8,10)+"/"+iso.slice(5,7)+"/"+iso.slice(0,4):"";
 function cfgHead(){return `<h2 class="sec" style="margin-top:0">Cấu hình hệ thống <small>Chỉ GĐNM sửa · ${RUN==="DEMO"?"DEMO: thay đổi chỉ nằm trên máy này":"Lưu trên máy chủ, có ghi lịch sử"}</small></h2>
   <div class="seg" role="tablist" style="margin-bottom:12px;flex-wrap:wrap">${CFGTABS.map(t=>`<button type="button" data-ct="${t[0]}" aria-pressed="${cfgTab===t[0]}">${t[1]}</button>`).join("")}</div>`}
 async function viewConfig(){
+  if(cfgTab==="norm")return cfgHead()+await viewNorms();
   if(cfgTab==="tbp"){
     let ap,profiles,hist;
     try{[ap,profiles,hist]=await Promise.all([api.approvers(),api.profiles(),api.history()])}
@@ -985,6 +986,7 @@ async function viewConfig(){
 function saveBar(){return `<div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;align-items:center"><button class="btn" id="cfgSave" type="button">Lưu cấu hình</button><button class="btn ghost" id="cfgReset" type="button">Khôi phục mặc định</button><span class="msg" id="cfgMsg" role="status"></span></div>`}
 function bindConfig(){
   document.querySelectorAll("[data-ct]").forEach(b=>b.onclick=()=>{cfgTab=b.dataset.ct;render()});
+  if(cfgTab==="norm"){bindNorms();return}
   document.querySelectorAll("[data-md]").forEach(el=>el.onchange=()=>{const k=el.dataset.md,m=el.value;$("#fr-"+k).disabled=m==="on";$("#to-"+k).disabled=m!=="leave";$("#ac-"+k).disabled=m==="on";if(m!=="on"&&!$("#fr-"+k).value)$("#fr-"+k).value=ME.today||todayISO()});
   document.querySelectorAll("[data-apply]").forEach(b=>b.onclick=async()=>{const k=+b.dataset.apply,m=$("#md-"+k).value,fr=$("#fr-"+k).value,to=$("#to-"+k).value,ac=$("#ac-"+k).value,msg=$("#hm-"+k);
     ["fr-","to-"].forEach(p=>$("#"+p+k).classList.remove("err"));
@@ -1564,7 +1566,7 @@ const SXF={date:null,line:null,edit:null,assignOpen:false,unlockOpen:false,prodQ
 let SX_CACHE=null; // danh mục SP, loại lỗi, nguyên nhân dừng máy – tải 1 lần mỗi phiên
 async function sxCache(){
   if(SX_CACHE)return SX_CACHE;
-  const page=(a,b)=>q(SB.from("products").select("code,name,norm_per_hour,is_semi").eq("active",true).order("code").range(a,b));
+  const page=(a,b)=>q(SB.from("products").select("code,name,norm_per_hour,is_semi,norm_manual,norm_updated_at").eq("active",true).order("code").range(a,b));
   const parts=[];for(let i=0;i<10;i++){const p=await page(i*1000,i*1000+999);parts.push(...p);if(p.length<1000)break}
   const[def,dt]=await Promise.all([q(SB.from("defect_types").select("id,name,stage,source").eq("active",true).order("id")),
     q(SB.from("app_settings").select("value").eq("key","downtime_reasons").maybeSingle())]);
@@ -1656,7 +1658,8 @@ async function viewSx(){
     <div style="grid-column:1/-1" class="small" id="f_calc"></div>
     <div style="grid-column:1/-1;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn" type="submit" id="f_save">Lưu</button><button class="btn ghost" type="button" id="f_cancel">Hủy</button><span class="msg" id="f_msg" role="status"></span></div>
    </form><datalist id="prodList">${C.prods.map(p=>`<option value="${esc(p.code)}">${esc(p.name)}</option>`).join("")}</datalist></div>`:""}
-  ${!myL.length&&ME.dept_code==="SX"?`<div class="ph-card" style="margin-top:10px">Tài khoản của bạn chưa được gán line. Liên hệ Trưởng phòng SX hoặc GĐNM.</div>`:""}`;
+  ${!myL.length&&ME.dept_code==="SX"?`<div class="ph-card" style="margin-top:10px">Tài khoản của bạn chưa được gán line. Liên hệ Trưởng phòng SX hoặc GĐNM.</div>`:""}
+  ${(manager||ME.dept_code!=="SX")?await reconHTML(D):""}`;
 }
 
 async function sxAssignHTML(){
@@ -1713,9 +1716,246 @@ function bindSx(){
       SXF.edit=null;toast("Đã lưu "+code);render()}
     catch(err){setMsg(m,sbErr(err),"bad");$("#f_save").disabled=false}});
 }
+/* ============================================================
+   GIAI ĐOẠN 5B – ĐỊNH MỨC TRONG CẤU HÌNH · FORM QAC / CƠ ĐIỆN / KHO / HCNS · ĐỐI CHIẾU
+   ============================================================ */
+/* ---------- Cấu hình → Định mức năng suất ---------- */
+const NM={q:"",f:"all",page:0,dirty:{},bulkOpen:false,note:""};
+async function viewNorms(){
+  if(RUN!=="LIVE")return `<div class="ph-card">Định mức lưu trên máy chủ. Dùng bản chạy thật để thiết lập.</div>`;
+  const C=await sxCache();const hist=await q(SB.from("norm_changes").select("product_code,old_norm,new_norm,note,changed_at").order("changed_at",{ascending:false}).limit(15));
+  const odd=p=>p.norm_per_hour!=null&&(p.norm_per_hour>300||p.norm_per_hour<5);
+  const cnt={all:C.prods.length,missing:C.prods.filter(p=>p.norm_per_hour==null).length,manual:C.prods.filter(p=>p.norm_manual).length,odd:C.prods.filter(odd).length};
+  const ql=NM.q.trim().toLowerCase();
+  const list=C.prods.filter(p=>(NM.f==="all"||(NM.f==="missing"&&p.norm_per_hour==null)||(NM.f==="manual"&&p.norm_manual)||(NM.f==="odd"&&odd(p)))&&(!ql||(p.code+" "+p.name).toLowerCase().includes(ql)));
+  const PS=50,pages=Math.max(1,Math.ceil(list.length/PS));if(NM.page>=pages)NM.page=pages-1;const rows=list.slice(NM.page*PS,NM.page*PS+PS);
+  const nDirty=Object.keys(NM.dirty).length;
+  return `<p class="small" style="margin:0 0 10px">Định mức năng suất (sp/người/giờ) dùng để tính năng suất theo từng mã ở Form A và Dashboard. Số anh sửa ở đây được giữ nguyên khi nạp lại dữ liệu Bravo. Để trống = dùng định mức mặc định <b>${fmt(sxStd())}</b> (sửa ở tab Line & quy tắc).</p>
+  <div class="tools"><input id="nmQ" type="search" placeholder="Tìm mã hoặc tên sản phẩm" value="${esc(NM.q)}" style="flex:1;min-width:180px" aria-label="Tìm sản phẩm">
+   <div class="seg" role="tablist">${[["all","Tất cả"],["missing","Thiếu định mức"],["odd","Định mức bất thường"],["manual","Đã sửa tay"]].map(([k,n])=>`<button type="button" data-nmf="${k}" aria-pressed="${NM.f===k}">${n} (${fmt(cnt[k])})</button>`).join("")}</div>
+   <button class="btn ghost" type="button" id="nmBulkBtn">Dán nhiều dòng</button></div>
+  ${NM.bulkOpen?`<div class="card" style="margin-bottom:10px"><h3>Dán định mức từ Excel <small>2 cột: Mã sản phẩm · Định mức. Mỗi dòng 1 mã</small></h3>
+    <textarea id="nmBulk" rows="6" style="width:100%;box-sizing:border-box;font-family:var(--mono,monospace)" placeholder="TLC-AMC-VV-07W-04	150&#10;TLACB/12W04	40"></textarea>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap"><input id="nmBulkNote" placeholder="Lý do thay đổi (bắt buộc)" style="flex:1;min-width:200px"><button class="btn" type="button" id="nmBulkGo">Lưu các dòng đã dán</button><span class="msg" id="nmBulkMsg"></span></div></div>`:""}
+  <div class="tbl"><table><tr><th>Mã sản phẩm</th><th>Tên</th><th class="num">Định mức (sp/người/giờ)</th><th>Ghi chú</th></tr>
+  ${rows.map(p=>{const v=p.code in NM.dirty?NM.dirty[p.code]:(p.norm_per_hour??"");return `<tr><td class="mono">${esc(p.code)}</td><td>${esc(p.name)}</td>
+    <td class="num"><input data-nm="${esc(p.code)}" value="${esc(String(v))}" inputmode="decimal" style="width:90px;text-align:right" placeholder="${fmt(sxStd())}" aria-label="Định mức ${esc(p.code)}"></td>
+    <td>${p.norm_per_hour==null?'<span class="pill p-warn">Thiếu – dùng mặc định</span>':odd(p)?'<span class="pill p-warn">Bất thường</span>':""}${p.norm_manual?` <span class="pill p-ok">GĐNM sửa ${p.norm_updated_at?dmyS(p.norm_updated_at.slice(0,10)):""}</span>`:""}${p.is_semi?' <span class="small">BTP</span>':""}</td></tr>`}).join("")||'<tr><td colspan="4"><div class="empty">Không có mã phù hợp</div></td></tr>'}</table></div>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px"><button class="btn ghost" type="button" id="nmPrev" ${NM.page?"":"disabled"}>‹ Trước</button><span class="small">Trang ${NM.page+1}/${pages} · ${fmt(list.length)} mã</span><button class="btn ghost" type="button" id="nmNext" ${NM.page<pages-1?"":"disabled"}>Sau ›</button></div>
+  <div class="card" style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><input id="nmNote" placeholder="Lý do thay đổi (bắt buộc)" value="${esc(NM.note)}" style="flex:1;min-width:200px"><button class="btn" type="button" id="nmSave" ${nDirty?"":"disabled"}>Lưu ${nDirty?nDirty+" thay đổi":""}</button><span class="msg" id="nmMsg"></span></div>
+  <h3 style="font-size:13px;margin-top:14px">Lịch sử thay đổi gần nhất</h3>
+  <div class="tbl"><table><tr><th>Thời gian</th><th>Mã</th><th class="num">Cũ</th><th class="num">Mới</th><th>Lý do</th></tr>${hist.map(h=>`<tr><td>${new Date(h.changed_at).toLocaleString("vi-VN")}</td><td class="mono">${esc(h.product_code)}</td><td class="num">${h.old_norm??"—"}</td><td class="num">${h.new_norm??"—"}</td><td>${esc(h.note||"")}</td></tr>`).join("")||'<tr><td colspan="5"><div class="empty">Chưa có thay đổi</div></td></tr>'}</table></div>`;
+}
+function bindNorms(){
+  const qi=$("#nmQ");if(!qi)return;
+  qi.oninput=e=>{NM.q=e.target.value;NM.page=0;const pos=e.target.selectionStart;render().then(()=>{const n=$("#nmQ");if(n){n.focus();n.setSelectionRange(pos,pos)}})};
+  document.querySelectorAll("[data-nmf]").forEach(b=>b.onclick=()=>{NM.f=b.dataset.nmf;NM.page=0;render()});
+  $("#nmPrev").onclick=()=>{NM.page--;render()};$("#nmNext").onclick=()=>{NM.page++;render()};
+  $("#nmBulkBtn").onclick=()=>{NM.bulkOpen=!NM.bulkOpen;render()};
+  $("#nmNote").oninput=e=>{NM.note=e.target.value};
+  document.querySelectorAll("[data-nm]").forEach(i=>i.oninput=()=>{const c=i.dataset.nm,p=SX_CACHE.byCode[c];const v=i.value.trim().replace(",",".");
+    if(String(p.norm_per_hour??"")===v)delete NM.dirty[c];else NM.dirty[c]=v;const n=Object.keys(NM.dirty).length;const s=$("#nmSave");s.disabled=!n;s.textContent="Lưu"+(n?" "+n+" thay đổi":"")});
+  const send=async(items,note,msgId)=>{
+    if(note.trim().length<3){setMsg(msgId,"Ghi lý do thay đổi","bad");return}
+    for(const it of items)if(it.norm!=null&&!(Number(it.norm)>0)){setMsg(msgId,`${it.code}: định mức phải là số > 0`,"bad");return}
+    setMsg(msgId,"Đang lưu…");
+    try{const r=await rpc("set_norms",{p_items:items,p_note:note.trim()});NM.dirty={};NM.note="";SX_CACHE=null;
+      toast(`Đã lưu ${r.saved} định mức`+(r.errors.length?` · ${r.errors.length} dòng lỗi`:""));await render();
+      if(r.errors.length)setMsg("nmMsg","Không lưu: "+r.errors.slice(0,5).join("; ")+(r.errors.length>5?"…":""),"bad")}
+    catch(e){setMsg(msgId,sbErr(e),"bad")}};
+  $("#nmSave").onclick=()=>send(Object.entries(NM.dirty).map(([code,v])=>({code,norm:v===""?null:Number(v)})),$("#nmNote").value,"nmMsg");
+  const bg=$("#nmBulkGo");if(bg)bg.onclick=()=>{const items=[];const bad=[];
+    $("#nmBulk").value.split(/\r?\n/).map(l=>l.trim()).filter(Boolean).forEach((l,i)=>{const m=l.split(/\t|;|,(?=\s*\d)|\s{2,}/).map(x=>x.trim()).filter(Boolean);
+      if(m.length<2||!(Number(m[m.length-1].replace(",","."))>0))bad.push(i+1);else items.push({code:m[0],norm:Number(m[m.length-1].replace(",","."))})});
+    if(bad.length){setMsg("nmBulkMsg","Dòng sai định dạng: "+bad.slice(0,10).join(", "),"bad");return}
+    if(!items.length){setMsg("nmBulkMsg","Chưa dán dòng nào","bad");return}
+    send(items,$("#nmBulkNote").value,"nmBulkMsg")};
+}
+
+/* ---------- khung chung cho form bộ phận ---------- */
+const FM={};const FORMDEPT={qc:"QAC",bt:"CD",kho:"KHO",ns:"HCNS"};
+async function formHead(mod,title,sub){
+  const dept=FORMDEPT[mod];const today=ME.today||todayISO();const st=FM[mod]=FM[mod]||{date:null,edit:null,unlockOpen:false,del:null,wh:"TP"};if(!st.date)st.date=today;const D=st.date;
+  const ed=await rpc("can_edit_form",{p_dept:dept,d:D});st.editable=!!ed;
+  return `<h2 class="sec" style="margin-top:0">${title} <small>${sub}</small></h2>
+  <div class="fbar" style="position:static"><span class="flabel">Ngày</span><div class="datebox"><button type="button" data-fd="-1" aria-label="Ngày trước">‹</button><input type="date" id="fmDate" value="${D}" max="${today}"><button type="button" data-fd="1" aria-label="Ngày sau">›</button></div>
+   ${ed?(D===today?'<span class="pill p-ok">Đang mở · tự khóa lúc 23:59</span>':'<span class="pill p-warn">GĐNM đã mở khóa</span>'):`<span class="pill p-none">${(ME.role==="admin"||ME.dept_code===dept)?"Đã khóa":"Chỉ xem"}</span>`}
+   ${ME.role==="admin"&&!ed&&D<today?'<button class="btn ghost" type="button" id="fmUnlockBtn">Mở khóa ngày này</button>':""}</div>
+  ${st.unlockOpen?`<div class="card" style="margin-bottom:10px"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end"><div class="fld"><label for="fmUlH">Trong (giờ)</label><input id="fmUlH" value="4" inputmode="numeric" style="width:80px"></div>
+    <div class="fld" style="flex:1;min-width:200px"><label for="fmUlR">Lý do</label><input id="fmUlR" placeholder="vd: bổ sung phiếu"></div><button class="btn" type="button" id="fmUlGo">Mở khóa</button><span class="msg" id="fmUlMsg"></span></div></div>`:""}`;
+}
+function bindFormHead(mod){
+  const st=FM[mod];const today=ME.today||todayISO();const go=()=>{st.edit=null;st.del=null;st.unlockOpen=false;render()};
+  const di=$("#fmDate");if(di)di.onchange=e=>{st.date=e.target.value||today;go()};
+  document.querySelectorAll("[data-fd]").forEach(b=>b.onclick=()=>{const d=new Date(st.date+"T00:00:00");d.setDate(d.getDate()+ +b.dataset.fd);const s=d.toISOString().slice(0,10);st.date=s>today?today:s;go()});
+  const ub=$("#fmUnlockBtn");if(ub)ub.onclick=()=>{st.unlockOpen=!st.unlockOpen;render()};
+  const ug=$("#fmUlGo");if(ug)ug.onclick=async()=>{const h=+$("#fmUlH").value||4,r=$("#fmUlR").value.trim();if(r.length<3){setMsg("fmUlMsg","Ghi lý do mở khóa","bad");return}
+    try{await rpc("unlock_report",{p_code:"FORM-"+FORMDEPT[mod],p_date:st.date,p_hours:h,p_reason:r});st.unlockOpen=false;toast("Đã mở khóa");render()}catch(e){setMsg("fmUlMsg",sbErr(e),"bad")}};
+  document.querySelectorAll("[data-fedit]").forEach(b=>b.onclick=()=>{st.edit=b.dataset.fedit==="new"?"new":+b.dataset.fedit;render()});
+  const fc=$("#fCancel");if(fc)fc.onclick=()=>{st.edit=null;render()};
+}
+function bindDelete(mod,fn){document.querySelectorAll("[data-fdel]").forEach(b=>b.onclick=async()=>{const st=FM[mod],id=+b.dataset.fdel;if(st.del!==id){st.del=id;render();return}
+  try{await rpc(fn,{p_id:id});st.del=null;toast("Đã xóa");render()}catch(e){toast(sbErr(e))}})}
+const lineOpts=(v,blank)=>(blank?`<option value="">${blank}</option>`:"")+(CFG.lines||[]).map((n,i)=>`<option value="${i+1}" ${+v===i+1?"selected":""}>${esc(n)}</option>`).join("");
+const lineNm=id=>id?((CFG.lines||[])[id-1]||"Line "+id):"—";
+const actBtns=(mod,id)=>`<button class="btn ghost" type="button" data-fedit="${id}" style="padding:3px 9px">Sửa</button> <button class="btn ghost" type="button" data-fdel="${id}" style="padding:3px 9px;color:var(--bad)">${FM[mod].del===id?"Xác nhận xóa?":"Xóa"}</button>`;
+const formBtns=`<div style="grid-column:1/-1;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn" type="submit" id="fSave">Lưu</button><button class="btn ghost" type="button" id="fCancel">Hủy</button><span class="msg" id="fMsg" role="status"></span></div>`;
+const GRID='style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;align-items:end"';
+function fErr(id,t){const el=$("#"+id);if(el)el.classList.add("err");setMsg("fMsg",t,"bad")}
+
+/* ---------- Đối chiếu tự động ---------- */
+async function reconHTML(D,flows){
+  let r;try{r=await rpc("recon",{d:D})}catch(e){return ""}
+  if(flows)r=r.filter(x=>flows.some(f=>x.flow.startsWith(f)));
+  const bad=r.filter(x=>x.flagged).length;
+  return `<h2 class="sec">Đối chiếu tự động ngày ${dmyS(D)} <small>${bad?`<span class="pill p-bad">${bad} điểm lệch</span>`:r.length?'<span class="pill p-ok">Khớp</span>':"Chưa có số liệu"} · ngưỡng ở Cấu hình → Line & quy tắc</small></h2>
+  ${r.length?`<div class="tbl"><table><tr><th>Luồng</th><th>Line</th><th>Mã</th><th class="num">Bên A</th><th class="num">Bên B</th><th class="num">Lệch</th><th></th></tr>
+  ${r.map(x=>`<tr><td>${esc(x.flow)}</td><td>${esc(lineNm(x.line_id))}</td><td class="mono">${esc(x.item||"")}</td><td class="num">${esc(x.label_a)}: <b>${fmt(x.qty_a)}</b></td><td class="num">${esc(x.label_b)}: <b>${fmt(x.qty_b)}</b></td>
+   <td class="num">${x.diff>0?"+":""}${fmt(x.diff)}</td><td>${x.flagged?'<span class="pill p-bad">Lệch – cần giải trình</span>':'<span class="pill p-ok">Khớp</span>'}</td></tr>`).join("")}</table></div>
+  <p class="small">SX → Kho TP: hàng làm cuối ca có thể nhập kho sáng hôm sau – ghi rõ ở cột ghi chú phiếu nhập. Bên nào lệch ghi giải trình ở mục 2 Báo cáo hằng ngày.</p>`:""}`;
+}
+
+/* ---------- FORM B – QAC ---------- */
+async function viewQc(){
+  if(RUN!=="LIVE")return liveOnly("Chất lượng – QAC");
+  const head=await formHead("qc","Chất lượng – Kiểm tra QAC","Form B · PQC/OQC theo line × mã · IQC theo vật tư × NCC · lỗi chia NG thao tác / NG NCC");
+  const st=FM.qc,D=st.date,C=await sxCache();
+  const rows=await q(SB.from("quality_reports").select("id,stage,line_id,product_code,material_code,supplier,inspected,rework,note,quality_defects(defect_type_id,qty)").eq("report_date",D).order("stage").order("line_id"));
+  const dn=id=>C.defects.find(d=>d.id===id)||{};const ng=(r,src)=>r.quality_defects.filter(x=>dn(x.defect_type_id).source===src).reduce((a,x)=>a+x.qty,0);
+  const ed=st.edit==="new"?{stage:"PQC",quality_defects:[]}:rows.find(r=>r.id===st.edit);const defs=(ed&&ed.quality_defects)||[];
+  const T={ins:0,op:0,sup:0};rows.forEach(r=>{T.ins+=r.inspected;T.op+=ng(r,"op");T.sup+=ng(r,"sup")});
+  return head+`<div class="mgrid" style="margin-bottom:10px">${[["Số phiếu kiểm",fmt(rows.length)],["Số lượng kiểm",fmt(T.ins)],["NG thao tác",fmt(T.op)+(T.ins?" · "+fmt(T.op/T.ins*100,2)+"%":"")],["NG nhà cung cấp",fmt(T.sup)+(T.ins?" · "+fmt(T.sup/T.ins*100,2)+"%":"")]].map(([l,v])=>`<div class="m"><div class="l">${l}</div><div class="v" style="font-size:16px">${v}</div></div>`).join("")}</div>
+  <div class="tbl"><table><tr><th>Công đoạn</th><th>Line</th><th>Mã SP / vật tư</th><th class="num">Kiểm</th><th class="num">NG thao tác</th><th class="num">NG NCC</th><th class="num">Sửa lại</th><th>Chi tiết lỗi</th>${st.editable?"<th></th>":""}</tr>
+  ${rows.map(r=>`<tr><td><b>${r.stage}</b></td><td>${esc(lineNm(r.line_id))}</td><td class="mono">${esc(r.product_code||r.material_code||"")}${r.supplier?`<br><span class="small">${esc(r.supplier)}</span>`:""}</td><td class="num">${fmt(r.inspected)}</td><td class="num">${fmt(ng(r,"op"))}</td><td class="num">${fmt(ng(r,"sup"))}</td><td class="num">${fmt(r.rework)}</td>
+   <td class="small">${r.quality_defects.map(x=>esc(dn(x.defect_type_id).name)+": "+x.qty).join("; ")||"—"}${r.note?"<br>"+esc(r.note):""}</td>${st.editable?`<td style="white-space:nowrap">${actBtns("qc",r.id)}</td>`:""}</tr>`).join("")||`<tr><td colspan="9"><div class="empty">Chưa có phiếu kiểm ngày ${dmyS(D)}</div></td></tr>`}</table></div>
+  ${st.editable&&!ed?'<button class="btn" type="button" data-fedit="new" style="margin-top:8px">+ Thêm phiếu kiểm</button>':""}
+  ${st.editable&&ed?`<div class="card" style="margin-top:10px"><h3>${st.edit==="new"?"Thêm phiếu kiểm":"Sửa phiếu "+esc(ed.stage)}</h3><form id="fForm" novalidate ${GRID}>
+   <div class="fld"><label for="q_stage">Công đoạn</label><select id="q_stage" ${st.edit!=="new"?"disabled":""}>${opt(["PQC","OQC","IQC"],ed.stage)}</select></div>
+   <div class="fld" data-pq><label for="q_line">Line</label><select id="q_line" ${st.edit!=="new"?"disabled":""}>${lineOpts(ed.line_id,"— Chọn line —")}</select></div>
+   <div class="fld" data-pq style="grid-column:span 2"><label for="q_prod">Mã sản phẩm</label><input id="q_prod" list="prodList" value="${esc(ed.product_code||"")}" ${st.edit!=="new"?"readonly":""} autocomplete="off"></div>
+   <div class="fld" data-iq><label for="q_mat">Mã vật tư</label><input id="q_mat" value="${esc(ed.material_code||"")}" ${st.edit!=="new"?"readonly":""}></div>
+   <div class="fld" data-iq><label for="q_sup">Nhà cung cấp</label><input id="q_sup" value="${esc(ed.supplier||"")}"></div>
+   <div class="fld"><label for="q_ins">SL kiểm</label><input id="q_ins" inputmode="numeric" value="${ed.inspected??""}"></div>
+   <div class="fld"><label for="q_rw">SL sửa lại</label><input id="q_rw" inputmode="numeric" value="${ed.rework??0}"></div>
+   ${[0,1,2,3].map(i=>`<div class="fld"><label for="q_t${i}">Loại lỗi ${i+1}</label><select id="q_t${i}"><option value="">—</option>${C.defects.map(d=>`<option value="${d.id}" ${(defs[i]||{}).defect_type_id===d.id?"selected":""}>${d.source==="op"?"[Thao tác]":"[NCC]"} ${esc(d.name)}</option>`).join("")}</select></div>
+     <div class="fld"><label for="q_n${i}">SL lỗi ${i+1}</label><input id="q_n${i}" inputmode="numeric" value="${(defs[i]||{}).qty??""}"></div>`).join("")}
+   <div class="fld" style="grid-column:1/-1"><label for="q_note">Ghi chú / nguyên nhân / hành động</label><input id="q_note" value="${esc(ed.note||"")}"></div>
+   ${formBtns}</form><datalist id="prodList">${C.prods.map(p=>`<option value="${esc(p.code)}">${esc(p.name)}</option>`).join("")}</datalist></div>`:""}
+  ${await reconHTML(D,["NG"])}`;
+}
+function bindQc(){bindFormHead("qc");bindDelete("qc","delete_qc");const f=$("#fForm");if(!f)return;
+  const tog=()=>{const iq=$("#q_stage").value==="IQC";f.querySelectorAll("[data-pq]").forEach(x=>x.hidden=iq);f.querySelectorAll("[data-iq]").forEach(x=>x.hidden=!iq)};$("#q_stage").onchange=tog;tog();
+  f.addEventListener("submit",async e=>{e.preventDefault();f.querySelectorAll(".err").forEach(x=>x.classList.remove("err"));
+    const stg=$("#q_stage").value,iq=stg==="IQC",ins=numOrNull($("#q_ins").value),rw=numOrNull($("#q_rw").value);
+    if(!iq&&!$("#q_line").value)return fErr("q_line","Chọn line.");
+    if(!iq&&!SX_CACHE.byCode[$("#q_prod").value.trim()])return fErr("q_prod","Chọn mã sản phẩm có trong danh mục.");
+    if(iq&&!$("#q_mat").value.trim())return fErr("q_mat","Nhập mã vật tư.");
+    if(!(ins>0))return fErr("q_ins","Nhập số lượng kiểm.");if(Number.isNaN(rw)||rw<0)return fErr("q_rw","Số sửa lại không âm.");
+    const defs=[];for(let i=0;i<4;i++){const t=$("#q_t"+i).value,n=numOrNull($("#q_n"+i).value);if(!t&&n==null)continue;if(!t)return fErr("q_t"+i,"Chọn loại lỗi.");if(!(n>0)||!Number.isInteger(n))return fErr("q_n"+i,"SL lỗi là số nguyên > 0.");defs.push({type:+t,qty:n})}
+    if(defs.reduce((a,x)=>a+x.qty,0)>ins)return fErr("q_ins","Tổng lỗi lớn hơn số kiểm.");
+    $("#fSave").disabled=true;setMsg("fMsg","Đang lưu…");
+    try{await rpc("save_qc",{d:FM.qc.date,p_stage:stg,p_line:iq?null:+$("#q_line").value,p_product:iq?null:$("#q_prod").value.trim(),p_material:iq?$("#q_mat").value.trim():null,p_supplier:iq?$("#q_sup").value.trim():null,p_inspected:ins,p_rework:rw||0,p_defects:defs,p_note:$("#q_note").value.trim()||null});
+      FM.qc.edit=null;toast("Đã lưu phiếu kiểm");render()}catch(err){setMsg("fMsg",sbErr(err),"bad");$("#fSave").disabled=false}})}
+
+/* ---------- FORM C – CƠ ĐIỆN ---------- */
+const MTK=[["breakdown","Sự cố / hỏng máy"],["pm","Bảo dưỡng định kỳ"],["improvement","Cải tiến"]];
+const hhmm=ts=>ts?new Date(ts).toLocaleTimeString("vi-VN",{hour:"2-digit",minute:"2-digit",hour12:false,timeZone:"Asia/Ho_Chi_Minh"}):"";
+async function viewMt(){
+  if(RUN!=="LIVE")return liveOnly("Bảo trì – Cơ điện");
+  const head=await formHead("bt","Bảo trì – Cơ điện","Form C · mỗi lần dừng máy 1 phiếu · giờ bắt đầu – kết thúc · tự tính phút dừng");
+  const st=FM.bt,D=st.date;
+  const rows=await q(SB.from("maintenance_reports").select("id,line_id,equipment_name,kind,start_at,end_at,downtime_min,cause,action,parts").eq("report_date",D).order("start_at"));
+  const ed=st.edit==="new"?{kind:"breakdown"}:rows.find(r=>r.id===st.edit);
+  const brk=rows.filter(r=>r.kind==="breakdown");
+  return head+`<div class="mgrid" style="margin-bottom:10px">${[["Số lần sự cố",fmt(brk.length)],["Tổng phút dừng (sự cố)",fmt(brk.reduce((a,r)=>a+r.downtime_min,0))],["Sự cố chưa xong",fmt(brk.filter(r=>!r.end_at).length)],["Bảo dưỡng / cải tiến",fmt(rows.length-brk.length)]].map(([l,v])=>`<div class="m"><div class="l">${l}</div><div class="v" style="font-size:16px">${v}</div></div>`).join("")}</div>
+  <div class="tbl"><table><tr><th>Line</th><th>Thiết bị</th><th>Loại</th><th>Bắt đầu – kết thúc</th><th class="num">Phút</th><th>Nguyên nhân</th><th>Xử lý · vật tư thay</th>${st.editable?"<th></th>":""}</tr>
+  ${rows.map(r=>`<tr><td>${esc(lineNm(r.line_id))}</td><td>${esc(r.equipment_name||"")}</td><td>${esc(ttName(MTK,r.kind))}</td><td>${hhmm(r.start_at)} – ${r.end_at?hhmm(r.end_at):'<span class="pill p-bad">Chưa xong</span>'}</td><td class="num">${fmt(r.downtime_min)}</td><td>${esc(r.cause||"")}</td><td>${esc(r.action||"")}${r.parts?`<br><span class="small">${esc(r.parts)}</span>`:""}</td>${st.editable?`<td style="white-space:nowrap">${actBtns("bt",r.id)}</td>`:""}</tr>`).join("")||`<tr><td colspan="8"><div class="empty">Chưa có phiếu ngày ${dmyS(D)}</div></td></tr>`}</table></div>
+  ${st.editable&&!ed?'<button class="btn" type="button" data-fedit="new" style="margin-top:8px">+ Thêm phiếu</button>':""}
+  ${st.editable&&ed?`<div class="card" style="margin-top:10px"><h3>${st.edit==="new"?"Thêm phiếu":"Sửa phiếu"}</h3><form id="fForm" novalidate ${GRID}>
+   <div class="fld"><label for="m_kind">Loại</label><select id="m_kind">${opt(MTK,ed.kind)}</select></div>
+   <div class="fld"><label for="m_line">Line</label><select id="m_line">${lineOpts(ed.line_id,"Chung / không thuộc line")}</select></div>
+   <div class="fld" style="grid-column:span 2"><label for="m_eq">Máy / thiết bị</label><input id="m_eq" value="${esc(ed.equipment_name||"")}" placeholder="vd: Máy hàn sóng"></div>
+   <div class="fld"><label for="m_s">Bắt đầu (HH:MM)</label><input id="m_s" type="time" value="${hhmm(ed.start_at)}"></div>
+   <div class="fld"><label for="m_e">Kết thúc (HH:MM)</label><input id="m_e" type="time" value="${hhmm(ed.end_at)}"><span class="small">Để trống nếu chưa sửa xong</span></div>
+   <div class="fld" style="grid-column:1/-1"><label for="m_c">Nguyên nhân</label><input id="m_c" value="${esc(ed.cause||"")}"></div>
+   <div class="fld" style="grid-column:span 2"><label for="m_a">Cách xử lý</label><input id="m_a" value="${esc(ed.action||"")}"></div>
+   <div class="fld" style="grid-column:span 2"><label for="m_p">Vật tư / phụ tùng thay</label><input id="m_p" value="${esc(ed.parts||"")}"></div>
+   ${formBtns}</form></div>`:""}
+  ${await reconHTML(D,["Dừng máy"])}`;
+}
+function bindMt(){bindFormHead("bt");bindDelete("bt","delete_mt");const f=$("#fForm");if(!f)return;
+  f.addEventListener("submit",async e=>{e.preventDefault();f.querySelectorAll(".err").forEach(x=>x.classList.remove("err"));
+    const k=$("#m_kind").value,s=$("#m_s").value,en=$("#m_e").value;
+    if(!$("#m_eq").value.trim())return fErr("m_eq","Nhập tên máy / thiết bị.");if(!s)return fErr("m_s","Nhập giờ bắt đầu.");
+    if(en&&en<=s)return fErr("m_e","Giờ kết thúc phải sau giờ bắt đầu.");if(k==="breakdown"&&!$("#m_c").value.trim())return fErr("m_c","Ghi nguyên nhân hỏng.");
+    $("#fSave").disabled=true;setMsg("fMsg","Đang lưu…");
+    try{await rpc("save_mt",{p_id:FM.bt.edit==="new"?null:FM.bt.edit,d:FM.bt.date,p_line:$("#m_line").value?+$("#m_line").value:null,p_equipment:$("#m_eq").value.trim(),p_kind:k,p_start:s.slice(0,5),p_end:en?en.slice(0,5):null,p_cause:$("#m_c").value.trim()||null,p_action:$("#m_a").value.trim()||null,p_parts:$("#m_p").value.trim()||null});
+      FM.bt.edit=null;toast("Đã lưu phiếu");render()}catch(err){setMsg("fMsg",sbErr(err),"bad");$("#fSave").disabled=false}})}
+
+/* ---------- FORM D – KHO ---------- */
+const WHK={receipt_sx:"Nhập kho từ SX",shortage:"Thiếu vật tư",ng_return:"NG trả về / chờ trả NCC"};
+async function viewWh(){
+  if(RUN!=="LIVE")return liveOnly("Kho");
+  const head=await formHead("kho","Kho","Form D · Kho TP: nhập kho từ SX theo line × mã · Kho LK: vật tư thiếu, hàng NG trả về");
+  const st=FM.kho,D=st.date,C=await sxCache(),W=st.wh;
+  const rows=await q(SB.from("wh_entries").select("*").eq("report_date",D).eq("warehouse",W).order("kind").order("line_id").order("id"));
+  const ed=st.edit==="new"?{kind:W==="TP"?"receipt_sx":"shortage"}:rows.find(r=>r.id===st.edit);
+  return head+`<div class="seg" role="tablist" style="margin-bottom:10px">${[["TP","Kho thành phẩm"],["LK","Kho linh kiện"]].map(([k,n])=>`<button type="button" data-wh="${k}" aria-pressed="${W===k}">${n}</button>`).join("")}</div>
+  <div class="tbl"><table><tr><th>Loại</th><th>Line</th><th>Mã hàng</th><th class="num">Số lượng</th><th>Số phiếu / lệnh</th>${W==="LK"?"<th>Ngày dự kiến có</th>":""}<th>Ghi chú</th>${st.editable?"<th></th>":""}</tr>
+  ${rows.map(r=>`<tr><td>${WHK[r.kind]}</td><td>${esc(lineNm(r.line_id))}</td><td class="mono">${esc(r.item_code)}${C.byCode[r.item_code]?`<br><span class="small">${esc(C.byCode[r.item_code].name)}</span>`:""}</td><td class="num">${fmt(r.qty)}</td><td>${esc(r.ref||"")}</td>${W==="LK"?`<td>${r.expected_date?dmyS(r.expected_date):"—"}</td>`:""}<td>${esc(r.note||"")}</td>${st.editable?`<td style="white-space:nowrap">${actBtns("kho",r.id)}</td>`:""}</tr>`).join("")||`<tr><td colspan="8"><div class="empty">Chưa có phiếu ngày ${dmyS(D)}</div></td></tr>`}</table></div>
+  ${st.editable&&!ed?'<button class="btn" type="button" data-fedit="new" style="margin-top:8px">+ Thêm phiếu</button>':""}
+  ${st.editable&&ed?`<div class="card" style="margin-top:10px"><h3>${st.edit==="new"?"Thêm phiếu":"Sửa phiếu"} · ${W==="TP"?"Kho thành phẩm":"Kho linh kiện"}</h3><form id="fForm" novalidate ${GRID}>
+   <div class="fld"><label for="w_kind">Loại phiếu</label><select id="w_kind" ${st.edit!=="new"?"disabled":""}>${opt((W==="TP"?["receipt_sx"]:["shortage","ng_return"]).map(k=>[k,WHK[k]]),ed.kind)}</select></div>
+   <div class="fld"><label for="w_line">Line ${W==="TP"?"giao hàng":"liên quan"}</label><select id="w_line">${lineOpts(ed.line_id,W==="TP"?"— Chọn line —":"Không gắn line")}</select></div>
+   <div class="fld" style="grid-column:span 2"><label for="w_item">${W==="TP"?"Mã thành phẩm":"Mã vật tư"}</label><input id="w_item" ${W==="TP"?'list="prodList"':""} value="${esc(ed.item_code||"")}" autocomplete="off"></div>
+   <div class="fld"><label for="w_qty">Số lượng</label><input id="w_qty" inputmode="decimal" value="${ed.qty??""}"></div>
+   <div class="fld"><label for="w_ref">${W==="TP"?"Số phiếu nhập":"Lệnh SX / PO"}</label><input id="w_ref" value="${esc(ed.ref||"")}"></div>
+   ${W==="LK"?`<div class="fld"><label for="w_exp">Ngày dự kiến có hàng</label><input id="w_exp" type="date" value="${ed.expected_date||""}"></div>`:""}
+   <div class="fld" style="grid-column:1/-1"><label for="w_note">Ghi chú</label><input id="w_note" value="${esc(ed.note||"")}"></div>
+   ${formBtns}</form>${W==="TP"?`<datalist id="prodList">${C.prods.map(p=>`<option value="${esc(p.code)}">${esc(p.name)}</option>`).join("")}</datalist>`:""}</div>`:""}
+  ${W==="TP"?await reconHTML(D,["SX → Kho TP"]):""}`;
+}
+function bindWh(){bindFormHead("kho");bindDelete("kho","delete_wh");
+  document.querySelectorAll("[data-wh]").forEach(b=>b.onclick=()=>{FM.kho.wh=b.dataset.wh;FM.kho.edit=null;render()});
+  const f=$("#fForm");if(!f)return;const W=FM.kho.wh;
+  f.addEventListener("submit",async e=>{e.preventDefault();f.querySelectorAll(".err").forEach(x=>x.classList.remove("err"));
+    const item=$("#w_item").value.trim(),qty=numOrNull($("#w_qty").value);
+    if(W==="TP"&&!$("#w_line").value)return fErr("w_line","Chọn line giao hàng.");
+    if(!item)return fErr("w_item","Nhập mã hàng.");if(W==="TP"&&!SX_CACHE.byCode[item])return fErr("w_item","Mã thành phẩm không có trong danh mục.");
+    if(!(qty>0))return fErr("w_qty","Số lượng phải > 0.");
+    $("#fSave").disabled=true;setMsg("fMsg","Đang lưu…");
+    try{await rpc("save_wh",{p_id:FM.kho.edit==="new"?null:FM.kho.edit,d:FM.kho.date,p_wh:W,p_kind:$("#w_kind").value,p_line:$("#w_line").value?+$("#w_line").value:null,p_item:item,p_qty:qty,p_ref:$("#w_ref").value.trim()||null,p_expected:W==="LK"&&$("#w_exp").value||null,p_note:$("#w_note").value.trim()||null});
+      FM.kho.edit=null;toast("Đã lưu phiếu");render()}catch(err){setMsg("fMsg",sbErr(err),"bad");$("#fSave").disabled=false}})}
+
+/* ---------- FORM E – HCNS ---------- */
+async function viewHr(){
+  if(RUN!=="LIVE")return liveOnly("Nhân sự – HCNS");
+  const head=await formHead("ns","Nhân sự – HCNS","Form E · nhân lực trong ngày · 1 phiếu / ngày");
+  const st=FM.ns,D=st.date;const r=await q(SB.from("hr_reports").select("*").eq("report_date",D).maybeSingle())||{};
+  const ro=st.editable?"":"disabled";
+  return head+`<div class="card"><form id="fForm" novalidate ${GRID}>
+   <div class="fld"><label for="h_t">Tổng định biên</label><input id="h_t" inputmode="numeric" value="${r.total??""}" ${ro}></div>
+   <div class="fld"><label for="h_p">Đi làm thực tế</label><input id="h_p" inputmode="numeric" value="${r.present??""}" ${ro}></div>
+   <div class="fld"><label>Vắng (tự tính)</label><div id="h_a" style="padding:8px 0;font-weight:600">${r.absent??"—"}</div></div>
+   <div class="fld"><label for="h_n">Tuyển mới vào làm</label><input id="h_n" inputmode="numeric" value="${r.new_hires??0}" ${ro}></div>
+   <div class="fld"><label for="h_q">Nghỉ việc</label><input id="h_q" inputmode="numeric" value="${r.quits??0}" ${ro}></div>
+   <div class="fld"><label for="h_r">Đang tuyển (vị trí)</label><input id="h_r" inputmode="numeric" value="${r.recruiting??0}" ${ro}></div>
+   <div class="fld" style="grid-column:1/-1"><label for="h_note">Ghi chú (vắng theo bộ phận, lý do)</label><input id="h_note" value="${esc(r.note||"")}" ${ro}></div>
+   ${st.editable?`<div style="grid-column:1/-1;display:flex;gap:8px;align-items:center"><button class="btn" type="submit" id="fSave">Lưu</button><span class="msg" id="fMsg" role="status"></span>${r.updated_at?`<span class="small">Cập nhật ${new Date(r.updated_at).toLocaleTimeString("vi-VN",{hour:"2-digit",minute:"2-digit"})}</span>`:""}</div>`:""}
+  </form></div>`;
+}
+function bindHr(){bindFormHead("ns");const f=$("#fForm");if(!f||!$("#fSave"))return;
+  const calc=()=>{const t=numOrNull($("#h_t").value),p=numOrNull($("#h_p").value);$("#h_a").textContent=t>0&&p!=null&&p>=0?(t-p)+(t?" · "+fmt((t-p)/t*100,1)+"%":""):"—"};
+  ["h_t","h_p"].forEach(i=>$("#"+i).oninput=calc);calc();
+  f.addEventListener("submit",async e=>{e.preventDefault();f.querySelectorAll(".err").forEach(x=>x.classList.remove("err"));
+    const v={};for(const k of ["h_t","h_p","h_n","h_q","h_r"]){v[k]=numOrNull($("#"+k).value);if(Number.isNaN(v[k])||(v[k]!=null&&(v[k]<0||!Number.isInteger(v[k]))))return fErr(k,"Nhập số nguyên không âm.")}
+    if(!(v.h_t>0))return fErr("h_t","Nhập tổng định biên.");if(v.h_p==null||v.h_p>v.h_t)return fErr("h_p","Đi làm phải từ 0 đến tổng định biên.");
+    $("#fSave").disabled=true;setMsg("fMsg","Đang lưu…");
+    try{await rpc("save_hr",{d:FM.ns.date,p_total:v.h_t,p_present:v.h_p,p_new:v.h_n||0,p_quits:v.h_q||0,p_recruiting:v.h_r||0,p_note:$("#h_note").value.trim()||null});toast("Đã lưu");render()}
+    catch(err){setMsg("fMsg",sbErr(err),"bad");$("#fSave").disabled=false}})}
 const MODS=[["dash","Tổng quan nhà máy",2],["sum","Tổng hợp báo cáo ngày",4],["mydept","Bộ phận của tôi",3],["task","Giao việc",4],["mine","Công việc của tôi",3],["daily","Báo cáo hằng ngày",4],["sx","Sản xuất",5],["qc","Chất lượng",5],["kho","Kho",5],["kh","Kế hoạch",5],["kt","Kỹ thuật",5],["bt","Bảo trì",5],["gt","Giá thành",5],["bh","Bảo hành",5],["ns","Nhân sự",5],["kpi","KPI",6],["5s","5S",5],["vd","Vấn đề và cải tiến",6],["lich","Lịch điều hành",6],["acc","Quản lý tài khoản",3],["cfg","Cấu hình hệ thống",3]];
 const DEPT_MOD={SX:"sx",QAC:"qc",KHO:"kho",KHSX:"kh",KT:"kt",CD:"bt",KTGT:"gt",BHM:"bh",BHN:"bh",HCNS:"ns"};
-const BUILT=["dash","sum","mydept","task","mine","daily","sx","acc","cfg"];
+const BUILT=["dash","sum","mydept","task","mine","daily","sx","qc","bt","kho","ns","acc","cfg"];
 function allowedMods(){
   if(!ME)return[];if(ME.role==="admin")return MODS.map(m=>m[0]).filter(k=>k!=="mydept");
   const a=[];const approver=ME.role==="head"||(ME.approves_depts||[]).length;
@@ -1753,6 +1993,10 @@ async function render(){
     else if(ST.screen==="daily"){const h=await viewDaily();if(seq!==renderSeq)return;main.innerHTML=h;bindDaily()}
     else if(ST.screen==="task"){const h=await viewTasks();if(seq!==renderSeq)return;main.innerHTML=h;bindTasks()}
     else if(ST.screen==="sx"){const h=await viewSx();if(seq!==renderSeq)return;main.innerHTML=h;bindSx()}
+    else if(ST.screen==="qc"){const h=await viewQc();if(seq!==renderSeq)return;main.innerHTML=h;bindQc()}
+    else if(ST.screen==="bt"){const h=await viewMt();if(seq!==renderSeq)return;main.innerHTML=h;bindMt()}
+    else if(ST.screen==="kho"){const h=await viewWh();if(seq!==renderSeq)return;main.innerHTML=h;bindWh()}
+    else if(ST.screen==="ns"){const h=await viewHr();if(seq!==renderSeq)return;main.innerHTML=h;bindHr()}
     else if(ST.screen==="sum"){const h=await viewSummary();if(seq!==renderSeq)return;main.innerHTML=h;bindSummary()}
     else main.innerHTML=`<h2 class="sec" style="margin-top:0">${mod[1]}</h2><div class="ph-card"><b>Xây ở Giai đoạn ${mod[2]}.</b><p class="small" style="margin:6px 0 0">Nội dung và phân quyền đã chốt ở Giai đoạn 1. Bạn thấy mục này vì vai trò của bạn được phép dùng nó.</p></div>`;
   }catch(err){main.innerHTML=`<div class="alert bad"><span class="sv"></span><div class="b"><div class="t">Không tải được dữ liệu</div><div class="d">${esc(sbErr(err))}</div></div></div>`}
@@ -1763,7 +2007,7 @@ function startApp(){
   $("#user").innerHTML=`${esc(ME.full_name)}<small>${esc(ME.username)} · ${esc(ME.position_name)}</small>`;
   const c=$("#conn");c.classList.toggle("live",RUN==="LIVE");
   c.textContent=RUN==="LIVE"?"Đã kết nối máy chủ · số liệu SX mẫu đến GĐ5":"DEMO · dùng thử, không lưu máy chủ";
-  ST.screen=homeMod();cfgTab="tbp";RP.code=null;RP.date=null;RP.editIssue=RP.editPlan=RP.editSr=null;SM.date=null;SXF.date=null;SXF.line=null;SXF.edit=null;SXF.assignOpen=false;SXF.unlockOpen=false;SX_CACHE=null;GV.f="open";GV.pos="";GV.q="";accQ="";accDept="";ACC_SECRET=null;accConfirm=null;render();
+  ST.screen=homeMod();cfgTab="tbp";RP.code=null;RP.date=null;RP.editIssue=RP.editPlan=RP.editSr=null;SM.date=null;SXF.date=null;SXF.line=null;SXF.edit=null;SXF.assignOpen=false;SXF.unlockOpen=false;SX_CACHE=null;Object.keys(FM).forEach(k=>delete FM[k]);NM.q="";NM.f="all";NM.page=0;NM.dirty={};NM.bulkOpen=false;GV.f="open";GV.pos="";GV.q="";accQ="";accDept="";ACC_SECRET=null;accConfirm=null;render();
 }
 $("#logout").onclick=()=>logout();
 $("#bell").onclick=e=>{e.stopPropagation();const p=$("#notif");p.hidden=!p.hidden;$("#bell").setAttribute("aria-expanded",String(!p.hidden))};
