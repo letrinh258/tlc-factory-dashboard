@@ -700,7 +700,7 @@ function viewDash(){
    <h2 class="sec">Diễn biến</h2>${chartsHTML()}
    <div class="two" style="margin-top:4px">
     <div><h2 class="sec">Cần GĐNM can thiệp <small>${ALERTS.length} cảnh báo · tự sinh theo ngưỡng</small></h2>${alertsHTML(ALERTS)}</div>
-    <div><h2 class="sec">Báo cáo ngày 14 vị trí <small>${ST.period==="day"?"chốt "+CFG.cutoff+" ngày "+(A.end?dm(A.end):"—"):"tỷ lệ nộp đúng hạn trong kỳ"}</small></h2>${reportsHTML()}</div>
+    <div><h2 class="sec">Báo cáo ngày các vị trí <small>${ST.period==="day"?"chốt "+CFG.cutoff+" ngày "+(A.end?dm(A.end):"—"):"tỷ lệ nộp đúng hạn trong kỳ"}</small></h2>${reportsHTML()}</div>
    </div>
    <h2 class="sec">10 vấn đề quan trọng nhất <small>đang mở tại ${A.end?dmy(A.end):"—"} · xếp theo mức rồi hạn</small></h2>${topHTML()}`;
 }
@@ -1115,7 +1115,7 @@ function rq(){throw new Error("x")}
 async function rpc(fn,args){const{data,error}=await SB.rpc(fn,args||{});if(error)throw error;return data}
 async function q(p){const{data,error}=await p;if(error)throw error;return data}
 
-/* ---------- trạng thái chung màn báo cáo ---------- */
+/* ---------- trạng thái chung màn báo cáo (14 vị trí gốc + KHVT bổ sung 01/11) ---------- */
 const RP={code:null,date:null,codes:[],editIssue:null,editPlan:null,editSr:null,unlockOpen:false,photo:null};
 function reportCodesForMe(sum){ // mã được xem: GĐNM 14, TBP theo bộ phận, người nhập theo vị trí
   return sum.map(s=>s.report_code);
@@ -1137,7 +1137,7 @@ function canEditRP(){return RP.editable}
 async function viewDaily(){
   if(RUN!=="LIVE")return liveOnly("Báo cáo hằng ngày");
   await loadRP();
-  if(!RP.code)return `<h2 class="sec" style="margin-top:0">Báo cáo hằng ngày</h2><div class="ph-card">Vị trí của bạn không thuộc 14 vị trí báo cáo ngày. Việc được giao xem ở <b>Công việc của tôi</b>.</div>`;
+  if(!RP.code)return `<h2 class="sec" style="margin-top:0">Báo cáo hằng ngày</h2><div class="ph-card">Vị trí của bạn không có báo cáo ngày. Việc được giao xem ở <b>Công việc của tôi</b>.</div>`;
   const C=RP.code,D=RP.date,today=ME.today||todayISO();
   const ed=await rpc("can_edit_code",{p_code:C,d:D});RP.editable=!!ed;
   const[rep,iss,s3,plans,srs,metricsCfg,unl]=await Promise.all([

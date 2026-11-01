@@ -449,3 +449,9 @@ update public.app_settings set value = '{
  "KTSP":[["doi_bom","Thay đổi BOM","mã"],["thu_nghiem","Thử nghiệm hoàn thành","mẫu"]],
  "CĐ":[["su_co","Sự cố thiết bị","lần"],["dung_may","Thời gian dừng máy","phút"],["pm_ht","Bảo trì định kỳ hoàn thành","việc"],["pm_tre","Bảo trì định kỳ trễ","việc"]]
 }' where key = 'report_metrics' and value = '{}';
+
+-- Vị trí bổ sung 01/11/2026: Nhân viên kế hoạch vật tư (báo cáo ngày, mã KHVT, thuộc Phòng KHSX)
+insert into public.positions(code, name, dept_id, kind, report_code) values ('KHVT','Nhân viên kế hoạch vật tư',4,'staff','KHVT')
+on conflict (code) do update set name = excluded.name, dept_id = excluded.dept_id, kind = excluded.kind, report_code = excluded.report_code;
+update public.app_settings set value = value || '{"KHVT":[["vt_thieu","Mã vật tư thiếu theo lệnh SX tuần","mã"],["pr_moi","Đề nghị mua mới phát sinh","phiếu"],["po_dat","Đơn mua (PO) đã đặt","PO"],["hang_ve","Lô hàng về theo kế hoạch","lô"],["hang_tre","Lô hàng về trễ so với cam kết","lô"],["duoi_min","Mã dưới tồn tối thiểu (MIN)","mã"]]}'::jsonb
+ where key = 'report_metrics' and not (value ? 'KHVT');
