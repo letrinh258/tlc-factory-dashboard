@@ -12,7 +12,7 @@ res = []
 def check(name, ok, detail=""):
     res.append((name, ok)); print(("PASS " if ok else "FAIL ") + name + ("" if ok else f"  [{detail}]"))
 
-rc, o, e = psql("delete from public.attachments; delete from public.item_updates; delete from public.report_unlocks; delete from public.support_requests; delete from public.plan_items;"
+rc, o, e = psql("delete from public.fives_findings; delete from public.fives_audits; delete from public.attachments; delete from public.item_updates; delete from public.report_unlocks; delete from public.support_requests; delete from public.plan_items;"
                 "delete from public.task_updates; delete from public.task_assignments; delete from public.tasks; delete from public.issues; delete from public.daily_reports; delete from public.code_counters;"
                 "delete from public.inventory_reports; delete from public.production_reports;"
                 "update public.positions set status='on',status_from=null,status_to=null,acting_profile_id=null; delete from public.position_history;"

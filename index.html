@@ -1673,7 +1673,7 @@ async function sxAssignHTML(){
 }
 
 function bindSx(){
-  const today=ME.today||todayISO();const sh=n=>{const d=new Date(SXF.date+"T00:00:00");d.setDate(d.getDate()+n);const s=d.toISOString().slice(0,10);return s>today?today:s};
+  const today=ME.today||todayISO();const sh=n=>{const s=addDays(SXF.date,n);return s>today?today:s};
   const go=()=>{SXF.edit=null;SXF.del=null;SXF.unlockOpen=false;render()};
   const dt=$("#sxDate");if(dt)dt.onchange=e=>{SXF.date=e.target.value||today;go()};
   const p=$("#sxPrev");if(p)p.onclick=()=>{SXF.date=sh(-1);go()};const n=$("#sxNext");if(n)n.onclick=()=>{SXF.date=sh(1);go()};
@@ -1787,7 +1787,7 @@ async function formHead(mod,title,sub){
 function bindFormHead(mod){
   const st=FM[mod];const today=ME.today||todayISO();const go=()=>{st.edit=null;st.del=null;st.unlockOpen=false;render()};
   const di=$("#fmDate");if(di)di.onchange=e=>{st.date=e.target.value||today;go()};
-  document.querySelectorAll("[data-fd]").forEach(b=>b.onclick=()=>{const d=new Date(st.date+"T00:00:00");d.setDate(d.getDate()+ +b.dataset.fd);const s=d.toISOString().slice(0,10);st.date=s>today?today:s;go()});
+  document.querySelectorAll("[data-fd]").forEach(b=>b.onclick=()=>{const s=addDays(st.date,+b.dataset.fd);st.date=s>today?today:s;go()});
   const ub=$("#fmUnlockBtn");if(ub)ub.onclick=()=>{st.unlockOpen=!st.unlockOpen;render()};
   const ug=$("#fmUlGo");if(ug)ug.onclick=async()=>{const h=+$("#fmUlH").value||4,r=$("#fmUlR").value.trim();if(r.length<3){setMsg("fmUlMsg","Ghi lý do mở khóa","bad");return}
     try{await rpc("unlock_report",{p_code:"FORM-"+FORMDEPT[mod],p_date:st.date,p_hours:h,p_reason:r});st.unlockOpen=false;toast("Đã mở khóa");render()}catch(e){setMsg("fmUlMsg",sbErr(e),"bad")}};
@@ -1953,9 +1953,113 @@ function bindHr(){bindFormHead("ns");const f=$("#fForm");if(!f||!$("#fSave"))ret
     $("#fSave").disabled=true;setMsg("fMsg","Đang lưu…");
     try{await rpc("save_hr",{d:FM.ns.date,p_total:v.h_t,p_present:v.h_p,p_new:v.h_n||0,p_quits:v.h_q||0,p_recruiting:v.h_r||0,p_note:$("#h_note").value.trim()||null});toast("Đã lưu");render()}
     catch(err){setMsg("fMsg",sbErr(err),"bad");$("#fSave").disabled=false}})}
+/* ============================================================
+   GIAI ĐOẠN 5C – ĐÁNH GIÁ 5S
+   ============================================================ */
+const FS={date:null,tab:"board",edit:null,audit:null,fstat:"open",scores:{}};
+const FS_ST=[["open","Mới – chờ đối sách"],["fixing","Đang khắc phục"],["pending_verify","Chờ xác nhận"],["closed","Đã đóng"]];
+let FS_CRIT=null;
+async function fsCrit(){if(!FS_CRIT){const r=await q(SB.from("app_settings").select("value").eq("key","fives_criteria").maybeSingle());FS_CRIT=(r&&r.value)||{target:80,groups:[]}}return FS_CRIT}
+function fsWeek(iso){const k=(D0(iso).getUTCDay()+6)%7;const a=addDays(iso,-k);return[a,addDays(a,6)]}
+const fsCritName=(C,key)=>{if(!key)return"";const[g,i]=key.split("-");const G=C.groups.find(x=>x.k===g);return G?`${G.name} ${i}: ${G.items[+i-1]||""}`:key};
+const fsPill=(v,tgt)=>v==null?'<span class="pill p-none">—</span>':`<span class="pill p-${v>=tgt?"ok":v>=tgt*0.85?"warn":"bad"}">${fmt(v,1)}%</span>`;
+async function view5s(){
+  if(RUN!=="LIVE")return liveOnly("Đánh giá 5S");
+  const today=ME.today||todayISO();if(!FS.date)FS.date=today;const[w1,w2]=fsWeek(FS.date);const C=await fsCrit();const tgt=C.target||80;
+  const head=`<h2 class="sec" style="margin-top:0">Đánh giá 5S <small>Hằng tuần · 5 nhóm × 5 tiêu chí × thang 1–5 · mục tiêu ≥ ${tgt}%</small></h2>
+  <div class="fbar" style="position:static"><span class="flabel">Tuần</span><div class="datebox"><button type="button" data-fw="-7" aria-label="Tuần trước">‹</button><input type="date" id="fsDate" value="${FS.date}" max="${today}"><button type="button" data-fw="7" aria-label="Tuần sau">›</button></div>
+   <span class="small">${dmyS(w1)} – ${dmyS(w2)}</span>
+   <div class="seg" role="tablist">${[["board","Bảng điểm"],["find","Lỗi cần xử lý"],["audit","Phiếu đánh giá"]].map(([k,n])=>`<button type="button" data-fst="${k}" aria-pressed="${FS.tab===k}">${n}</button>`).join("")}</div></div>`;
+  if(FS.tab==="board"){
+    const b=await rpc("fives_board",{d_from:w1,d_to:w2});const done=b.filter(x=>x.audits).length;
+    return head+`<p class="small">${done}/${b.length} bộ phận đã được đánh giá tuần này. Bảng điểm công khai cho mọi người; chi tiết lỗi chỉ người đánh giá, bộ phận được đánh giá và GĐNM xem.</p>
+    <div class="tbl"><table><tr><th>Bộ phận</th><th class="num">Số lần</th><th>Lần gần nhất</th><th class="num">Điểm gần nhất</th><th class="num">TB tuần</th>${C.groups.map(g=>`<th class="num">${esc(g.name)}</th>`).join("")}<th class="num">Lỗi đang mở</th><th class="num">Quá hạn</th><th class="num">Đã đóng</th></tr>
+    ${b.map(x=>`<tr><td><b>${esc(x.dept_name)}</b></td><td class="num">${x.audits||'<span class="pill p-warn">Chưa đánh giá</span>'}</td><td>${x.last_date?dmyS(x.last_date):"—"}</td><td class="num">${fsPill(x.last_total,tgt)}</td><td class="num">${x.avg_total==null?"—":fmt(x.avg_total,1)+"%"}</td>
+     ${C.groups.map(g=>`<td class="num">${x.by_group&&x.by_group[g.k]!=null?fmt(x.by_group[g.k])+"%":"—"}</td>`).join("")}<td class="num">${fmt(x.open_findings)}</td><td class="num">${x.overdue_findings?`<span class="pill p-bad">${x.overdue_findings}</span>`:"0"}</td><td class="num">${fmt(x.closed_findings)}</td></tr>`).join("")}</table></div>`;
+  }
+  if(FS.tab==="find"){
+    let qf=SB.from("fives_findings").select("id,audit_id,criterion,description,countermeasure,owner_name,due_date,status,verify_note,updated_at,fives_audits(audit_date,area,target_dept_id,auditor_id)").order("due_date");
+    if(FS.fstat==="open")qf=qf.neq("status","closed");else qf=qf.eq("status","closed").gte("closed_at",w1);
+    const rows=await q(qf.limit(300));const ids=rows.map(r=>r.id);
+    const ph=ids.length?await q(SB.from("attachments").select("entity,entity_id").in("entity",["fsb","fsa"]).in("entity_id",ids)):[];
+    const pc=(en,id)=>ph.filter(p=>p.entity===en&&p.entity_id===id).length;const dep=id=>(REF.depts.find(d=>d.id===id)||{}).name||"";
+    return head+`<div class="seg" style="margin:8px 0">${[["open","Đang mở"],["closed","Đã đóng trong tuần"]].map(([k,n])=>`<button type="button" data-fsf="${k}" aria-pressed="${FS.fstat===k}">${n}</button>`).join("")}</div>
+    ${rows.map(r=>{const a=r.fives_audits||{};const mineDept=ME.role==="admin"||ME.dept_id===a.target_dept_id;const auditor=ME.role==="admin"||a.auditor_id===ME.id;const over=r.status!=="closed"&&r.due_date<today;
+      return `<div class="card" style="margin-bottom:10px"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><div><b>${esc(dep(a.target_dept_id))}</b> · ${esc(a.area||"")} · đánh giá ${dmyS(a.audit_date)}</div>
+       <div><span class="pill p-${r.status==="closed"?"ok":r.status==="pending_verify"?"warn":over?"bad":"none"}">${ttName(FS_ST,r.status)}${over?" · quá hạn":""}</span> <span class="small">Hạn ${dmyS(r.due_date)}</span></div></div>
+       <div class="small" style="margin:4px 0">${esc(fsCritName(C,r.criterion))}</div><div><b>Lỗi:</b> ${esc(r.description)}</div>
+       ${r.countermeasure?`<div><b>Đối sách:</b> ${esc(r.countermeasure)} · <b>Phụ trách:</b> ${esc(r.owner_name||"")}</div>`:""}${r.verify_note?`<div class="small">Xác nhận: ${esc(r.verify_note)}</div>`:""}
+       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><button class="btn ghost" type="button" data-ph="fsb:${r.id}:Ảnh TRƯỚC – lỗi 5S #${r.id}" style="padding:3px 9px">Ảnh trước (${pc("fsb",r.id)})</button><button class="btn ghost" type="button" data-ph="fsa:${r.id}:Ảnh SAU – lỗi 5S #${r.id}" style="padding:3px 9px">Ảnh sau (${pc("fsa",r.id)})</button></div>
+       ${mineDept&&["open","fixing"].includes(r.status)?`<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-top:8px;align-items:end">
+         <div class="fld" style="grid-column:span 2"><label for="fc_${r.id}">Đối sách</label><input id="fc_${r.id}" value="${esc(r.countermeasure||"")}"></div>
+         <div class="fld"><label for="fo_${r.id}">Người phụ trách</label><input id="fo_${r.id}" value="${esc(r.owner_name||"")}"></div>
+         <div class="fld"><label for="fd_${r.id}">Hạn</label><input id="fd_${r.id}" type="date" value="${r.due_date||""}"></div>
+         <div style="grid-column:1/-1;display:flex;gap:6px;flex-wrap:wrap;align-items:center"><button class="btn ghost" type="button" data-fsa="counter:${r.id}">Lưu đối sách</button><button class="btn" type="button" data-fsa="request_close:${r.id}">Đề nghị đóng</button><span class="msg" id="fm_${r.id}"></span></div></div>`:""}
+       ${auditor&&r.status!=="closed"?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center"><input id="fv_${r.id}" placeholder="Nhận xét xác nhận / lý do trả lại" style="flex:1;min-width:180px">
+         <button class="btn" type="button" data-fsa="close:${r.id}" ${r.status!=="pending_verify"&&ME.role!=="admin"?"disabled":""}>Xác nhận đóng</button><button class="btn ghost" type="button" data-fsa="reopen:${r.id}">Trả lại</button>
+         ${r.status==="open"?`<button class="btn ghost" type="button" data-fsa="delete:${r.id}" style="color:var(--bad)">Xóa (ghi nhầm)</button>`:""}<span class="msg" id="fm2_${r.id}"></span></div>`:""}</div>`}).join("")||'<div class="empty">Không có lỗi 5S nào bạn được xem</div>'}<div id="photoHost"></div>`;
+  }
+  // Phiếu đánh giá
+  const audits=await q(SB.from("fives_audits").select("id,audit_date,auditor_id,target_dept_id,area,total,note,scores").gte("audit_date",w1).lte("audit_date",w2).order("audit_date",{ascending:false}));
+  const ps=await api.profiles();const nm=id=>(ps.find(p=>p.id===id)||{}).full_name||"";const dep=id=>(REF.depts.find(d=>d.id===id)||{}).name||"";
+  const ed=FS.edit==="new"?{audit_date:today,scores:{}}:audits.find(a=>a.id===FS.edit);
+  if(ed&&!Object.keys(FS.scores).length)FS.scores=Object.assign({},ed.scores);
+  const sel=FS.audit?audits.find(a=>a.id===FS.audit):null;
+  const canNew=true;const deps=REF.depts.filter(d=>d.code!=="BGD"&&(ME.role==="admin"||d.id!==ME.dept_id));
+    const total=()=>{const v=Object.values(FS.scores);return v.length?v.reduce((a,b)=>a+ +b,0)/(v.length*5)*100:null};
+  return head+`<div class="tbl" style="margin-top:8px"><table><tr><th>Ngày</th><th>Bộ phận được đánh giá</th><th>Khu vực</th><th>Người đánh giá</th><th class="num">Điểm</th><th></th></tr>
+   ${audits.map(a=>`<tr ${a.id===FS.audit?'style="background:var(--accent-bg,rgba(0,178,235,.08))"':""}><td>${dmyS(a.audit_date)}</td><td>${esc(dep(a.target_dept_id))}</td><td>${esc(a.area)}</td><td>${esc(nm(a.auditor_id))}</td><td class="num">${fsPill(+a.total,tgt)}</td>
+    <td style="white-space:nowrap">${(a.auditor_id===ME.id||ME.role==="admin")?`<button class="btn ghost" type="button" data-fsaud="${a.id}" style="padding:3px 9px">Ghi lỗi</button> ${(ME.role==="admin"||a.audit_date===today)?`<button class="btn ghost" type="button" data-fsed="${a.id}" style="padding:3px 9px">Sửa điểm</button>`:""}`:""}</td></tr>`).join("")||'<tr><td colspan="6"><div class="empty">Tuần này chưa có phiếu bạn được xem</div></td></tr>'}</table></div>
+  ${canNew&&!ed?'<button class="btn" type="button" data-fsed="new" style="margin-top:8px">+ Chấm 5S mới</button>':""}
+  ${ed?`<div class="card" style="margin-top:10px"><h3>${FS.edit==="new"?"Chấm 5S mới":"Sửa phiếu "+dmyS(ed.audit_date)} <small id="fsTot">Tổng: ${total()==null?"—":fmt(total(),1)+"%"} · đã chấm ${Object.keys(FS.scores).length}/25</small></h3>
+   <form id="fsForm" novalidate><div ${GRID}>
+    <div class="fld"><label for="fs_d">Ngày đánh giá</label><input id="fs_d" type="date" value="${ed.audit_date}" min="${addDays(today,-6)}" max="${today}"></div>
+    <div class="fld"><label for="fs_dep">Bộ phận được đánh giá</label><select id="fs_dep"><option value="">— Chọn —</option>${deps.map(d=>`<option value="${d.id}" ${ed.target_dept_id===d.id?"selected":""}>${esc(d.name)}</option>`).join("")}</select></div>
+    <div class="fld" style="grid-column:span 2"><label for="fs_area">Khu vực</label><input id="fs_area" value="${esc(ed.area||"")}" placeholder="vd: Line 3 – khu lắp ráp"></div></div>
+    ${C.groups.map(g=>`<h3 style="font-size:13px;margin:14px 0 6px">${esc(g.k)} – ${esc(g.name)}</h3>${g.items.map((it,i)=>{const k=g.k+"-"+(i+1);return `<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--line);flex-wrap:wrap">
+      <span style="flex:1;min-width:200px">${i+1}. ${esc(it)}</span><span class="seg" role="radiogroup" aria-label="${esc(it)}">${[1,2,3,4,5].map(v=>`<button type="button" data-sc="${k}:${v}" aria-pressed="${+FS.scores[k]===v}" style="min-width:34px">${v}</button>`).join("")}</span></div>`}).join("")}`).join("")}
+    <div class="fld" style="margin-top:10px"><label for="fs_note">Nhận xét chung</label><input id="fs_note" value="${esc(ed.note||"")}"></div>
+    <p class="small">Thang điểm: 1 = rất kém · 2 = kém · 3 = trung bình · 4 = tốt · 5 = rất tốt. Tiêu chí dưới 3 điểm nên ghi lỗi kèm ảnh ở bước sau.</p>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn" type="submit" id="fsSave">Lưu phiếu</button><button class="btn ghost" type="button" id="fsCancel">Hủy</button><span class="msg" id="fsMsg" role="status"></span></div></form></div>`:""}
+  ${sel&&!ed?`<div class="card" style="margin-top:10px"><h3>Ghi lỗi cho phiếu ${esc(dep(sel.target_dept_id))} · ${esc(sel.area)} · ${dmyS(sel.audit_date)}</h3>
+   <form id="fnForm" novalidate ${GRID}>
+    <div class="fld" style="grid-column:span 2"><label for="fn_c">Tiêu chí</label><select id="fn_c">${C.groups.map(g=>g.items.map((it,i)=>{const k=g.k+"-"+(i+1);return `<option value="${k}">${(+sel.scores[k]||5)<3?"⚠ ":""}${esc(g.name)} ${i+1} (${sel.scores[k]||"-"}đ): ${esc(it)}</option>`}).join("")).join("")}</select></div>
+    <div class="fld" style="grid-column:span 2"><label for="fn_d">Mô tả lỗi</label><input id="fn_d" placeholder="vd: Sàn dính dầu dưới máy ép"></div>
+    <div class="fld"><label for="fn_due">Hạn khắc phục</label><input id="fn_due" type="date" value="${addDays(sel.audit_date,7)}" min="${sel.audit_date}"></div>
+    <div style="grid-column:1/-1;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn" type="submit">Ghi lỗi và chụp ảnh</button><span class="msg" id="fnMsg"></span></div></form>
+   <p class="small">Sau khi ghi, cửa sổ ảnh tự mở để chụp ảnh trước (tối đa 3 ảnh). Lỗi được chuyển sang tab "Lỗi cần xử lý" của bộ phận được đánh giá.</p></div>`:""}<div id="photoHost"></div>`;
+}
+function bind5s(){
+  const today=ME.today||todayISO();const go=()=>{FS.edit=null;FS.audit=null;FS.scores={};render()};
+  const di=$("#fsDate");if(di)di.onchange=e=>{FS.date=e.target.value||today;go()};
+  document.querySelectorAll("[data-fw]").forEach(b=>b.onclick=()=>{const s=addDays(FS.date,+b.dataset.fw);FS.date=s>today?today:s;go()});
+  document.querySelectorAll("[data-fst]").forEach(b=>b.onclick=()=>{FS.tab=b.dataset.fst;go()});
+  document.querySelectorAll("[data-fsf]").forEach(b=>b.onclick=()=>{FS.fstat=b.dataset.fsf;render()});
+  bindPhotos();
+  document.querySelectorAll("[data-fsa]").forEach(b=>b.onclick=async()=>{const[act,id]=b.dataset.fsa.split(":");const m=["counter","request_close"].includes(act)?"fm_"+id:"fm2_"+id;
+    if(act==="delete"&&b.dataset.c!=="1"){b.dataset.c="1";b.textContent="Xác nhận xóa?";return}
+    const g=x=>{const el=$("#"+x+id);return el?el.value.trim():null};
+    try{await rpc("update_5s_finding",{p_id:+id,p_action:act,p_counter:g("fc_"),p_owner:g("fo_"),p_due:g("fd_")||null,p_note:g("fv_")});
+      toast({counter:"Đã lưu đối sách",request_close:"Đã đề nghị đóng",close:"Đã xác nhận đóng",reopen:"Đã trả lại",delete:"Đã xóa lỗi"}[act]);render()}catch(e){setMsg(m,sbErr(e),"bad")}});
+  document.querySelectorAll("[data-fsed]").forEach(b=>b.onclick=()=>{FS.edit=b.dataset.fsed==="new"?"new":+b.dataset.fsed;FS.audit=null;FS.scores={};render()});
+  document.querySelectorAll("[data-fsaud]").forEach(b=>b.onclick=()=>{FS.audit=+b.dataset.fsaud;FS.edit=null;render()});
+  const cc=$("#fsCancel");if(cc)cc.onclick=go;
+  const upd=()=>{const v=Object.values(FS.scores);const t=$("#fsTot");if(t)t.textContent=`Tổng: ${v.length?fmt(v.reduce((a,b)=>a+ +b,0)/(v.length*5)*100,1)+"%":"—"} · đã chấm ${v.length}/25`};
+  document.querySelectorAll("[data-sc]").forEach(b=>b.onclick=()=>{const[k,v]=b.dataset.sc.split(":");FS.scores[k]=+v;b.parentElement.querySelectorAll("button").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));upd()});
+  const f=$("#fsForm");if(f)f.addEventListener("submit",async e=>{e.preventDefault();f.querySelectorAll(".err").forEach(x=>x.classList.remove("err"));
+    const bad=(id,t)=>{if(id)$("#"+id).classList.add("err");setMsg("fsMsg",t,"bad")};
+    if(!$("#fs_dep").value)return bad("fs_dep","Chọn bộ phận được đánh giá.");if(!$("#fs_area").value.trim())return bad("fs_area","Nhập khu vực.");
+    const n=FS_CRIT.groups.reduce((a,g)=>a+g.items.length,0);if(Object.keys(FS.scores).length<n)return bad(null,`Còn ${n-Object.keys(FS.scores).length} tiêu chí chưa chấm.`);
+    $("#fsSave").disabled=true;setMsg("fsMsg","Đang lưu…");
+    try{const id=await rpc("save_5s_audit",{p_id:FS.edit==="new"?null:FS.edit,d:$("#fs_d").value,p_dept:+$("#fs_dep").value,p_area:$("#fs_area").value.trim(),p_scores:FS.scores,p_note:$("#fs_note").value.trim()||null});
+      FS.edit=null;FS.scores={};FS.audit=id;toast("Đã lưu phiếu 5S – ghi lỗi nếu có");render()}catch(err){setMsg("fsMsg",sbErr(err),"bad");$("#fsSave").disabled=false}});
+  const fn=$("#fnForm");if(fn)fn.addEventListener("submit",async e=>{e.preventDefault();const d=$("#fn_d").value.trim();if(!d){$("#fn_d").classList.add("err");setMsg("fnMsg","Mô tả lỗi.","bad");return}
+    try{const id=await rpc("add_5s_finding",{p_audit:FS.audit,p_criterion:$("#fn_c").value,p_desc:d,p_due:$("#fn_due").value||null});toast("Đã ghi lỗi");await render();openPhotos("fsb",id,"Ảnh TRƯỚC – lỗi 5S #"+id).catch(er=>toast(sbErr(er)))}
+    catch(err){setMsg("fnMsg",sbErr(err),"bad")}});
+}
 const MODS=[["dash","Tổng quan nhà máy",2],["sum","Tổng hợp báo cáo ngày",4],["mydept","Bộ phận của tôi",3],["task","Giao việc",4],["mine","Công việc của tôi",3],["daily","Báo cáo hằng ngày",4],["sx","Sản xuất",5],["qc","Chất lượng",5],["kho","Kho",5],["kh","Kế hoạch",5],["kt","Kỹ thuật",5],["bt","Bảo trì",5],["gt","Giá thành",5],["bh","Bảo hành",5],["ns","Nhân sự",5],["kpi","KPI",6],["5s","5S",5],["vd","Vấn đề và cải tiến",6],["lich","Lịch điều hành",6],["acc","Quản lý tài khoản",3],["cfg","Cấu hình hệ thống",3]];
 const DEPT_MOD={SX:"sx",QAC:"qc",KHO:"kho",KHSX:"kh",KT:"kt",CD:"bt",KTGT:"gt",BHM:"bh",BHN:"bh",HCNS:"ns"};
-const BUILT=["dash","sum","mydept","task","mine","daily","sx","qc","bt","kho","ns","acc","cfg"];
+const BUILT=["dash","sum","mydept","task","mine","daily","sx","qc","bt","kho","ns","5s","acc","cfg"];
 function allowedMods(){
   if(!ME)return[];if(ME.role==="admin")return MODS.map(m=>m[0]).filter(k=>k!=="mydept");
   const a=[];const approver=ME.role==="head"||(ME.approves_depts||[]).length;
@@ -1997,6 +2101,7 @@ async function render(){
     else if(ST.screen==="bt"){const h=await viewMt();if(seq!==renderSeq)return;main.innerHTML=h;bindMt()}
     else if(ST.screen==="kho"){const h=await viewWh();if(seq!==renderSeq)return;main.innerHTML=h;bindWh()}
     else if(ST.screen==="ns"){const h=await viewHr();if(seq!==renderSeq)return;main.innerHTML=h;bindHr()}
+    else if(ST.screen==="5s"){const h=await view5s();if(seq!==renderSeq)return;main.innerHTML=h;bind5s()}
     else if(ST.screen==="sum"){const h=await viewSummary();if(seq!==renderSeq)return;main.innerHTML=h;bindSummary()}
     else main.innerHTML=`<h2 class="sec" style="margin-top:0">${mod[1]}</h2><div class="ph-card"><b>Xây ở Giai đoạn ${mod[2]}.</b><p class="small" style="margin:6px 0 0">Nội dung và phân quyền đã chốt ở Giai đoạn 1. Bạn thấy mục này vì vai trò của bạn được phép dùng nó.</p></div>`;
   }catch(err){main.innerHTML=`<div class="alert bad"><span class="sv"></span><div class="b"><div class="t">Không tải được dữ liệu</div><div class="d">${esc(sbErr(err))}</div></div></div>`}
@@ -2007,7 +2112,7 @@ function startApp(){
   $("#user").innerHTML=`${esc(ME.full_name)}<small>${esc(ME.username)} · ${esc(ME.position_name)}</small>`;
   const c=$("#conn");c.classList.toggle("live",RUN==="LIVE");
   c.textContent=RUN==="LIVE"?"Đã kết nối máy chủ · số liệu SX mẫu đến GĐ5":"DEMO · dùng thử, không lưu máy chủ";
-  ST.screen=homeMod();cfgTab="tbp";RP.code=null;RP.date=null;RP.editIssue=RP.editPlan=RP.editSr=null;SM.date=null;SXF.date=null;SXF.line=null;SXF.edit=null;SXF.assignOpen=false;SXF.unlockOpen=false;SX_CACHE=null;Object.keys(FM).forEach(k=>delete FM[k]);NM.q="";NM.f="all";NM.page=0;NM.dirty={};NM.bulkOpen=false;GV.f="open";GV.pos="";GV.q="";accQ="";accDept="";ACC_SECRET=null;accConfirm=null;render();
+  ST.screen=homeMod();cfgTab="tbp";RP.code=null;RP.date=null;RP.editIssue=RP.editPlan=RP.editSr=null;SM.date=null;SXF.date=null;SXF.line=null;SXF.edit=null;SXF.assignOpen=false;SXF.unlockOpen=false;SX_CACHE=null;Object.keys(FM).forEach(k=>delete FM[k]);NM.q="";NM.f="all";NM.page=0;NM.dirty={};NM.bulkOpen=false;FS.date=null;FS.tab="board";FS.edit=null;FS.audit=null;FS.scores={};FS_CRIT=null;GV.f="open";GV.pos="";GV.q="";accQ="";accDept="";ACC_SECRET=null;accConfirm=null;render();
 }
 $("#logout").onclick=()=>logout();
 $("#bell").onclick=e=>{e.stopPropagation();const p=$("#notif");p.hidden=!p.hidden;$("#bell").setAttribute("aria-expanded",String(!p.hidden))};

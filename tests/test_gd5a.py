@@ -8,7 +8,7 @@ def psql(sql, role=None, uid=None):
     return r.returncode,out,r.stderr.strip()
 res=[]
 def check(n,ok,d=""): res.append(ok); print(("PASS " if ok else "FAIL ")+n+("" if ok else f"  [{d}]"))
-rc,o,e=psql("delete from public.report_unlocks; delete from public.production_reports; delete from public.user_lines; delete from public.attachments; delete from public.item_updates; delete from public.task_updates; delete from public.task_assignments; delete from public.tasks; delete from public.issues; delete from public.daily_reports; update public.positions set status='on',status_from=null,status_to=null,acting_profile_id=null; delete from public.position_history; delete from public.profiles; delete from auth.users;")
+rc,o,e=psql("delete from public.fives_findings; delete from public.fives_audits; delete from public.report_unlocks; delete from public.production_reports; delete from public.user_lines; delete from public.attachments; delete from public.item_updates; delete from public.task_updates; delete from public.task_assignments; delete from public.tasks; delete from public.issues; delete from public.daily_reports; update public.positions set status='on',status_from=null,status_to=null,acting_profile_id=null; delete from public.position_history; delete from public.profiles; delete from auth.users;")
 assert rc==0,e
 U={}
 for u,n,pos,role in [("trinhlh","Lê Hùng Trình","GDNM","admin"),("hungnv","Nguyễn Văn Hùng","TBP-SX","head"),("tuanlv","Lê Văn Tuấn","TT-SX","staff"),
