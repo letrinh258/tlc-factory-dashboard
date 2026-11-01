@@ -1,6 +1,4 @@
-<!doctype html>
-<html lang="vi">
-<meta charset="utf-8">
+<!doctype html><html lang="vi"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>TLC Factory Dashboard</title>
 <meta name="claude:viewport-fit-sides" content="cover">
@@ -976,7 +974,7 @@ async function viewConfig(){
   if(cfgTab==="line")return cfgHead()+`<div class="two" style="margin-top:0">
    <div class="card"><h3>Tên line sản xuất</h3><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px">${CFG.lines.map((l,i)=>`<div class="fld"><label for="ln${i}">Line số ${i+1}</label><input id="ln${i}" data-ln="${i}" value="${esc(l)}" maxlength="20"></div>`).join("")}</div></div>
    <div class="card"><h3>Quy tắc chung</h3><div style="display:grid;gap:8px">
-    <div class="fld"><label for="cut">Giờ chốt báo cáo ngày (HH:MM)</label><input id="cut" value="${CFG.cutoff}"></div>
+    <div class="fld"><label for="cut">Hạn tổ trưởng nhập báo cáo sản xuất (HH:MM)</label><input id="cut" value="${CFG.cutoff}"></div>
     <div class="fld"><label for="std">Định mức năng suất mặc định cho mã chưa có định mức (sp/người/giờ)</label><input id="std" value="${CFG.stdProd}" inputmode="decimal"></div>
     <div class="fld"><label for="ngp">Lệch NG QAC ↔ SX cảnh báo khi > (%) và > (sp)</label><div style="display:flex;gap:6px"><input id="ngp" value="${CFG.ngDiffPct}" inputmode="decimal"><input id="ngq" value="${CFG.ngDiffQty}" inputmode="numeric" aria-label="Lệch NG tối thiểu (sp)"></div></div>
     <div class="fld"><label for="dtm">Lệch giờ dừng CĐ ↔ SX cảnh báo khi > (phút)</label><input id="dtm" value="${CFG.dtDiffMin}" inputmode="numeric"></div>
@@ -1558,9 +1556,166 @@ async function loadAlertsLive(){
 /* ============================================================
    KHUNG ỨNG DỤNG: SIDEBAR THEO VAI TRÒ, THÔNG BÁO
    ============================================================ */
+/* ============================================================
+   GIAI ĐOẠN 5A – FORM A: BÁO CÁO SẢN XUẤT THEO LINE × MÃ SP × NGÀY
+   Tổ trưởng nhập line mình · TBP SX / GĐNM nhập mọi line · khóa sau 23:59
+   ============================================================ */
+const SXF={date:null,line:null,edit:null,assignOpen:false,unlockOpen:false,prodQ:""};
+let SX_CACHE=null; // danh mục SP, loại lỗi, nguyên nhân dừng máy – tải 1 lần mỗi phiên
+async function sxCache(){
+  if(SX_CACHE)return SX_CACHE;
+  const page=(a,b)=>q(SB.from("products").select("code,name,norm_per_hour,is_semi").eq("active",true).order("code").range(a,b));
+  const parts=[];for(let i=0;i<10;i++){const p=await page(i*1000,i*1000+999);parts.push(...p);if(p.length<1000)break}
+  const[def,dt]=await Promise.all([q(SB.from("defect_types").select("id,name,stage,source").eq("active",true).order("id")),
+    q(SB.from("app_settings").select("value").eq("key","downtime_reasons").maybeSingle())]);
+  SX_CACHE={prods:parts,byCode:Object.fromEntries(parts.map(p=>[p.code,p])),defects:def,dtReasons:(dt&&dt.value)||["Khác"]};
+  return SX_CACHE;
+}
+const sxStd=()=>Number(CFG.stdProd)||32;
+function sxCalc(r,norm){ // r: dòng báo cáo
+  const mh=(+r.headcount||0)*((+r.hours||0)+(+r.ot_hours||0));const out=(+r.good_qty||0)+(+r.ng_op||0)+(+r.ng_sup||0);
+  const n=norm||sxStd();const act=mh?(+r.good_qty||0)/mh:null;
+  return{mh,act,ns:act==null?null:act/n*100,kh:r.plan_qty?(+r.good_qty||0)/r.plan_qty*100:null,
+    op:out?(+r.ng_op||0)/out*100:null,sup:out?(+r.ng_sup||0)/out*100:null,noNorm:!norm}
+}
+const sxPill=(key,val,dir,txt)=>{const j=judge(key,val,dir);return `<span class="pill p-${j.s}">${txt}</span>`};
+function sxDeadlinePassed(D,today){if(D<today)return true;if(D>today)return false;const[h,m]=String(CFG.cutoff||"17:30").split(":").map(Number);const n=new Date();return n.getHours()*60+n.getMinutes()>=h*60+m}
+
+async function viewSx(){
+  if(RUN!=="LIVE")return liveOnly("Sản xuất – Báo cáo theo line");
+  const today=ME.today||todayISO();if(!SXF.date)SXF.date=today;const D=SXF.date;
+  const[C,mine,st,rows,unl]=await Promise.all([sxCache(),rpc("my_lines"),rpc("prod_line_status",{d:D}),
+    q(SB.from("production_reports").select("*").eq("report_date",D).order("line_id").order("id")),
+    q(SB.from("report_unlocks").select("report_code,until_at").like("report_code","LINE-%").eq("report_date",D).gt("until_at",new Date().toISOString()))]);
+  const myL=(mine||[]).map(Number);const isAdmin=ME.role==="admin";const manager=isAdmin||ME.dept_code==="SX"&&ME.role==="head"||myL.length>=10;
+  if(!SXF.line||!(myL.includes(SXF.line)||manager))SXF.line=myL[0]||(st[0]||{}).line_id||1;
+  const L=SXF.line;const canEdit=myL.includes(L)&&(D===today||unl.some(u=>u.report_code==="LINE-"+L));
+  const late=sxDeadlinePassed(D,today);const lineName=id=>(st.find(s=>s.line_id===id)||{}).line_name||("Line "+id);
+  const tot=st.reduce((a,s)=>{["plan_qty","good_qty","ng_op","ng_sup","man_hours","std_hours","downtime_min","n_rows"].forEach(k=>a[k]=(a[k]||0)+(+s[k]||0));return a},{});
+  const missing=st.filter(s=>!s.n_rows);
+  const pctKH=s=>s.plan_qty?s.good_qty/s.plan_qty*100:null;const outQ=s=>(+s.good_qty)+(+s.ng_op)+(+s.ng_sup);
+  const stCell=s=>s.n_rows?`<span class="pill p-ok">Đã nhập ${s.last_edit?new Date(s.last_edit).toLocaleTimeString("vi-VN",{hour:"2-digit",minute:"2-digit"}):""}</span>`:late?`<span class="pill p-bad">CHƯA NHẬP</span>`:`<span class="pill p-none">Chưa nhập</span>`;
+  const visibleSt=manager||ME.dept_code!=="SX"?st:st.filter(s=>myL.includes(s.line_id));
+  const lineRows=rows.filter(r=>r.line_id===L);const ed=SXF.edit==="new"?{}:lineRows.find(r=>r.id===SXF.edit);
+  const defOpt=(src,v)=>`<option value="">— Chọn loại lỗi —</option>`+C.defects.filter(d=>d.source===src).map(d=>`<option value="${d.id}" ${+v===d.id?"selected":""}>${esc(d.name)} · ${esc(d.stage)}</option>`).join("");
+  const defName=id=>(C.defects.find(d=>d.id===id)||{}).name||"";
+  const NS=s=>s.man_hours?s.std_hours/s.man_hours*100:null;
+  return `<h2 class="sec" style="margin-top:0">Sản xuất – Báo cáo theo line <small>Form A · line × mã sản phẩm × ngày · tổ trưởng nhập cuối ca, trước ${esc(CFG.cutoff||"17:30")}</small></h2>
+  <div class="fbar" style="position:static">
+    <span class="flabel">Ngày</span><div class="datebox"><button type="button" id="sxPrev" aria-label="Ngày trước">‹</button><input type="date" id="sxDate" value="${D}" max="${today}"><button type="button" id="sxNext" aria-label="Ngày sau">›</button></div>
+    ${D===today?`<span class="pill p-ok">Đang mở · tự khóa lúc 23:59</span>`:`<span class="pill p-none">Đã khóa</span>`}
+    ${manager?`<button class="btn ghost" type="button" id="sxAssignBtn">Phân line cho tổ trưởng</button>`:""}
+  </div>
+  ${SXF.assignOpen?await sxAssignHTML():""}
+  ${late&&missing.length&&(manager||ME.dept_code!=="SX")?`<div class="alert bad" style="margin-bottom:10px"><span class="sv"></span><div class="b"><div class="t">${missing.length} line chưa nhập báo cáo ngày ${dmyS(D)}</div><div class="d">${missing.map(s=>esc(s.line_name)+(s.leaders?" ("+esc(s.leaders)+")":" (chưa gán tổ trưởng)")).join(" · ")}</div></div></div>`:""}
+
+  <div class="tbl"><table><tr><th>Line</th><th>Tổ trưởng</th><th class="num">SL KH</th><th class="num">SL đạt</th><th class="num">% KH</th><th class="num">NG thao tác</th><th class="num">NG NCC</th><th class="num">Năng suất / ĐM</th><th class="num">Dừng máy</th><th>Trạng thái</th></tr>
+  ${visibleSt.map(s=>`<tr ${s.line_id===L?'style="background:var(--accent-bg,rgba(0,178,235,.08))"':""}><td><button class="btn ghost" type="button" data-line="${s.line_id}" style="padding:3px 9px">${esc(s.line_name)}</button></td><td>${esc(s.leaders||"—")}</td>
+    <td class="num">${s.plan_qty==null?"—":fmt(s.plan_qty)}</td><td class="num">${fmt(s.good_qty)}</td><td class="num">${s.n_rows&&pctKH(s)!=null?sxPill("out",pctKH(s),1,fmt(pctKH(s),1)+"%"):"—"}</td>
+    <td class="num">${s.n_rows?sxPill("defOp",outQ(s)?s.ng_op/outQ(s)*100:0,-1,fmt(s.ng_op)+" · "+fmt(outQ(s)?s.ng_op/outQ(s)*100:0,2)+"%"):"—"}</td>
+    <td class="num">${s.n_rows?sxPill("defSup",outQ(s)?s.ng_sup/outQ(s)*100:0,-1,fmt(s.ng_sup)+" · "+fmt(outQ(s)?s.ng_sup/outQ(s)*100:0,2)+"%"):"—"}</td>
+    <td class="num">${NS(s)==null?"—":sxPill("prod",NS(s),1,fmt(NS(s),0)+"%")}${s.missing_norm?` <span class="pill p-warn" title="Mã chưa có định mức, tạm dùng ${sxStd()} sp/người/giờ">${s.missing_norm} mã thiếu ĐM</span>`:""}</td>
+    <td class="num">${s.downtime_min?fmt(s.downtime_min)+"'":"—"}</td><td>${stCell(s)}</td></tr>`).join("")}
+  ${visibleSt.length>1?`<tr style="font-weight:600"><td colspan="2">Toàn nhà máy · ${visibleSt.filter(s=>s.n_rows).length}/${visibleSt.length} line đã nhập</td><td class="num">${fmt(tot.plan_qty)}</td><td class="num">${fmt(tot.good_qty)}</td>
+    <td class="num">${tot.plan_qty?fmt(tot.good_qty/tot.plan_qty*100,1)+"%":"—"}</td><td class="num">${fmt(tot.ng_op)}</td><td class="num">${fmt(tot.ng_sup)}</td><td class="num">${tot.man_hours?fmt(tot.std_hours/tot.man_hours*100,0)+"%":"—"}</td><td class="num">${fmt(tot.downtime_min)}'</td><td></td></tr>`:""}
+  </table></div>
+  <p class="small">Năng suất / ĐM = giờ công chuẩn (SL đạt ÷ định mức sp/người/giờ của từng mã) ÷ giờ công thực tế (số người × (giờ HC + tăng ca)). Mã chưa có định mức trong Bravo tạm dùng ${sxStd()} sp/người/giờ và được đánh dấu.</p>
+
+  <h2 class="sec">${esc(lineName(L))} – ngày ${dmyS(D)} <small>${canEdit?"Bạn đang nhập line này":myL.includes(L)?"Đã khóa":"Chỉ xem"}</small>
+    ${isAdmin&&!canEdit&&D<today?` <button class="btn ghost" type="button" id="sxUnlockBtn" style="padding:3px 10px">Mở khóa line này</button>`:""}</h2>
+  ${SXF.unlockOpen?`<div class="card" style="margin-bottom:10px"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
+    <div class="fld"><label for="sxUlH">Trong (giờ)</label><input id="sxUlH" value="4" inputmode="numeric" style="width:80px"></div>
+    <div class="fld" style="flex:1;min-width:200px"><label for="sxUlR">Lý do</label><input id="sxUlR" placeholder="vd: tổ trưởng quên nhập"></div>
+    <button class="btn" type="button" id="sxUlGo">Mở khóa</button><span class="msg" id="sxUlMsg"></span></div></div>`:""}
+  <div class="tbl"><table><tr><th>Mã SP</th><th class="num">KH</th><th class="num">Đạt</th><th class="num">NG thao tác</th><th class="num">NG NCC</th><th class="num">Người × giờ</th><th class="num">NS thực / ĐM</th><th class="num">Dừng máy</th><th>Ghi chú</th>${canEdit?"<th></th>":""}</tr>
+  ${lineRows.map(r=>{const p=C.byCode[r.product_code]||{};const c=sxCalc(r,p.norm_per_hour);
+    return `<tr><td><b class="mono">${esc(r.product_code)}</b><br><span class="small">${esc(p.name||"")}</span></td><td class="num">${r.plan_qty==null?"—":fmt(r.plan_qty)}</td><td class="num">${fmt(r.good_qty)}${c.kh!=null?"<br>"+sxPill("out",c.kh,1,fmt(c.kh,0)+"%"):""}</td>
+      <td class="num">${fmt(r.ng_op)}${r.ng_op?`<br><span class="small">${esc(defName(r.defect_op))}</span>`:""}</td><td class="num">${fmt(r.ng_sup)}${r.ng_sup?`<br><span class="small">${esc(defName(r.defect_sup))}</span>`:""}</td>
+      <td class="num">${fmt(r.headcount)} × ${fmt(+r.hours+ +r.ot_hours,1)}h${+r.ot_hours?`<br><span class="small">TC ${fmt(r.ot_hours,1)}h</span>`:""}</td>
+      <td class="num">${c.act==null?"—":fmt(c.act,1)+" / "+fmt(p.norm_per_hour||sxStd())}${c.ns!=null?"<br>"+sxPill("prod",c.ns,1,fmt(c.ns,0)+"%"):""}${c.noNorm?' <span class="pill p-warn">thiếu ĐM</span>':""}</td>
+      <td class="num">${r.downtime_min?fmt(r.downtime_min)+"'<br><span class='small'>"+esc(r.downtime_reason||"")+"</span>":"—"}</td><td>${esc(r.note||"")}</td>
+      ${canEdit?`<td style="white-space:nowrap"><button class="btn ghost" type="button" data-sxedit="${r.id}" style="padding:3px 9px">Sửa</button> <button class="btn ghost" type="button" data-sxdel="${r.id}" style="padding:3px 9px;color:var(--bad)">${SXF.del===r.id?"Xác nhận xóa?":"Xóa"}</button></td>`:""}</tr>`}).join("")||`<tr><td colspan="10"><div class="empty">Chưa có dòng nào cho ${esc(lineName(L))} ngày ${dmyS(D)}</div></td></tr>`}
+  </table></div>
+  ${canEdit&&!ed?`<button class="btn" type="button" id="sxNew" style="margin-top:8px">+ Thêm mã sản phẩm</button>`:""}
+  ${canEdit&&ed?`<div class="card" style="margin-top:10px"><h3>${SXF.edit==="new"?"Thêm mã sản phẩm":"Sửa "+esc(ed.product_code)} · ${esc(lineName(L))}</h3>
+   <form id="sxForm" novalidate style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;align-items:end">
+    <div class="fld" style="grid-column:1/-1"><label for="f_prod">Mã sản phẩm (gõ mã hoặc tên)</label><input id="f_prod" list="prodList" value="${esc(ed.product_code||"")}" autocomplete="off" ${SXF.edit!=="new"?"readonly":""}>
+      <span class="small" id="f_prodInfo"></span></div>
+    <div class="fld"><label for="f_plan">SL kế hoạch</label><input id="f_plan" inputmode="numeric" value="${ed.plan_qty??""}" placeholder="theo KHSX"></div>
+    <div class="fld"><label for="f_good">SL đạt</label><input id="f_good" inputmode="numeric" value="${ed.good_qty??""}"></div>
+    <div class="fld"><label for="f_hc">Số người</label><input id="f_hc" inputmode="decimal" value="${ed.headcount??""}"></div>
+    <div class="fld"><label for="f_h">Giờ hành chính</label><input id="f_h" inputmode="decimal" value="${ed.hours??8}"></div>
+    <div class="fld"><label for="f_ot">Giờ tăng ca</label><input id="f_ot" inputmode="decimal" value="${ed.ot_hours??0}"></div>
+    <div class="fld"><label for="f_op">NG thao tác</label><input id="f_op" inputmode="numeric" value="${ed.ng_op??0}"></div>
+    <div class="fld"><label for="f_dop">Loại lỗi thao tác</label><select id="f_dop">${defOpt("op",ed.defect_op)}</select></div>
+    <div class="fld"><label for="f_sup">NG nhà cung cấp</label><input id="f_sup" inputmode="numeric" value="${ed.ng_sup??0}"></div>
+    <div class="fld"><label for="f_dsup">Loại lỗi NCC</label><select id="f_dsup">${defOpt("sup",ed.defect_sup)}</select></div>
+    <div class="fld"><label for="f_dt">Dừng máy (phút)</label><input id="f_dt" inputmode="numeric" value="${ed.downtime_min??0}"></div>
+    <div class="fld"><label for="f_dtr">Nguyên nhân dừng máy</label><select id="f_dtr"><option value="">—</option>${opt(C.dtReasons,ed.downtime_reason)}</select></div>
+    <div class="fld" style="grid-column:1/-1"><label for="f_note">Ghi chú</label><input id="f_note" value="${esc(ed.note||"")}"></div>
+    <div style="grid-column:1/-1" class="small" id="f_calc"></div>
+    <div style="grid-column:1/-1;display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn" type="submit" id="f_save">Lưu</button><button class="btn ghost" type="button" id="f_cancel">Hủy</button><span class="msg" id="f_msg" role="status"></span></div>
+   </form><datalist id="prodList">${C.prods.map(p=>`<option value="${esc(p.code)}">${esc(p.name)}</option>`).join("")}</datalist></div>`:""}
+  ${!myL.length&&ME.dept_code==="SX"?`<div class="ph-card" style="margin-top:10px">Tài khoản của bạn chưa được gán line. Liên hệ Trưởng phòng SX hoặc GĐNM.</div>`:""}`;
+}
+
+async function sxAssignHTML(){
+  const[ul,ps]=await Promise.all([q(SB.from("user_lines").select("profile_id,line_id")),api.profiles()]);
+  const tt=REF.positions.find(p=>p.code==="TT-SX");const leaders=ps.filter(p=>p.status==="active"&&tt&&p.position_id===tt.id);
+  const lines=(CFG.lines||[]).map((n,i)=>[i+1,n]);
+  return `<div class="card" style="margin-bottom:10px"><h3>Phân line cho tổ trưởng <small>Mỗi line 1 tổ trưởng; 1 tổ trưởng giữ được nhiều line</small></h3>
+  ${leaders.length?`<div class="tbl"><table><tr><th>Tổ trưởng</th>${lines.map(([i,n])=>`<th class="num">${esc(n)}</th>`).join("")}</tr>
+  ${leaders.map(p=>`<tr><td>${esc(p.full_name)} <span class="small mono">${esc(p.username)}</span></td>${lines.map(([i])=>`<td class="num"><input type="checkbox" data-ul="${p.id}|${i}" ${ul.some(u=>u.profile_id===p.id&&u.line_id===i)?"checked":""} aria-label="${esc(p.full_name)} line ${i}"></td>`).join("")}</tr>`).join("")}</table></div>`
+  :`<p class="small" style="margin:0">Chưa có tài khoản vị trí "Tổ trưởng sản xuất". Tạo ở Quản lý tài khoản rồi quay lại đây.</p>`}</div>`;
+}
+
+function bindSx(){
+  const today=ME.today||todayISO();const sh=n=>{const d=new Date(SXF.date+"T00:00:00");d.setDate(d.getDate()+n);const s=d.toISOString().slice(0,10);return s>today?today:s};
+  const go=()=>{SXF.edit=null;SXF.del=null;SXF.unlockOpen=false;render()};
+  const dt=$("#sxDate");if(dt)dt.onchange=e=>{SXF.date=e.target.value||today;go()};
+  const p=$("#sxPrev");if(p)p.onclick=()=>{SXF.date=sh(-1);go()};const n=$("#sxNext");if(n)n.onclick=()=>{SXF.date=sh(1);go()};
+  document.querySelectorAll("[data-line]").forEach(b=>b.onclick=()=>{SXF.line=+b.dataset.line;go()});
+  const ab=$("#sxAssignBtn");if(ab)ab.onclick=()=>{SXF.assignOpen=!SXF.assignOpen;render()};
+  document.querySelectorAll("[data-ul]").forEach(c=>c.onchange=async()=>{const[pid,l]=c.dataset.ul.split("|");c.disabled=true;
+    try{if(c.checked)await q(SB.from("user_lines").insert({profile_id:pid,line_id:+l}));else await q(SB.from("user_lines").delete().eq("profile_id",pid).eq("line_id",+l));toast("Đã cập nhật phân line")}
+    catch(e){c.checked=!c.checked;toast(sbErr(e))}c.disabled=false});
+  const ub=$("#sxUnlockBtn");if(ub)ub.onclick=()=>{SXF.unlockOpen=!SXF.unlockOpen;render()};
+  const ug=$("#sxUlGo");if(ug)ug.onclick=async()=>{const h=+$("#sxUlH").value||4,r=$("#sxUlR").value.trim();if(r.length<3){setMsg("sxUlMsg","Ghi lý do mở khóa","bad");return}
+    try{await rpc("unlock_report",{p_code:"LINE-"+SXF.line,p_date:SXF.date,p_hours:h,p_reason:r});SXF.unlockOpen=false;toast("Đã mở khóa");render()}catch(e){setMsg("sxUlMsg",sbErr(e),"bad")}};
+  const nb=$("#sxNew");if(nb)nb.onclick=()=>{SXF.edit="new";render().then(()=>{const f=$("#f_prod");if(f)f.focus()})};
+  document.querySelectorAll("[data-sxedit]").forEach(b=>b.onclick=()=>{SXF.edit=+b.dataset.sxedit;render()});
+  document.querySelectorAll("[data-sxdel]").forEach(b=>b.onclick=async()=>{const id=+b.dataset.sxdel;if(SXF.del!==id){SXF.del=id;render();return}
+    try{await rpc("delete_prod_row",{p_id:id});SXF.del=null;toast("Đã xóa dòng");render()}catch(e){toast(sbErr(e))}});
+  const cc=$("#f_cancel");if(cc)cc.onclick=()=>{SXF.edit=null;render()};
+  const f=$("#sxForm");if(!f)return;
+  const val=id=>numOrNull($("#"+id).value);
+  const info=()=>{const c=($("#f_prod").value||"").trim();const p=SX_CACHE.byCode[c];
+    $("#f_prodInfo").innerHTML=p?`${esc(p.name)} · định mức <b>${p.norm_per_hour?fmt(p.norm_per_hour)+" sp/người/giờ":"chưa có – tạm dùng "+sxStd()}</b>`:c?'<span style="color:var(--bad)">Không có mã này trong danh mục</span>':"";
+    const r={good_qty:val("f_good")||0,ng_op:val("f_op")||0,ng_sup:val("f_sup")||0,headcount:val("f_hc")||0,hours:val("f_h")||0,ot_hours:val("f_ot")||0,plan_qty:val("f_plan")};
+    const k=sxCalc(r,p&&p.norm_per_hour);
+    $("#f_calc").innerHTML=k.mh?`Tự tính: năng suất <b>${fmt(k.act,1)}</b> sp/người/giờ = <b>${fmt(k.ns,0)}%</b> định mức${k.kh!=null?` · đạt <b>${fmt(k.kh,0)}%</b> kế hoạch`:""}${k.op!=null?` · NG thao tác <b>${fmt(k.op,2)}%</b> · NG NCC <b>${fmt(k.sup,2)}%</b>`:""}`:"Nhập số người và giờ để tự tính năng suất."};
+  f.querySelectorAll("input").forEach(i=>i.addEventListener("input",info));info();
+  f.addEventListener("submit",async e=>{e.preventDefault();const m="f_msg";f.querySelectorAll(".err").forEach(x=>x.classList.remove("err"));
+    const bad=(id,t)=>{$("#"+id).classList.add("err");setMsg(m,t,"bad")};
+    const code=$("#f_prod").value.trim();if(!SX_CACHE.byCode[code])return bad("f_prod","Chọn mã sản phẩm có trong danh mục.");
+    const nums={f_plan:val("f_plan"),f_good:val("f_good"),f_hc:val("f_hc"),f_h:val("f_h"),f_ot:val("f_ot"),f_op:val("f_op"),f_sup:val("f_sup"),f_dt:val("f_dt")};
+    for(const[k,v]of Object.entries(nums))if(Number.isNaN(v)||(v!=null&&v<0))return bad(k,"Nhập số không âm.");
+    if(nums.f_good==null)return bad("f_good","Nhập SL đạt (không có thì ghi 0).");
+    if((nums.f_good+(nums.f_op||0)+(nums.f_sup||0))>0&&!(nums.f_hc>0))return bad("f_hc","Nhập số người làm.");
+    if(nums.f_op>0&&!$("#f_dop").value)return bad("f_dop","Chọn loại lỗi thao tác.");
+    if(nums.f_sup>0&&!$("#f_dsup").value)return bad("f_dsup","Chọn loại lỗi nhà cung cấp.");
+    if(nums.f_dt>0&&!$("#f_dtr").value)return bad("f_dtr","Chọn nguyên nhân dừng máy.");
+    if(SXF.edit==="new"&&(await q(SB.from("production_reports").select("id").eq("report_date",SXF.date).eq("line_id",SXF.line).eq("product_code",code))).length)return bad("f_prod","Mã này đã có trong ngày – bấm Sửa ở dòng đó.");
+    $("#f_save").disabled=true;setMsg(m,"Đang lưu…");
+    try{await rpc("save_prod_row",{d:SXF.date,p_line:SXF.line,p_product:code,p_plan:nums.f_plan,p_good:nums.f_good,p_ng_op:nums.f_op||0,p_ng_sup:nums.f_sup||0,
+        p_defect_op:$("#f_dop").value?+$("#f_dop").value:null,p_defect_sup:$("#f_dsup").value?+$("#f_dsup").value:null,p_headcount:nums.f_hc||0,p_hours:nums.f_h??8,p_ot:nums.f_ot||0,
+        p_downtime:nums.f_dt||0,p_dt_reason:$("#f_dtr").value||null,p_note:$("#f_note").value.trim()||null});
+      SXF.edit=null;toast("Đã lưu "+code);render()}
+    catch(err){setMsg(m,sbErr(err),"bad");$("#f_save").disabled=false}});
+}
 const MODS=[["dash","Tổng quan nhà máy",2],["sum","Tổng hợp báo cáo ngày",4],["mydept","Bộ phận của tôi",3],["task","Giao việc",4],["mine","Công việc của tôi",3],["daily","Báo cáo hằng ngày",4],["sx","Sản xuất",5],["qc","Chất lượng",5],["kho","Kho",5],["kh","Kế hoạch",5],["kt","Kỹ thuật",5],["bt","Bảo trì",5],["gt","Giá thành",5],["bh","Bảo hành",5],["ns","Nhân sự",5],["kpi","KPI",6],["5s","5S",5],["vd","Vấn đề và cải tiến",6],["lich","Lịch điều hành",6],["acc","Quản lý tài khoản",3],["cfg","Cấu hình hệ thống",3]];
 const DEPT_MOD={SX:"sx",QAC:"qc",KHO:"kho",KHSX:"kh",KT:"kt",CD:"bt",KTGT:"gt",BHM:"bh",BHN:"bh",HCNS:"ns"};
-const BUILT=["dash","sum","mydept","task","mine","daily","acc","cfg"];
+const BUILT=["dash","sum","mydept","task","mine","daily","sx","acc","cfg"];
 function allowedMods(){
   if(!ME)return[];if(ME.role==="admin")return MODS.map(m=>m[0]).filter(k=>k!=="mydept");
   const a=[];const approver=ME.role==="head"||(ME.approves_depts||[]).length;
@@ -1597,6 +1752,7 @@ async function render(){
     else if(ST.screen==="mine"){main.innerHTML=viewMine();$("#chgPw").onclick=()=>showPw(false)}
     else if(ST.screen==="daily"){const h=await viewDaily();if(seq!==renderSeq)return;main.innerHTML=h;bindDaily()}
     else if(ST.screen==="task"){const h=await viewTasks();if(seq!==renderSeq)return;main.innerHTML=h;bindTasks()}
+    else if(ST.screen==="sx"){const h=await viewSx();if(seq!==renderSeq)return;main.innerHTML=h;bindSx()}
     else if(ST.screen==="sum"){const h=await viewSummary();if(seq!==renderSeq)return;main.innerHTML=h;bindSummary()}
     else main.innerHTML=`<h2 class="sec" style="margin-top:0">${mod[1]}</h2><div class="ph-card"><b>Xây ở Giai đoạn ${mod[2]}.</b><p class="small" style="margin:6px 0 0">Nội dung và phân quyền đã chốt ở Giai đoạn 1. Bạn thấy mục này vì vai trò của bạn được phép dùng nó.</p></div>`;
   }catch(err){main.innerHTML=`<div class="alert bad"><span class="sv"></span><div class="b"><div class="t">Không tải được dữ liệu</div><div class="d">${esc(sbErr(err))}</div></div></div>`}
@@ -1607,7 +1763,7 @@ function startApp(){
   $("#user").innerHTML=`${esc(ME.full_name)}<small>${esc(ME.username)} · ${esc(ME.position_name)}</small>`;
   const c=$("#conn");c.classList.toggle("live",RUN==="LIVE");
   c.textContent=RUN==="LIVE"?"Đã kết nối máy chủ · số liệu SX mẫu đến GĐ5":"DEMO · dùng thử, không lưu máy chủ";
-  ST.screen=homeMod();cfgTab="tbp";RP.code=null;RP.date=null;RP.editIssue=RP.editPlan=RP.editSr=null;SM.date=null;GV.f="open";GV.pos="";GV.q="";accQ="";accDept="";ACC_SECRET=null;accConfirm=null;render();
+  ST.screen=homeMod();cfgTab="tbp";RP.code=null;RP.date=null;RP.editIssue=RP.editPlan=RP.editSr=null;SM.date=null;SXF.date=null;SXF.line=null;SXF.edit=null;SXF.assignOpen=false;SXF.unlockOpen=false;SX_CACHE=null;GV.f="open";GV.pos="";GV.q="";accQ="";accDept="";ACC_SECRET=null;accConfirm=null;render();
 }
 $("#logout").onclick=()=>logout();
 $("#bell").onclick=e=>{e.stopPropagation();const p=$("#notif");p.hidden=!p.hidden;$("#bell").setAttribute("aria-expanded",String(!p.hidden))};
@@ -1617,5 +1773,4 @@ tick();setInterval(tick,30000);
 (async()=>{if(SB){try{const{data}=await SB.auth.getSession();if(data&&data.session){RUN="LIVE";await afterLogin();return}}catch(e){}}showLogin()})();
 
 </script>
-
 </html>
