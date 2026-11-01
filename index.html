@@ -1,0 +1,1143 @@
+<!doctype html>
+<html lang="vi">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>TLC Factory Dashboard</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<style>
+/* Layout: thanh trên cố định (logo, giờ, kết nối, thông báo) · sidebar module · vùng nội dung có thanh lọc kỳ/phạm vi */
+:root{
+  --navy:#20409A; --cyan:#00B2EB;
+  --bg:#F4F6FB; --surface:#FFFFFF; --sunk:#EAEEF7; --line:#D5DCEB;
+  --fg:#16213D; --muted:#5A6684; --accent:#20409A; --accent-2:#0089B8; --plan:#E08A00;
+  --ok:#1E8E4F; --ok-bg:#E3F4EA; --warn:#B07A00; --warn-bg:#FFF4D6; --bad:#C62E2E; --bad-bg:#FBE5E5; --none:#7A8399; --none-bg:#ECEEF3;
+  --f-body:"Be Vietnam Pro",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-disp:"Barlow Condensed","Be Vietnam Pro",system-ui,sans-serif;
+  --f-num:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0E1426; --surface:#161E36; --sunk:#1C2642; --line:#2A3658; --fg:#E6EBF7; --muted:#9AA6C4; --accent:#7EA0FF; --accent-2:#3CC8F5; --plan:#FFB547;
+  --ok:#4CC97F; --ok-bg:#163A28; --warn:#F2C14E; --warn-bg:#3A3015; --bad:#FF7272; --bad-bg:#40191D; --none:#8C95AD; --none-bg:#232B44; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0E1426; --surface:#161E36; --sunk:#1C2642; --line:#2A3658; --fg:#E6EBF7; --muted:#9AA6C4; --accent:#7EA0FF; --accent-2:#3CC8F5; --plan:#FFB547;
+  --ok:#4CC97F; --ok-bg:#163A28; --warn:#F2C14E; --warn-bg:#3A3015; --bad:#FF7272; --bad-bg:#40191D; --none:#8C95AD; --none-bg:#232B44; color-scheme:dark}
+*{box-sizing:border-box}
+html,body{background:var(--bg);color:var(--fg)}
+body{font-family:var(--f-body);font-size:14px;line-height:1.5;margin:0}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:30;background:var(--navy)}
+button{font-family:inherit}
+:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+/* top bar */
+.topbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--navy);color:#fff;
+  padding-left:max(14px,env(safe-area-inset-left,0px));padding-right:max(14px,env(safe-area-inset-right,0px));padding-block:8px;
+  display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.logo-chip{background:#fff;border-radius:6px;padding:3px 7px;display:flex}
+.logo-chip img{height:24px;display:block}
+.brand{font-family:var(--f-disp);font-size:20px;letter-spacing:.05em;line-height:1}
+.brand small{display:block;font-family:var(--f-body);font-size:11px;letter-spacing:0;opacity:.8;margin-top:2px}
+.tb-right{margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.clock{font-family:var(--f-num);font-size:12.5px;opacity:.9}
+.conn{font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:99px;background:#FFF4D6;color:#8A5E00;white-space:nowrap}
+.conn.live{background:#E3F4EA;color:#1E6E3F}
+.user{font-size:12.5px;text-align:right;line-height:1.2}
+.user small{display:block;opacity:.75;font-size:11px}
+.bell{position:relative;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:8px;width:36px;height:34px;cursor:pointer;display:grid;place-items:center}
+.bell svg{width:18px;height:18px}
+.bell .n{position:absolute;top:-6px;right:-6px;background:#E5484D;color:#fff;font:700 10.5px var(--f-num);border-radius:99px;padding:1px 5px}
+.notif{position:absolute;right:max(14px,env(safe-area-inset-right,0px));top:100%;margin-top:6px;width:min(380px,calc(100vw - 28px));max-height:70vh;overflow:auto;background:var(--surface);color:var(--fg);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 30px rgba(10,20,50,.25);padding:6px}
+.notif h4{margin:6px 8px 8px;font-size:13px}
+/* layout */
+.shell{display:grid;grid-template-columns:210px 1fr;min-height:calc(100vh - 52px)}
+.side{background:var(--surface);border-right:1px solid var(--line);padding:10px 8px;display:flex;flex-direction:column;gap:1px;padding-left:max(8px,env(safe-area-inset-left,0px))}
+.side .grp{font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin:10px 10px 4px;font-weight:700}
+.side button{all:unset;cursor:pointer;padding:7px 10px;border-radius:6px;font-size:13px;display:flex;justify-content:space-between;gap:6px;color:var(--fg)}
+.side button:hover{background:var(--sunk)}
+.side button[aria-current="true"]{background:var(--navy);color:#fff}
+.side button .ph{font-size:10.5px;color:var(--muted)}
+.side button[aria-current="true"] .ph{color:#cfd8f5}
+main{padding:16px;padding-right:max(16px,env(safe-area-inset-right,0px));min-width:0}
+/* filter bar */
+.fbar{display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:14px;position:sticky;top:calc(env(safe-area-inset-top,0px) + 52px);z-index:10}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface)}
+.seg button{border:0;background:transparent;padding:7px 12px;font:600 13px var(--f-body);color:var(--muted);cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--navy);color:#fff}
+.datebox{display:flex;align-items:center;gap:4px}
+.datebox button{border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:6px;width:30px;height:32px;cursor:pointer;font-size:15px}
+input,select{font:inherit;color:var(--fg);background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:6px 8px}
+.flabel{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-right:2px}
+.period{font-weight:600;font-size:13.5px}
+.period small{color:var(--muted);font-weight:500}
+/* KPI */
+h2.sec{font-size:14px;margin:18px 0 8px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+h2.sec small{font-weight:500;color:var(--muted);font-size:12px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(178px,1fr));gap:10px}
+.kpi{all:unset;box-sizing:border-box;cursor:pointer;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:11px 12px 10px;border-top:4px solid var(--none);display:flex;flex-direction:column;justify-content:flex-start;min-width:0}
+.kpi .scope .pill{margin-top:3px}
+.kpi:hover{border-color:var(--accent)}
+.kpi.ok{border-top-color:var(--ok)} .kpi.warn{border-top-color:var(--warn)} .kpi.bad{border-top-color:var(--bad)}
+.kpi .lbl{font-size:12px;color:var(--muted);font-weight:600;display:flex;justify-content:space-between;gap:6px;align-items:center}
+.kpi .val{font-family:var(--f-num);font-size:23px;font-weight:600;margin:4px 0 3px;font-variant-numeric:tabular-nums;line-height:1.2;white-space:nowrap}
+.kpi .val small{font-size:11.5px;color:var(--muted);font-weight:500}
+.kpi .row{display:flex;justify-content:space-between;gap:6px;font-size:11.5px;color:var(--muted);font-family:var(--f-num)}
+.kpi .scope{font-size:10.5px;color:var(--muted);margin-top:4px;font-family:var(--f-body)}
+.up{color:var(--ok)} .dn{color:var(--bad)} .flat{color:var(--muted)}
+.pill{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;white-space:nowrap}
+.p-ok{background:var(--ok-bg);color:var(--ok)} .p-warn{background:var(--warn-bg);color:var(--warn)}
+.p-bad{background:var(--bad-bg);color:var(--bad)} .p-none{background:var(--none-bg);color:var(--none)} .p-acc{background:var(--sunk);color:var(--accent)}
+.groups{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.gchip{all:unset;cursor:pointer;display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:99px;padding:5px 12px 5px 6px;font-size:12.5px;font-weight:600}
+.gchip:hover{border-color:var(--accent)}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--none);flex:none}
+.dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.bad{background:var(--bad)}
+/* charts */
+.charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:10px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px;min-width:0}
+.card h3{margin:0 0 6px;font-size:13px;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.card h3 small{font-weight:500;color:var(--muted)}
+.card svg{width:100%;height:auto;display:block}
+.legend{display:flex;gap:12px;font-size:11.5px;color:var(--muted);flex-wrap:wrap;margin-top:4px}
+.legend b{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+.legend b.ln{height:3px;vertical-align:2px;width:14px}
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr));gap:12px}
+.alerts{display:grid;gap:6px}
+.alert{display:grid;grid-template-columns:6px 1fr;background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.alert .sv{background:var(--warn)} .alert.bad .sv{background:var(--bad)}
+.alert .b{padding:8px 12px;min-width:0}
+.alert .t{font-weight:600;font-size:13px;display:flex;justify-content:space-between;gap:8px}
+.alert .t span.k{font-size:11px;color:var(--muted);font-weight:600;white-space:nowrap}
+.alert .d{font-size:12px;color:var(--muted)}
+.empty{padding:14px;border:1px dashed var(--line);border-radius:8px;color:var(--muted);font-size:13px;text-align:center}
+.tbl{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:12.5px}
+th,td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+th{background:var(--sunk);font-weight:600;font-size:11.5px;color:var(--muted);white-space:nowrap}
+th.sort{cursor:pointer;user-select:none} th.sort:hover{color:var(--accent)}
+tr:last-child td{border-bottom:0}
+td.num,th.num{text-align:right;font-family:var(--f-num);font-variant-numeric:tabular-nums;white-space:nowrap}
+td.mono{font-family:var(--f-num);font-size:12px;white-space:nowrap}
+.src{font-size:10px;font-weight:700;letter-spacing:.06em;padding:1px 6px;border-radius:4px;background:var(--sunk);color:var(--accent-2);margin-left:4px;vertical-align:1px}
+.tools{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;align-items:center}
+.tools input,.tools select{font-size:12.5px}
+.small{font-size:12px;color:var(--muted)}
+/* drawer */
+.ovl{position:fixed;inset:0;background:rgba(10,18,40,.45);z-index:40;display:flex;justify-content:flex-end}
+.drawer{background:var(--bg);width:min(760px,100%);height:100%;overflow:auto;padding:16px;padding-top:calc(16px + env(safe-area-inset-top,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-bottom:calc(24px + env(safe-area-inset-bottom,0px));box-shadow:-10px 0 30px rgba(0,0,0,.2)}
+.drawer header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px}
+.drawer h2{margin:0;font-family:var(--f-disp);font-size:26px;color:var(--accent);letter-spacing:.02em}
+.x{border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:8px;padding:6px 12px;font-weight:600;cursor:pointer}
+.mgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;margin-bottom:12px}
+.m{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 10px;border-left:4px solid var(--none)}
+.m.ok{border-left-color:var(--ok)} .m.warn{border-left-color:var(--warn)} .m.bad{border-left-color:var(--bad)}
+.m .l{font-size:11.5px;color:var(--muted);font-weight:600}
+.m .v{font-family:var(--f-num);font-size:17px;font-weight:600}
+.m .v small{font-size:11px;color:var(--muted);font-weight:500}
+.btn{font:600 13px var(--f-body);padding:8px 14px;border-radius:6px;border:1px solid var(--navy);background:var(--navy);color:#fff;cursor:pointer}
+.btn.ghost{background:transparent;color:var(--accent);border-color:var(--line)}
+input.err,select.err{border-color:var(--bad);background:var(--bad-bg)}
+.msg{font-size:12px;font-weight:600} .msg.bad{color:var(--bad)} .msg.ok{color:var(--ok)} .msg.warn{color:var(--warn)}
+.ph-card{background:var(--surface);border:1px dashed var(--line);border-radius:10px;padding:18px}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:9px 16px;border-radius:8px;font-weight:600;font-size:13px;z-index:60}
+.fld{display:grid;gap:4px} .fld label{font-size:12px;font-weight:600;color:var(--muted)}
+.login{min-height:100vh;display:grid;place-items:center;padding-block:24px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));background:linear-gradient(160deg,var(--navy) 0 38%,var(--bg) 38%)}
+.lcard{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:22px;width:min(400px,100%);box-shadow:0 18px 40px rgba(16,32,80,.18)}
+.lcard form{display:grid;gap:12px}
+.lhead{display:flex;gap:12px;align-items:center;margin-bottom:16px}.lhead .logo-chip{border:1px solid var(--line)}
+.ldemo{margin-top:14px;padding-top:12px;border-top:1px dashed var(--line)}
+@media (max-width:820px){
+  .shell{grid-template-columns:1fr}
+  .side{flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line);padding:6px;padding-left:max(8px,env(safe-area-inset-left,0px))}
+  .side .grp{display:none}
+  .side button{flex:none;white-space:nowrap}
+  .side button .ph{display:none}
+  .user,.clock,.brand small{display:none}
+  .topbar{position:static}
+  .brand{font-size:16px}
+  .fbar{position:static}
+  main{padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px))}
+  .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .kpi .val{font-size:19px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<section class="login" id="loginView" hidden>
+ <div class="lcard">
+  <div class="lhead"><span class="logo-chip"><img alt="TLC" src="data:image/png;base64,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"></span><div><div class="brand" style="color:var(--fg)">TLC FACTORY</div><div class="small">Hệ thống điều hành nhà máy</div></div></div>
+  <form id="loginForm" novalidate>
+   <div class="fld"><label for="lUser">Tên đăng nhập</label><input id="lUser" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="vd: sangnt"></div>
+   <div class="fld"><label for="lPass">Mật khẩu</label><input id="lPass" type="password" autocomplete="current-password"></div>
+   <button class="btn" type="submit" id="lBtn" style="width:100%">Đăng nhập</button>
+   <div class="msg" id="lMsg" role="status" aria-live="polite"></div>
+  </form>
+  <p class="small" id="srvState" style="margin:10px 0 0"></p>
+  <div class="ldemo"><div class="small" style="font-weight:600">Dùng thử DEMO – không cần tài khoản, không lưu lên máy chủ</div>
+   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px"><button class="btn ghost" type="button" data-demo="admin">GĐNM</button><button class="btn ghost" type="button" data-demo="head">Trưởng phòng SX</button><button class="btn ghost" type="button" data-demo="staff">Thủ kho TP</button></div></div>
+  <p class="small" style="margin:12px 0 0">Quên mật khẩu: liên hệ GĐNM để đặt lại.</p>
+ </div>
+</section>
+<section class="login" id="pwView" hidden>
+ <div class="lcard"><h2 id="pwTitle" style="margin:0 0 4px;font-family:var(--f-disp);color:var(--accent)">Đổi mật khẩu</h2><p class="small" id="pwNote" style="margin:0 0 10px"></p>
+  <form id="pwForm" novalidate>
+   <div class="fld"><label for="pCur">Mật khẩu hiện tại</label><input id="pCur" type="password" autocomplete="current-password"></div>
+   <div class="fld"><label for="pNew">Mật khẩu mới (tối thiểu 8 ký tự, có chữ và số)</label><input id="pNew" type="password" autocomplete="new-password"></div>
+   <div class="fld"><label for="pNew2">Nhập lại mật khẩu mới</label><input id="pNew2" type="password" autocomplete="new-password"></div>
+   <div style="display:flex;gap:8px"><button class="btn" type="submit">Lưu mật khẩu</button><button class="btn ghost" type="button" id="pCancel">Hủy</button></div>
+   <div class="msg" id="pMsg" role="status" aria-live="polite"></div>
+  </form></div>
+</section>
+<div id="appView" hidden>
+<header class="topbar" id="topbar">
+  <span class="logo-chip"><img alt="TLC" src="data:image/png;base64,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"></span>
+  <div class="brand">TLC FACTORY OPERATION DASHBOARD<small>Nhà máy thiết bị chiếu sáng LED</small></div>
+  <div class="tb-right">
+    <span class="clock" id="clock"></span>
+    <span class="conn" id="conn">DEMO · dữ liệu mẫu</span>
+    <div class="user" id="user"></div>
+    <button class="bell" id="bell" type="button" aria-label="Thông báo" aria-expanded="false">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>
+      <span class="n" id="bellN" hidden>0</span>
+    </button>
+    <button class="bell" id="logout" type="button" aria-label="Đăng xuất" title="Đăng xuất"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg></button>
+  </div>
+  <div class="notif" id="notif" hidden></div>
+</header>
+
+<div class="shell">
+  <nav class="side" id="side" aria-label="Module"></nav>
+  <main id="main"></main>
+</div>
+</div>
+<div id="drawerHost"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js"></script>
+
+<script>
+"use strict";
+/* ============================================================
+   CẤU HÌNH KẾT NỐI
+   Để trống = chế độ DEMO (dữ liệu mẫu sinh trên máy, không gửi đi đâu).
+   Giai đoạn 3 sẽ điền URL + anon key của Supabase để chạy LIVE.
+   KHÔNG bao giờ đặt service_role key ở đây.
+   ============================================================ */
+const CONFIG={
+  SUPABASE_URL:"https://ujlpvnqsunchykmtdtqt.supabase.co",
+  SUPABASE_KEY:"sb_publishable_-_Ps2Pufyg1QtInXAkkwrg_sQn_Q_1f"   // publishable key: được phép nằm trong trang web; dữ liệu bảo vệ bằng RLS
+};
+const MODE="DEMO"; // nguồn số liệu sản xuất của Dashboard: dữ liệu mẫu cho đến khi nối báo cáo bộ phận (GĐ5) và Bravo
+
+/* ---------------- tiện ích ---------------- */
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const fmt=(n,d=0)=>n==null||!isFinite(n)?"—":Number(n).toLocaleString("vi-VN",{minimumFractionDigits:d,maximumFractionDigits:d});
+const sum=a=>a.reduce((x,y)=>x+y,0);
+const D0=iso=>new Date(iso+"T00:00:00Z");
+const isoOf=d=>d.toISOString().slice(0,10);
+const addDays=(iso,n)=>{const d=D0(iso);d.setUTCDate(d.getUTCDate()+n);return isoOf(d)};
+const dmy=iso=>iso?iso.slice(8,10)+"/"+iso.slice(5,7)+"/"+iso.slice(0,4):"";
+const dm=iso=>iso.slice(8,10)+"/"+iso.slice(5,7);
+const dowVN=iso=>["CN","T2","T3","T4","T5","T6","T7"][D0(iso).getUTCDay()];
+const diffDays=(a,b)=>Math.round((D0(b)-D0(a))/864e5);
+function toast(t){const d=document.createElement("div");d.className="toast";d.setAttribute("role","status");d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),2400)}
+function store(k,v){try{if(v===undefined)return JSON.parse(localStorage.getItem(k)||"null");localStorage.setItem(k,JSON.stringify(v))}catch(e){return null}}
+
+/* ============================================================
+   CẤU HÌNH NGHIỆP VỤ (GĐNM sửa trong Cấu hình hệ thống)
+   ============================================================ */
+const DEFAULT_CFG={
+  lines:["Line 1","Line 2","Line 3","Line 4","Line 5","Line 6","Line 7","Line 8","Line 9","Line 10"],
+  cutoff:"17:30",
+  stdProd:32,            // định mức mặc định (sp/người/giờ) cho mã chưa có định mức trong Bravo
+  // ngưỡng: tgt = mục tiêu; g = % đạt tối thiểu để Xanh; y = % đạt tối thiểu để Vàng
+  th:{
+    out:{tgt:100,g:100,y:95},      // % hoàn thành KH sản lượng
+    def:{tgt:0.8,g:100,y:80},      // % lỗi tổng (càng thấp càng tốt)
+    defOp:{tgt:0.5,g:100,y:80},    // % NG thao tác — trách nhiệm Sản xuất
+    defSup:{tgt:0.3,g:100,y:80},   // % NG nhà cung cấp — QAC (IQC) + Mua hàng claim NCC
+    prod:{tgt:100,g:100,y:95},     // % năng suất so chuẩn
+    otd:{tgt:95,g:100,y:95},       // %
+    inv:{tgt:16,g:100,y:90},       // tỷ đồng tối đa
+    cogs:{tgt:55,g:100,y:95},      // %
+    dt:{tgt:60,g:100,y:70},        // phút dừng máy / ngày toàn NM
+    fpy:{tgt:98,g:100,y:98},
+    hr:{tgt:100,g:100,y:95},       // % đáp ứng nhân lực
+    war:{tgt:3,g:100,y:70},        // ngày xử lý bảo hành TB
+    warRate:{tgt:1.0,g:100,y:80}   // % tỷ lệ lỗi bảo hành = SL bảo hành / SL bán ra cùng kỳ
+  },
+  ngDiffPct:5, ngDiffQty:10, dtDiffMin:15
+};
+let CFG=Object.assign(JSON.parse(JSON.stringify(DEFAULT_CFG)),store("tlc_cfg_v2")||{});
+CFG.th=Object.assign(JSON.parse(JSON.stringify(DEFAULT_CFG.th)),CFG.th||{});
+function saveCFG(){store("tlc_cfg_v2",CFG)}
+
+/* ============================================================
+   NGUỒN DỮ LIỆU
+   DEMO: sinh dữ liệu mẫu cố định (cùng seed → cùng số) cho 01/09–31/10/2026.
+   LIVE (GĐ3+): cùng cấu trúc, đọc từ Supabase.
+   ============================================================ */
+function rng(seed){return()=>{seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const DATA_FROM="2026-09-01",DATA_TO="2026-10-31",HOLIDAYS=["2026-09-02"];
+const POSITIONS=[["KHSX","Kế hoạch SX"],["TKLK","Thủ kho LK"],["KTKLK","Kế toán kho LK"],["TKTP","Thủ kho TP"],["KTKTP","Kế toán kho TP"],["QAC","QAC"],["BHN","BH tại nhà"],["BHM","BH nhà máy"],["SX","Sản xuất"],["KTGT","KT giá thành"],["HCNS","HCNS"],["KTSX","KT sản xuất"],["KTSP","KT sản phẩm"],["CĐ","Cơ điện"]];
+const DEPTS=["QAC","Sản xuất","KHSX","Kho","Kỹ thuật","Cơ điện","KT giá thành","Bảo hành","HCNS"];
+// Mã thành phẩm thật lấy từ báo cáo định mức Bravo 8 (26/10/2026)
+const PRODUCTS=["TLC-AECPRO-MT-12W-03","TLC-ATO-MT-12W-03","TLC-AECA-MT-10W-03","TLC-ASM-HT-VB-09-03","TLC-OEC-TD-22W-03","TLC-ONT-TT-12W-03","TLC-AMC-VV-12W-01","TLC-PTT-CT-60X120-02","TLC-RTC-TD-10W-03","TLC-ACD-VT-05W-03","TLC-DTT-CGTD-12W-02","TLC-AECPRO-VV-12W-03"];
+// Định mức năng suất (sp/người/giờ) theo từng mã – cột "Định mức năng suất" trong BOM Bravo
+const NORM={"TLC-AECPRO-MT-12W-03":22,"TLC-ATO-MT-12W-03":24,"TLC-AECA-MT-10W-03":35,"TLC-ASM-HT-VB-09-03":36,"TLC-OEC-TD-22W-03":21,"TLC-ONT-TT-12W-03":16,"TLC-AMC-VV-12W-01":20,"TLC-PTT-CT-60X120-02":96,"TLC-RTC-TD-10W-03":160,"TLC-ACD-VT-05W-03":190.89,"TLC-DTT-CGTD-12W-02":100,"TLC-AECPRO-VV-12W-03":22};
+const normOf=code=>NORM[code]||CFG.stdProd; // mã thiếu định mức → dùng định mức mặc định trong Cấu hình
+const famOf=code=>FAMILY[code.split("-")[1]]||"Khác";
+const FAMILY={AECPRO:"Âm trần Eyecare Pro",ATO:"Âm trần khối đúc TOS",AECA:"Âm trần chống ẩm",ASM:"Âm trần siêu mỏng",OEC:"Ốp trần Eyecare",ONT:"Ốp nổi tròn",AMC:"Âm trần mặt cong",PTT:"Panel tấm",RTC:"Rọi ray",ACD:"Chống chói dày",DTT:"Đèn tường"};
+// Loại lỗi: [tên, công đoạn phát hiện, nguồn: op = NG thao tác, sup = NG nhà cung cấp, nhóm linh kiện NCC]
+const DEFECTS=[["Hàn chân LED / dây","SMT/Hàn","op"],["Lắp sai, thiếu linh kiện","Lắp ráp","op"],["Trầy xước, va đập","Đóng gói","op"],["Nguồn (driver) lỗi","Test điện","sup","Nguồn"],["Mắt LED / bản mạch lỗi","Test quang","sup","Mắt LED, bản mạch"],["Vỏ, mặt, phụ kiện lỗi","Lắp ráp","sup","Vỏ, mặt, phụ kiện"]];
+const SRC={op:"Thao tác",sup:"NCC"};
+const MATERIALS=["Driver 12W","Chip LED 2835","Vỏ nhôm DL-9","Tấm tán quang 600","PCB nhôm 18W","Ốc M3x6","Keo tản nhiệt","Dây nguồn 2x0.5","Đế E27","Thùng carton PN"];
+
+function buildDemo(){
+  const R=rng(20261031);
+  const days=[];for(let d=DATA_FROM;d<=DATA_TO;d=addDays(d,1)){if(D0(d).getUTCDay()!==0&&!HOLIDAYS.includes(d))days.push(d)}
+  const pb=[33.1,31.8,29.4,32.6,30.2,27.9,31.0,33.5,29.8,28.7], db=[0.65,0.55,1.15,0.6,0.75,0.95,0.7,0.5,0.85,1.0];
+  // mã chạy trên từng line (chỉ số trong PRODUCTS); mã định mức cao xuất hiện ít
+  const lineProd=[[0,11],[1,2],[3,6],[2,1],[4,5],[5,4],[6,3],[2,2,2,9],[11,3],[5,5,5,7]];
+  const eff=[1.03,0.99,0.92,1.02,0.94,0.87,0.97,1.05,0.93,0.9]; // hiệu suất thực tế so định mức theo line
+  const prod=[],fac={};
+  days.forEach((d,k)=>{
+    const prog=k/days.length;
+    let dayAct=0;
+    for(let i=0;i<10;i++){
+      const hc=8-(R()<0.12?1:0)-(R()<0.03?1:0), ot=R()<0.28?1.5:0, hours=8;
+      const late=i===2&&d>="2026-10-20"?1.35:1;
+      const code=PRODUCTS[lineProd[i][Math.floor(R()*lineProd[i].length)]],norm=NORM[code];
+      const p=norm*eff[i]*(0.97+0.06*prog)*(0.9+0.15*R());
+      let dtCD=R()<0.13?Math.round(15+R()*95):0; if(i===5&&d>="2026-10-26"&&R()<0.6)dtCD=Math.round(50+R()*60);
+      const lost=dtCD/60*hc*p;
+      const act=Math.max(0,Math.round(p*hc*(hours+ot)-lost));
+      const rate=db[i]*late*(0.7+0.6*R())/100;
+      const ng=Math.round(act*rate/(1-rate));
+      const rw=Math.round(ng*(1.2+R()));
+      let qcNg=ng+(R()<0.25?Math.round((R()-0.3)*ng*0.4):0); if(i===2&&d>="2026-10-27")qcNg=Math.round(ng*1.14);
+      qcNg=Math.max(0,qcNg);
+      const dtSX=dtCD?Math.max(0,dtCD+(R()<0.3?Math.round((R()-0.6)*50):0)):0;
+      const supSpike=d>="2026-10-22"&&(i===1||i===9)?2.2:1;
+      const w=i===2?[6,2,1,1,1,0.6]:i===5?[1,3,1,1.4,1,1.2]:[2,1.5,1,1.3*supSpike,1,0.7];
+      const def=[0,0,0,0,0,0];for(let n=0;n<qcNg;n++){let r=R()*sum(w),j=0;while(r>w[j]){r-=w[j];j++}def[j]++}
+      prod.push({d,line:i,code,norm,plan:Math.round(norm*8*8),act,hc,hours,ot,ng,rw,qcInsp:act+ng,qcNg,def,dtCD,dtSX});
+      dayAct+=act;
+    }
+    const walk=Math.sin(k/6)*0.6;
+    fac[d]={
+      invValue:+(17.2+walk+prog*1.1+R()*0.3).toFixed(2), matTotal:3000,
+      shortage:Math.max(0,Math.round(1+R()*3+(d>="2026-10-28"?2:0))), belowMin:Math.round(18+R()*14),
+      invAcc:+(97.2+R()*2.3).toFixed(1), ngPending:Math.round(120+R()*180),
+      cogs:+(57.6-prog*1.4+(R()-0.5)*0.8).toFixed(2), unitPlan:52000, unitAct:Math.round(52000*(1.01+(R()-0.4)*0.05)),
+      laborCost:Math.round(dayAct*5.2/1000*10)/10, defCost:0, matVar:+(1.2+R()*1.6).toFixed(2),
+      staffTotal:132, absent:Math.round(3+R()*6), demand:82, pmPlan:2, pmDone:R()<0.82?2:1, training:Math.min(100,Math.round(55+prog*45)),
+      eqDown:R()<0.2?1:0, eqRisk:Math.round(1+R()*2)
+    };
+  });
+  // báo cáo ngày 14 vị trí
+  const reports={};
+  days.forEach(d=>{reports[d]={};POSITIONS.forEach(([c])=>{
+    const miss=(c==="BHN"&&R()<0.25)||(c==="KTGT"&&R()<0.18)||R()<0.03;
+    if(miss){reports[d][c]=null;return}
+    let m=16*60+20+Math.round(R()*75); if(c==="CĐ"&&R()<0.35)m=17*60+35+Math.round(R()*20);
+    reports[d][c]=String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0");
+  })});
+  // đơn hàng
+  const orders=[];const chans=["Dự án","Đại lý miền Bắc","Đại lý miền Nam","Xuất khẩu","Siêu thị điện máy"];
+  for(let n=0;n<84;n++){
+    const due=addDays("2026-09-04",Math.floor(R()*72)), lead=7+Math.floor(R()*10), start=addDays(due,-lead);
+    const late=R()<0.12?1+Math.floor(R()*4):0; let comp=addDays(due,late-(R()<0.5?Math.floor(R()*3):0));
+    if(D0(comp).getUTCDay()===0)comp=addDays(comp,1);
+    const p=PRODUCTS[Math.floor(R()*PRODUCTS.length)];
+    orders.push({id:"ĐH-"+due.slice(5,7)+"/"+String(100+n),chan:chans[Math.floor(R()*chans.length)],code:p,qty:(2+Math.floor(R()*12))*1000,start,due,comp,risk:R()<0.3});
+  }
+  // việc
+  const tasks=[];const tnames=["Rà soát định mức","Cập nhật quy trình","Khắc phục lỗi","Đào tạo công đoạn","Kiểm kê mã","Bảo trì định kỳ","Đối chiếu số liệu","Cải tiến bố trí chuyền"];
+  for(let n=0;n<130;n++){
+    const cr=days[Math.floor(R()*days.length)], due=addDays(cr,2+Math.floor(R()*10));
+    const r=R(); const done=r<0.8?addDays(due,Math.floor(R()*5)-3):r<0.93?addDays(due,2+Math.floor(R()*6)):null;
+    tasks.push({id:"GV"+cr.slice(8,10)+cr.slice(5,7)+"-"+String(n%20+1).padStart(2,"0"),dept:DEPTS[Math.floor(R()*DEPTS.length)],name:tnames[Math.floor(R()*tnames.length)],created:cr,due,done:done&&done<cr?cr:done});
+  }
+  // vấn đề
+  const issues=[
+    ["Thiếu Nguồn 8-12W (LK-ANG-06) cho lệnh tuần 45","Kho","Trưởng kho","bad","2026-10-28","2026-11-02",null,"Dùng LK-ANG-06-DB (PF>0.9) đã duyệt thay thế","Nhà cung cấp giao trễ 5 ngày"],
+    ["Lỗi hàn chân LED Line 3 tăng","QAC","Trưởng phòng QAC","warn","2026-10-21","2026-11-04",null,"Thêm 1 điểm kiểm 100% sau hàn","Nhiệt độ lò reflow lệch, chưa hiệu chuẩn"],
+    ["Máy dán keo Line 6 dừng lặp lại","Cơ điện","Trưởng phòng Cơ điện","bad","2026-10-26","2026-11-03",null,"Chuyển mã sang Line 9 khi dừng > 30 phút","Bơm keo mòn, chưa có phụ tùng dự phòng"],
+    ["Đơn nguy cơ trễ do thiếu Nguồn 8-12W","KHSX","Trưởng phòng KHSX","warn","2026-10-29","2026-11-05",null,"Giao trước 50%, phần còn lại sau 2 ngày","Phụ thuộc vấn đề thiếu LK-ANG-06"],
+    ["Tồn kho vượt mức tối đa","Kho","Trưởng kho","warn","2026-10-15","2026-11-15",null,"Dừng nhập 5 mã tồn chậm","Mua theo MOQ lớn"],
+    ["COGS tháng 10 vượt mục tiêu","KT giá thành","Trưởng KT giá thành","warn","2026-10-25","2026-11-10",null,"Rà soát chênh lệch định mức 20 mã lớn","Hao hụt NVL lắp ráp vượt định mức"],
+    ["Thiếu công nhân Line 6, Line 10","HCNS","Trưởng phòng HCNS","warn","2026-10-24","2026-11-08",null,"Điều chuyển từ Line 8 tạm thời","Nghỉ việc sau lương tháng 9"],
+    ["Ca bảo hành tại nhà quá cam kết 48h","Bảo hành","Trưởng BH tại nhà","bad","2026-10-22","2026-11-01",null,"Thuê đối tác dịch vụ khu vực","Thiếu kỹ thuật viên khu vực phía Nam"],
+    ["Sai lệch kiểm kê linh kiện 14 mã","Kho","","warn","2026-10-23","2026-11-06",null,"Kiểm kê lại theo cặp mã","Có thể nhập/xuất nhầm mã cùng công suất"],
+    ["BOM âm trần TOS 9W chưa cập nhật Bravo","Kỹ thuật","Trưởng phòng Kỹ thuật","warn","2026-10-27","2026-11-04",null,"Khóa xuất kho mã cũ","Quy trình thay đổi BOM chưa có bước cập nhật ERP"],
+    ["Rò khí nén khu lắp ráp","Cơ điện","Trưởng phòng Cơ điện","warn","2026-09-12","2026-09-20","2026-09-18","—","Đầu nối cũ"],
+    ["Trễ giao đơn xuất khẩu tháng 9","KHSX","Trưởng phòng KHSX","bad","2026-09-08","2026-09-15","2026-09-16","—","Lệnh SX ra muộn"],
+    ["Lỗi sai nhãn hộp PN-600","QAC","Trưởng phòng QAC","warn","2026-09-22","2026-09-30","2026-09-29","—","Mẫu nhãn cũ chưa thu hồi"],
+    ["Thiếu tấm tán quang 600","Kho","Trưởng kho","bad","2026-10-05","2026-10-12","2026-10-11","—","Dự báo nhu cầu thấp"],
+    ["Đào tạo vận hành máy test quang chậm","HCNS","","warn","2026-10-30","2026-11-12",null,"Mời kỹ sư hãng đào tạo trực tiếp","Chưa xếp lịch"]
+  ].map((x,i)=>({id:"VĐ-"+x[4].slice(8,10)+x[4].slice(5,7)+"-"+String(i+1).padStart(2,"0"),title:x[0],dept:x[1],owner:x[2],sev:x[3],open:x[4],due:x[5],closed:x[6],planB:x[7],cause:x[8]}));
+  // bảo hành
+  const war=[];const wdef=["Nguồn hỏng","Chết LED","Nhấp nháy","Ẩm, vào nước","Vỡ vỏ khi vận chuyển"];
+  for(let n=0;n<170;n++){const d=days[Math.floor(R()*days.length)];const p=PRODUCTS[Math.floor(R()*PRODUCTS.length)];
+    const open=R()<0.1;const dur=1+Math.floor(R()*(R()<0.15?9:4));
+    war.push({id:"BH"+n,d,type:R()<0.55?"BHN":"BHM",code:p,fam:FAMILY[p.split("-")[1]],def:wdef[Math.floor(R()*(R()<0.5?2:5))],qty:1+Math.floor(R()*(R()<0.2?20:3)),closed:open&&d>"2026-10-20"?null:addDays(d,dur),cost:Math.round(150+R()*900)})}
+  const shortList=[["LK-ANG-06 · Nguồn 8-12W",2400,"2026-11-03"],["LK-ATO-9W-ML-01 · Mắt LED TOS 9W trắng",1800,"2026-11-02"],["LK-AECA-BML-10W-01 · Bản mạch chống ẩm 10W",1600,"2026-11-03"],["PK-VTH-078 · Vỏ thùng 40A",800,"2026-11-04"],["LK-ANG-04 · Nguồn 5-8W",1200,"2026-11-05"]];
+  // Tỷ lệ lỗi bảo hành – KTGT cập nhật theo nhóm sản phẩm: SL bảo hành / SL bán ra cùng kỳ
+  const famRate={"Âm trần Eyecare Pro":0.45,"Âm trần khối đúc TOS":0.55,"Âm trần chống ẩm":1.35,"Âm trần siêu mỏng":0.75,"Ốp trần Eyecare":0.6,"Ốp nổi tròn":0.5,"Âm trần mặt cong":0.95,"Panel tấm":0.85,"Rọi ray":0.4,"Chống chói dày":0.3,"Đèn tường":0.6};
+  const wsales=[];
+  days.forEach(d=>{const byF={};prod.filter(r=>r.d===d).forEach(r=>{const f=famOf(r.code);byF[f]=(byF[f]||0)+r.act});
+    Object.entries(byF).forEach(([f,q])=>{const sold=Math.round(q*(0.85+0.3*R()));const rt=(famRate[f]||0.6)*(f==="Âm trần chống ẩm"&&d>="2026-10-15"?1.25:1)*(0.6+0.8*R())/100;wsales.push({d,fam:f,sold,wq:Math.round(sold*rt)})})});
+  return{days,prod,fac,reports,orders,tasks,issues,war,shortList,wsales};
+}
+const DB=buildDemo(); // GĐ5: thay bằng số liệu báo cáo bộ phận + Bravo
+
+/* ============================================================
+   BỘ LỌC: kỳ (ngày/tuần/tháng) × phạm vi (toàn NM / 1 line)
+   ============================================================ */
+const ST={period:"day",date:DATA_TO,scope:"all",screen:"dash"};
+Object.assign(ST,(()=>{const s=store("tlc_filter_v2");return s&&s.date?{period:s.period,date:s.date,scope:s.scope}:{}})());
+function saveFilter(){store("tlc_filter_v2",{period:ST.period,date:ST.date,scope:ST.scope})}
+function range(period,date){
+  if(period==="day")return[date,date];
+  if(period==="week"){const w=(D0(date).getUTCDay()+6)%7;const a=addDays(date,-w);return[a,addDays(a,6)]}
+  const a=date.slice(0,8)+"01";const n=new Date(Date.UTC(+date.slice(0,4),+date.slice(5,7),0)).getUTCDate();return[a,date.slice(0,8)+String(n).padStart(2,"0")];
+}
+function prevDate(period,date){
+  if(period==="day"){let d=addDays(date,-1);for(let k=0;k<10&&!DB.days.includes(d);k++)d=addDays(d,-1);return d}
+  if(period==="week")return addDays(range("week",date)[0],-1);
+  return addDays(range("month",date)[0],-1);
+}
+function stepDate(dir){
+  if(ST.period==="day"){let d=addDays(ST.date,dir);for(let k=0;k<10&&!DB.days.includes(d)&&d>=DATA_FROM&&d<=DATA_TO;k++)d=addDays(d,dir);return d}
+  if(ST.period==="week")return addDays(ST.date,7*dir);
+  const y=+ST.date.slice(0,4),m=+ST.date.slice(5,7)-1+dir;const d=new Date(Date.UTC(y,m,1));return isoOf(d);
+}
+function periodLabel(){
+  const[a,b]=range(ST.period,ST.date);
+  if(ST.period==="day")return `${dowVN(a)} ${dmy(a)}`;
+  if(ST.period==="week")return `Tuần ${dm(a)} – ${dm(b)}/${b.slice(0,4)}`;
+  return `Tháng ${a.slice(5,7)}/${a.slice(0,4)}`;
+}
+
+/* ============================================================
+   TỔNG HỢP SỐ LIỆU THEO KỲ + PHẠM VI
+   ============================================================ */
+function agg(a,b,scope){
+  const days=DB.days.filter(d=>d>=a&&d<=b);
+  const rows=DB.prod.filter(r=>r.d>=a&&r.d<=b&&(scope==="all"||r.line===+scope));
+  const end=days.length?days[days.length-1]:null;
+  const F=days.map(d=>DB.fac[d]);
+  const has=rows.length>0;
+  const plan=sum(rows.map(r=>r.plan)),act=sum(rows.map(r=>r.act)),ng=sum(rows.map(r=>r.ng)),rw=sum(rows.map(r=>r.rw));
+  const insp=sum(rows.map(r=>r.qcInsp)),qcNg=sum(rows.map(r=>r.qcNg));
+  const mh=sum(rows.map(r=>r.hc*(r.hours+r.ot))),otH=sum(rows.map(r=>r.hc*r.ot));
+  const dtCD=sum(rows.map(r=>r.dtCD)),dtSX=sum(rows.map(r=>r.dtSX)),stops=rows.filter(r=>r.dtCD>0).length;
+  const lostMh=sum(rows.map(r=>r.dtCD/60*r.hc));
+  const defT=[0,0,0,0,0,0];rows.forEach(r=>r.def.forEach((v,j)=>defT[j]+=v));
+  const byCode={};rows.forEach(r=>{byCode[r.code]=byCode[r.code]||{act:0,ng:0};byCode[r.code].act+=r.act+r.ng;byCode[r.code].ng+=r.qcNg});
+  const stage={};DEFECTS.forEach(([n,s],j)=>stage[s]=(stage[s]||0)+defT[j]);
+  const ngOp=sum(DEFECTS.map((x,j)=>x[2]==="op"?defT[j]:0)),ngSup=qcNg-ngOp;
+  rows.forEach(r=>{const op=sum(DEFECTS.map((x,j)=>x[2]==="op"?r.def[j]:0));byCode[r.code].op=(byCode[r.code].op||0)+op;byCode[r.code].sup=(byCode[r.code].sup||0)+(r.qcNg-op)});
+  const prodRate=mh?act/mh:null;
+  const stdH=sum(rows.map(r=>r.act/(r.norm||normOf(r.code)))); // giờ chuẩn đạt được theo định mức từng mã
+  // đơn hàng (tính tại cuối kỳ)
+  const O=DB.orders, ref=b>DATA_TO?DATA_TO:b;
+  const ordState=o=>o.comp<=ref?"done":o.due<ref?"over":(o.start>ref?"wait":(diffDays(ref,o.due)<=3&&o.risk?"risk":"prod"));
+  const inPeriodDone=O.filter(o=>o.comp>=a&&o.comp<=b&&o.comp<=DATA_TO);
+  const otd=inPeriodDone.length?inPeriodDone.filter(o=>o.comp<=o.due).length/inPeriodDone.length*100:null;
+  const ordCount={prod:0,risk:0,over:0,wait:0,done:0};O.forEach(o=>{const s=ordState(o);if(s==="done"){if(o.comp>=a)ordCount.done++}else ordCount[s]++});
+  const dueIn=O.filter(o=>o.due>=a&&o.due<=b).length;
+  // nhiệm vụ tại cuối kỳ
+  const taskState=t=>t.created>ref?null:(t.done&&t.done<=ref?"done":t.due<ref?"over":"doing");
+  const tByDept={};DEPTS.forEach(dp=>tByDept[dp]={done:0,doing:0,over:0});
+  DB.tasks.forEach(t=>{const s=taskState(t);if(!s)return;if(s==="done"&&t.done<a)return;tByDept[t.dept][s]++});
+  // bảo hành
+  const W=DB.war.filter(w=>w.d<=ref);
+  const wNew=W.filter(w=>w.d>=a);
+  const wOpen=W.filter(w=>!w.closed||w.closed>ref);
+  const wOver=wOpen.filter(w=>diffDays(w.d,ref)>7);
+  const wClosedIn=W.filter(w=>w.closed&&w.closed>=a&&w.closed<=ref);
+  const wAvg=wClosedIn.length?sum(wClosedIn.map(w=>diffDays(w.d,w.closed)))/wClosedIn.length:null;
+  const wFam={},wDef={};wNew.forEach(w=>{wFam[w.fam]=(wFam[w.fam]||0)+w.qty;wDef[w.def]=(wDef[w.def]||0)+1});
+  // nhân sự
+  const present=F.length?sum(F.map(f=>f.staffTotal-f.absent))/F.length:null;
+  const absent=F.length?sum(F.map(f=>f.absent))/F.length:null;
+  const hcLine=days.length?sum(rows.map(r=>r.hc))/days.length:null;
+  const demand=scope==="all"?(F.length?sum(F.map(f=>f.demand))/F.length:null):(days.length?8.2:null);
+  const hcAvg=days.length?sum(rows.map(r=>r.hc))/days.length:null;
+  const fe=end?DB.fac[end]:null;
+  const WS=DB.wsales.filter(w=>w.d>=a&&w.d<=b);const wsF={};WS.forEach(w=>{wsF[w.fam]=wsF[w.fam]||{sold:0,wq:0};wsF[w.fam].sold+=w.sold;wsF[w.fam].wq+=w.wq});
+  const wSold=sum(WS.map(w=>w.sold)),wWq=sum(WS.map(w=>w.wq));
+  return{days,end,has,rows,plan,act,ng,rw,insp,qcNg,ngOp,ngSup,opRate:insp?ngOp/insp*100:null,supRate:insp?ngSup/insp*100:null,mh,otH,dtCD,dtSX,stops,lostMh,defT,byCode,stage,prodRate,
+    pctPlan:plan?act/plan*100:null,defRate:insp?qcNg/insp*100:null,fpy:insp?(insp-qcNg-rw)/insp*100:null,rwRate:insp?rw/insp*100:null,
+    prodPct:mh?stdH/mh*100:null,stdH,
+    wSold,wWq,wRate:wSold?wWq/wSold*100:null,wsF,
+    otd,ordCount,dueIn,tByDept,wNew,wOpen,wOver,wAvg,wFam,wDef,wQty:sum(wNew.map(w=>w.qty)),
+    present,absent,hcLine,demand,hcAvg,cover:hcAvg&&demand?hcAvg/demand*100:null,training:fe?fe.training:null,
+    invValue:fe?fe.invValue:null,shortage:fe?fe.shortage:null,belowMin:fe?fe.belowMin:null,invAcc:fe?fe.invAcc:null,ngPending:fe?fe.ngPending:null,
+    supply:fe?(1-fe.shortage/60)*100:null,
+    cogs:F.length?sum(F.map(f=>f.cogs))/F.length:null,unitPlan:F.length?52000:null,unitAct:F.length?Math.round(sum(F.map(f=>f.unitAct))/F.length):null,
+    laborCost:F.length?sum(F.map(f=>f.laborCost)):null,defCost:qcNg?qcNg*52000/1e6:(F.length?0:null),matVar:F.length?sum(F.map(f=>f.matVar))/F.length:null,
+    pm:F.length?sum(F.map(f=>f.pmDone))/sum(F.map(f=>f.pmPlan))*100:null,eqDown:fe?fe.eqDown+(rows.some(r=>r.d===end&&r.dtCD>60)?1:0):null,eqRisk:fe?fe.eqRisk:null,
+    mttr:stops?dtCD/stops:null,mtbf:stops?(sum(rows.map(r=>r.hours))/stops):null
+  };
+}
+
+/* ---------------- trạng thái màu ---------------- */
+function judge(key,val,dir,mult=1){
+  if(val==null||!isFinite(val))return{s:"none",p:null};
+  const t=CFG.th[key];const tgt=t.tgt*mult;
+  const p=dir>0?val/tgt*100:(val<=0?100:tgt/val*100);
+  return{s:p>=t.g?"ok":p>=t.y?"warn":"bad",p};
+}
+const SLBL={ok:"Đạt",warn:"Nguy cơ",bad:"Không đạt",none:"Chưa có dữ liệu"};
+
+/* ============================================================
+   CẢNH BÁO TỰ SINH (theo quy tắc + ngưỡng cấu hình)
+   ============================================================ */
+function buildAlerts(A){
+  const L=[];if(!A.days.length)return L;
+  const end=A.end, lines=CFG.lines;
+  // 1 thiếu NVL
+  if(A.shortage>0){const s=DB.shortList.slice(0,Math.min(A.shortage,DB.shortList.length));L.push({sev:"bad",grp:"Thiếu NVL",t:`${A.shortage} mã linh kiện thiếu cho lệnh SX`,d:s.map(x=>`${x[0]} (thiếu ${fmt(x[1])}, cần ${dm(x[2])})`).join("; ")+" · TKLK + KHSX"})}
+  // 2 đơn nguy cơ trễ / quá hạn
+  if(A.ordCount.over)L.push({sev:"bad",grp:"Đơn hàng",t:`${A.ordCount.over} đơn quá hạn giao`,d:"Xem nhóm Tiến độ đơn hàng · KHSX"});
+  if(A.ordCount.risk)L.push({sev:"warn",grp:"Đơn hàng",t:`${A.ordCount.risk} đơn có nguy cơ trễ (≤ 3 ngày đến hạn)`,d:"KHSX đề xuất phương án tăng ca/đổi line"});
+  // 3 tỷ lệ lỗi, tách NG thao tác (Sản xuất) và NG nhà cung cấp (QAC/Mua hàng)
+  const perLine=src=>lines.map((n,i)=>{const r=A.rows.filter(x=>x.line===i);const ins=sum(r.map(x=>x.qcInsp)),q=sum(r.map(x=>sum(DEFECTS.map((t,j)=>t[2]===src?x.def[j]:0))));return[n,ins?q/ins*100:0]});
+  if(A.opRate!=null&&A.opRate>CFG.th.defOp.tgt){
+    const per=perLine("op").filter(x=>x[1]>CFG.th.defOp.tgt).sort((x,y)=>y[1]-x[1]);
+    const top=DEFECTS.map((t,j)=>[t[0],A.defT[j],t[2]]).filter(x=>x[2]==="op").sort((x,y)=>y[1]-x[1])[0];
+    L.push({sev:judge("defOp",A.opRate,-1).s==="bad"?"bad":"warn",grp:"NG thao tác",t:`NG thao tác ${fmt(A.opRate,2)}% vượt ngưỡng ${fmt(CFG.th.defOp.tgt,2)}%`,d:(per.length?`${per.slice(0,3).map(x=>x[0]+" "+fmt(x[1],2)+"%").join(", ")}. `:"")+`Nhiều nhất: ${top[0]} (${fmt(top[1])} sp) · Trưởng SX + KT sản xuất`});
+  }
+  if(A.supRate!=null&&A.supRate>CFG.th.defSup.tgt){
+    const comp=DEFECTS.map((t,j)=>[t[3],A.defT[j],t[2]]).filter(x=>x[2]==="sup").sort((x,y)=>y[1]-x[1]);
+    L.push({sev:judge("defSup",A.supRate,-1).s==="bad"?"bad":"warn",grp:"NG NCC",t:`NG nhà cung cấp ${fmt(A.supRate,2)}% vượt ngưỡng ${fmt(CFG.th.defSup.tgt,2)}%`,d:comp.map(x=>`${x[0]} ${fmt(x[1])} sp`).join("; ")+" · QAC siết IQC lô kế tiếp, Mua hàng lập claim NCC"});
+  }
+  // 4 dừng máy & lệch CĐ/SX (ngày cuối kỳ)
+  const endRows=A.rows.filter(r=>r.d===end);
+  endRows.filter(r=>r.dtCD>CFG.th.dt.tgt).forEach(r=>L.push({sev:"bad",grp:"Thiết bị",t:`${lines[r.line]} dừng máy ${r.dtCD} phút (${dm(end)})`,d:"Vượt ngưỡng "+CFG.th.dt.tgt+" phút · Cơ điện"}));
+  const dtMis=A.rows.filter(r=>Math.abs(r.dtCD-r.dtSX)>CFG.dtDiffMin);
+  if(dtMis.length)L.push({sev:"warn",grp:"Đối chiếu",t:`Lệch giờ dừng máy CĐ ↔ SX: ${dtMis.length} lượt`,d:dtMis.slice(-3).map(r=>`${lines[r.line]} ${dm(r.d)}: CĐ ${r.dtCD}′, SX ${r.dtSX}′`).join("; ")});
+  // 5 lệch NG QAC ↔ SX
+  const ngMis=[];lines.forEach((n,i)=>{const r=A.rows.filter(x=>x.line===i);const q=sum(r.map(x=>x.qcNg)),s=sum(r.map(x=>x.ng));const df=Math.abs(q-s);if(df>CFG.ngDiffQty&&df/Math.max(1,s)*100>CFG.ngDiffPct)ngMis.push(`${n}: QAC ${q}, SX ${s}`)});
+  if(ngMis.length)L.push({sev:"warn",grp:"Đối chiếu",t:`Lệch số NG giữa QAC và SX: ${ngMis.length} line`,d:ngMis.slice(0,3).join("; ")+" · QAC + Trưởng SX"});
+  // 6 nhiệm vụ quá hạn
+  const over=sum(Object.values(A.tByDept).map(x=>x.over));
+  if(over){const top=Object.entries(A.tByDept).filter(x=>x[1].over).sort((x,y)=>y[1].over-x[1].over).slice(0,3);L.push({sev:"bad",grp:"Nhiệm vụ",t:`${over} nhiệm vụ quá hạn`,d:top.map(x=>`${x[0]} ${x[1].over}`).join(", ")})}
+  // 7 báo cáo chưa nộp (ngày cuối kỳ)
+  const rp=DB.reports[end]||{};const miss=POSITIONS.filter(p=>!rp[p[0]]).map(p=>p[0]),late=POSITIONS.filter(p=>rp[p[0]]&&rp[p[0]]>CFG.cutoff).map(p=>p[0]+" "+rp[p[0]]);
+  if(miss.length||late.length)L.push({sev:"bad",grp:"Báo cáo",t:`Báo cáo ngày ${dm(end)}: ${miss.length} chưa nộp, ${late.length} nộp muộn`,d:[miss.length?"Chưa nộp: "+miss.join(", "):"",late.length?"Muộn: "+late.join(", "):""].filter(Boolean).join(" · ")});
+  // 8 sự cố chưa có người xử lý
+  const noOwner=DB.issues.filter(i=>i.open<=A.end&&(!i.closed||i.closed>A.end)&&!i.owner);
+  if(noOwner.length)L.push({sev:"bad",grp:"Vấn đề",t:`${noOwner.length} vấn đề chưa có người xử lý`,d:noOwner.map(i=>i.id+" "+i.title).join("; ")});
+  // 9 tỷ lệ lỗi bảo hành theo nhóm SP
+  const wOverF=Object.entries(A.wsF).map(([f,o])=>[f,o.sold?o.wq/o.sold*100:0,o.wq,o.sold]).filter(x=>x[1]>CFG.th.warRate.tgt).sort((x,y)=>y[1]-x[1]);
+  if(wOverF.length)L.push({sev:judge("warRate",wOverF[0][1],-1).s==="bad"?"bad":"warn",grp:"Bảo hành",t:`Tỷ lệ lỗi bảo hành vượt ${fmt(CFG.th.warRate.tgt,2)}%: ${wOverF.length} nhóm sản phẩm`,d:wOverF.slice(0,3).map(x=>`${x[0]} ${fmt(x[1],2)}% (${fmt(x[2])}/${fmt(x[3])})`).join("; ")+" · Kỹ thuật SP + QAC phân tích nguyên nhân"});
+  // 10 tồn kho
+  if(A.invValue!=null&&A.invValue>CFG.th.inv.tgt)L.push({sev:"warn",grp:"Kho",t:`Giá trị tồn ${fmt(A.invValue,1)} tỷ vượt mức tối đa ${fmt(CFG.th.inv.tgt,1)} tỷ`,d:`${A.belowMin} mã dưới MIN; ${fmt(A.ngPending)} hàng lỗi chờ xử lý`});
+  const rank={bad:0,warn:1};return L.sort((x,y)=>rank[x.sev]-rank[y.sev]);
+}
+
+/* ============================================================
+   BIỂU ĐỒ SVG
+   ============================================================ */
+function combo(labels,bars,line,opts){
+  const W=380,H=190,L=44,R=10,T=14,B=26,iw=W-L-R,ih=H-T-B,n=labels.length;
+  const vals=bars.concat(line||[]).filter(v=>v!=null);
+  if(!n||!vals.length)return `<div class="empty">Chưa có dữ liệu cho kỳ này</div>`;
+  if(opts.ref!=null)vals.push(opts.ref);
+  let mx=opts.max!=null?opts.max:Math.max(...vals)*1.12,mn=opts.min!=null?opts.min:0;if(mx<=mn)mx=mn+1;
+  const y=v=>T+ih-(Math.max(mn,Math.min(mx,v))-mn)/(mx-mn)*ih,bw=iw/n,x=i=>L+bw*i+bw/2;
+  let g="";
+  for(let i=0;i<=4;i++){const v=mn+(mx-mn)*i/4;g+=`<line x1="${L}" x2="${W-R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="var(--line)"/><text x="${L-5}" y="${(y(v)+3.5).toFixed(1)}" text-anchor="end" font-size="9.5" fill="var(--muted)" font-family="IBM Plex Mono,monospace">${opts.tick(v)}</text>`}
+  const every=Math.ceil(n/12);
+  labels.forEach((l,i)=>{if((n-1-i)%every===0)g+=`<text x="${x(i).toFixed(1)}" y="${H-9}" text-anchor="middle" font-size="9.5" fill="var(--muted)">${esc(l)}</text>`});
+  const hl=opts.hl;
+  const stk=opts.stack;
+  if(stk)stk.forEach((v,i)=>{if(v!=null)vals.push(v+(bars[i]||0))});
+  bars.forEach((v,i)=>{if(v==null)return;const w=Math.max(2,bw*0.62);if(stk&&stk[i]!=null){const top=v+stk[i];g+=`<rect x="${(x(i)-w/2).toFixed(1)}" y="${y(top).toFixed(1)}" width="${w.toFixed(1)}" height="${Math.max(0,y(v)-y(top)).toFixed(1)}" rx="2" fill="${opts.stackColor}"><title>${esc(labels[i])}: ${opts.stackTip(stk[i])}</title></rect>`}g+=`<rect x="${(x(i)-w/2).toFixed(1)}" y="${y(v).toFixed(1)}" width="${w.toFixed(1)}" height="${(y(mn)-y(v)).toFixed(1)}" rx="2" fill="${opts.color(v,i)}" opacity="${hl!=null&&hl!==i?0.35:1}"><title>${esc(labels[i])}: ${opts.tip(v)}</title></rect>`});
+  if(line){const pts=line.map((v,i)=>v==null?null:`${x(i).toFixed(1)},${y(v).toFixed(1)}`).filter(Boolean);
+    if(opts.lineArea)g+=`<polygon points="${x(0).toFixed(1)},${y(mn).toFixed(1)} ${pts.join(" ")} ${x(n-1).toFixed(1)},${y(mn).toFixed(1)}" fill="${opts.lineColor}" opacity=".12"/>`;
+    g+=`<polyline points="${pts.join(" ")}" fill="none" stroke="${opts.lineColor}" stroke-width="2" ${opts.lineDash?'stroke-dasharray="5 3"':""}/>`;
+    line.forEach((v,i)=>{if(v!=null&&(n<=16||i===n-1))g+=`<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="${i===n-1?3.5:2.2}" fill="${opts.lineColor}"><title>${esc(labels[i])}: ${opts.tip(v)}</title></circle>`});}
+  if(opts.ref!=null)g+=`<line x1="${L}" x2="${W-R}" y1="${y(opts.ref).toFixed(1)}" y2="${y(opts.ref).toFixed(1)}" stroke="var(--bad)" stroke-dasharray="4 3" stroke-width="1.5"/><text x="${W-R}" y="${(y(opts.ref)-4).toFixed(1)}" text-anchor="end" font-size="9.5" fill="var(--bad)" font-weight="600">${esc(opts.refLabel)}</text>`;
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opts.aria)}">${g}</svg>`;
+}
+function hbars(rows,colors,aria){
+  const W=380,rowH=24,L=124,R=34,H=rows.length*rowH+6,mx=Math.max(1,...rows.map(r=>sum(r[1])));
+  let g="";rows.forEach((r,i)=>{let xx=L;const yy=4+i*rowH;
+    g+=`<text x="${L-6}" y="${yy+14}" text-anchor="end" font-size="10.5" fill="var(--fg)">${esc(r[0])}</text>`;
+    r[1].forEach((v,j)=>{const w=v/mx*(W-L-R);if(w>0)g+=`<rect x="${xx.toFixed(1)}" y="${yy+4}" width="${Math.max(w-1,1).toFixed(1)}" height="14" fill="${colors[j]}" rx="1"><title>${esc(r[0])}: ${v}</title></rect>`;xx+=w});
+    g+=`<text x="${(xx+4).toFixed(1)}" y="${yy+14}" font-size="10" fill="var(--muted)" font-family="IBM Plex Mono,monospace">${sum(r[1])}</text>`});
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(aria)}">${g}</svg>`;
+}
+
+/* ============================================================
+   MÀN HÌNH TỔNG QUAN NHÀ MÁY
+   ============================================================ */
+let A=null,AP=null,ALERTS=[];
+function compute(){
+  const[a,b]=range(ST.period,ST.date);A=agg(a,b,ST.scope);
+  const pd=prevDate(ST.period,ST.date);const[pa,pb]=range(ST.period,pd);AP=agg(pa,pb,ST.scope);
+  ALERTS=buildAlerts(A);
+}
+function card(key,label,val,unit,dec,tgt,tgtTxt,jd,prev,dir,scopeNote,grp){
+  const d=val!=null&&tgt!=null?val-tgt:null;
+  const tr=val!=null&&prev!=null?val-prev:null;
+  const good=tr==null||tr===0?null:(tr>0)===(dir>0);
+  const arrow=tr==null?"":tr>0?"▲":tr<0?"▼":"■";
+  return `<button class="kpi ${jd.s}" type="button" data-grp="${grp}" aria-label="${esc(label)}: mở chi tiết">
+   <div class="lbl"><span>${label}</span><span class="pill p-${jd.s}">${SLBL[jd.s]}</span></div>
+   <div class="val">${val==null?"—":fmt(val,dec)} <small>${unit}</small></div>
+   <div class="row"><span>MT ${tgtTxt}</span><span>${d==null?"":(d>=0?"+":"")+fmt(d,dec)}</span></div>
+   <div class="row"><span class="${good==null?"flat":good?"up":"dn"}">${tr==null?"Kỳ trước —":"Kỳ trước "+arrow+" "+fmt(Math.abs(tr),dec)}</span><span>${jd.p==null?"":fmt(jd.p,0)+"%"}</span></div>
+   ${scopeNote?`<div class="scope">${scopeNote}</div>`:""}</button>`;
+}
+function kpiHTML(){
+  const nd=A.days.length, line=ST.scope!=="all";
+  const facNote=line?"Số toàn nhà máy (không tách line)":"";
+  const dtLimit=CFG.th.dt.tgt*(nd||1)*(line?0.1:1);
+  return `<div class="kpis">
+  ${card("out","Sản lượng đạt",A.has?A.act:null,"sp",0,A.has?A.plan:null,A.has?fmt(A.plan):"—",judge("out",A.pctPlan,1),AP.has?AP.act:null,1,"","sx")}
+  ${card("plan","Hoàn thành KH",A.pctPlan,"%",1,CFG.th.out.tgt,fmt(CFG.th.out.tgt,0)+"%",judge("out",A.pctPlan,1),AP.pctPlan,1,"","sx")}
+  ${card("def","Tỷ lệ lỗi",A.defRate,"%",2,CFG.th.def.tgt,fmt(CFG.th.def.tgt,2)+"%",judge("def",A.defRate,-1),AP.defRate,-1,A.has?`<span class="pill p-${judge("defOp",A.opRate,-1).s}">Thao tác ${fmt(A.opRate,2)}%</span> <span class="pill p-${judge("defSup",A.supRate,-1).s}">NCC ${fmt(A.supRate,2)}%</span>`:"","cl")}
+  ${card("prod","Năng suất",A.prodPct,"% định mức",1,CFG.th.prod.tgt,fmt(CFG.th.prod.tgt,0)+"%",judge("prod",A.prodPct,1),AP.prodPct,1,A.has?`Theo định mức từng mã · ${fmt(A.stdH,0)} giờ chuẩn / ${fmt(A.mh,0)} giờ công`:"","sx")}
+  ${card("otd","OTD giao hàng",A.otd,"%",1,CFG.th.otd.tgt,fmt(CFG.th.otd.tgt,0)+"%",judge("otd",A.otd,1),AP.otd,1,facNote||(A.otd==null?"Không có đơn hoàn thành trong kỳ":""),"dh")}
+  ${card("inv","Tồn kho",A.invValue,"tỷ đ",1,CFG.th.inv.tgt,"≤ "+fmt(CFG.th.inv.tgt,1),judge("inv",A.invValue,-1),AP.invValue,-1,(facNote?facNote+" · ":"")+"Cuối kỳ","kho")}
+  ${card("cogs","COGS / doanh thu",A.cogs,"%",1,CFG.th.cogs.tgt,"≤ "+fmt(CFG.th.cogs.tgt,0)+"%",judge("cogs",A.cogs,-1),AP.cogs,-1,facNote,"cp")}
+  ${card("dt","Dừng máy",A.has?A.dtCD:null,"phút",0,A.has?dtLimit:null,A.has?"≤ "+fmt(dtLimit):"—",judge("dt",A.has?A.dtCD:null,-1,(nd||1)*(line?0.1:1)),AP.has?AP.dtCD:null,-1,A.has?`${A.stops} lượt dừng · ${A.eqDown||0} thiết bị đang sự cố`:"","tb")}
+  ${card("warRate","Tỷ lệ lỗi bảo hành",A.wRate,"%",2,CFG.th.warRate.tgt,"≤ "+fmt(CFG.th.warRate.tgt,2)+"%",judge("warRate",A.wRate,-1),AP.wRate,-1,A.wSold?`${fmt(A.wWq)} BH / ${fmt(A.wSold)} bán ra · KTGT cập nhật${line?" · toàn NM":""}`:"KTGT chưa cập nhật kỳ này","bh")}
+  </div>`;
+}
+const GROUPS=[["sx","Sản xuất"],["cl","Chất lượng"],["dh","Tiến độ đơn hàng"],["kho","Kho & cung ứng"],["cp","Chi phí"],["tb","Thiết bị & bảo trì"],["ns","Nhân sự"],["bh","Bảo hành & khách hàng"]];
+function groupStatus(g){
+  const w=s=>({bad:3,warn:2,ok:1,none:0})[s];const pick=arr=>arr.reduce((m,s)=>w(s)>w(m)?s:m,"none");
+  const nd=A.days.length||1,line=ST.scope!=="all";
+  switch(g){
+    case"sx":return pick([judge("out",A.pctPlan,1).s,judge("prod",A.prodPct,1).s]);
+    case"cl":return pick([judge("def",A.defRate,-1).s,judge("defOp",A.opRate,-1).s,judge("defSup",A.supRate,-1).s,judge("fpy",A.fpy,1).s]);
+    case"dh":return pick([judge("otd",A.otd,1).s,A.ordCount.over?"bad":A.ordCount.risk?"warn":"ok"]);
+    case"kho":return pick([judge("inv",A.invValue,-1).s,A.shortage?"bad":"ok"]);
+    case"cp":return judge("cogs",A.cogs,-1).s;
+    case"tb":return judge("dt",A.has?A.dtCD:null,-1,nd*(line?0.1:1)).s;
+    case"ns":return judge("hr",A.cover,1).s;
+    case"bh":return pick([judge("warRate",A.wRate,-1).s,judge("war",A.wAvg,-1).s,A.wOver.length?"bad":"ok"]);
+  }
+}
+function groupsHTML(){return `<div class="groups">${GROUPS.map(([k,n])=>`<button type="button" class="gchip" data-grp="${k}"><span class="dot ${groupStatus(k)}"></span>${n}</button>`).join("")}</div>`}
+
+function chartsHTML(){
+  // trục ngày: kỳ ngày → 14 ngày làm việc tới ngày chọn; tuần/tháng → các ngày trong kỳ
+  let xs;if(ST.period==="day"){const i=DB.days.indexOf(A.end||ST.date);xs=i<0?[]:DB.days.slice(Math.max(0,i-13),i+1)}else xs=A.days;
+  const sc=ST.scope;
+  const per=xs.map(d=>{const r=DB.prod.filter(x=>x.d===d&&(sc==="all"||x.line===+sc));return{d,plan:sum(r.map(x=>x.plan)),act:sum(r.map(x=>x.act)),ins:sum(r.map(x=>x.qcInsp)),ng:sum(r.map(x=>x.qcNg)),op:sum(r.map(x=>sum(DEFECTS.map((t,j)=>t[2]==="op"?x.def[j]:0))))}});
+  const labs=xs.map(dm);
+  const pmax=Math.max(1,...per.map(p=>Math.max(p.plan,p.act)))*1.12;
+  const c1=combo(labs,per.map(p=>p.act),per.map(p=>p.plan),{aria:"Sản lượng kế hoạch và thực tế",min:0,max:pmax,tick:v=>v>=1000?fmt(v/1000,1)+"k":fmt(v),tip:v=>fmt(v)+" sp",lineColor:"var(--plan)",lineDash:true,color:(v,i)=>v>=per[i].plan?"var(--ok)":"var(--accent)"});
+  const dr=per.map(p=>p.ins?p.ng/p.ins*100:null),dop=per.map(p=>p.ins?p.op/p.ins*100:null),dsup=dr.map((v,i)=>v==null?null:v-dop[i]);
+  const c2=combo(labs,dop,null,{aria:"Tỷ lệ lỗi theo ngày, tách NG thao tác và NG NCC",min:0,max:Math.max(CFG.th.def.tgt*1.6,...dr.filter(v=>v!=null))*1.1,tick:v=>fmt(v,2),tip:v=>fmt(v,2)+"%",ref:CFG.th.def.tgt,refLabel:"Ngưỡng tổng "+fmt(CFG.th.def.tgt,2)+"%",color:()=>"var(--accent)",stack:dsup,stackColor:"var(--plan)",stackTip:v=>"NCC "+fmt(v,2)+"%"});
+  const[a,b]=range(ST.period,ST.date);
+  const lp=CFG.lines.map((n,i)=>{const r=DB.prod.filter(x=>x.d>=a&&x.d<=b&&x.line===i);const mh=sum(r.map(x=>x.hc*(x.hours+x.ot)));return mh?sum(r.map(x=>x.act/(x.norm||normOf(x.code))))/mh*100:null});
+  const tg=CFG.th.prod.tgt,lv=lp.filter(v=>v!=null);
+  const c3=combo(CFG.lines.map(l=>l.replace(/^Line\s*/i,"L")),lp,null,{aria:"Năng suất theo line, % định mức",min:Math.max(0,Math.min(70,...lv)-5),max:Math.max(tg*1.12,...lv)*1.04,tick:v=>fmt(v,0)+"%",tip:v=>fmt(v,1)+"% định mức",ref:tg,refLabel:"MT "+fmt(tg,0)+"%",hl:sc==="all"?null:+sc,color:v=>v>=tg?"var(--ok)":v>=tg*CFG.th.prod.y/100?"var(--warn)":"var(--bad)"});
+  const oc=A.ordCount;
+  const c4=hbars([["Đang sản xuất",[oc.prod]],["Chờ sản xuất",[oc.wait]],["Nguy cơ trễ",[oc.risk]],["Quá hạn",[oc.over]],["Hoàn thành trong kỳ",[oc.done]]],["var(--accent)"],"Tình trạng đơn hàng");
+  const c5=hbars(Object.entries(A.tByDept).map(([k,v])=>[k,[v.done,v.doing,v.over]]),["var(--ok)","var(--accent)","var(--bad)"],"Nhiệm vụ theo bộ phận");
+  const scopeTxt=sc==="all"?"Toàn nhà máy":CFG.lines[+sc];
+  return `<div class="charts">
+   <div class="card"><h3>Sản lượng kế hoạch và thực tế <small>${scopeTxt}</small></h3>${c1}<div class="legend"><span><b style="background:var(--accent)"></b>Thực tế dưới KH</span><span><b style="background:var(--ok)"></b>Thực tế đạt KH</span><span><b class="ln" style="background:var(--plan)"></b>Kế hoạch</span></div></div>
+   <div class="card"><h3>Tỷ lệ lỗi theo ngày (%) <small>${scopeTxt} · QAC</small></h3>${c2}<div class="legend"><span><b style="background:var(--accent)"></b>NG thao tác</span><span><b style="background:var(--plan)"></b>NG nhà cung cấp</span></div></div>
+   <div class="card"><h3>Năng suất theo line <small>% định mức từng mã · ${ST.period==="day"?"ngày":ST.period==="week"?"tuần":"tháng"}</small></h3>${c3}</div>
+   <div class="card"><h3>Tình trạng đơn hàng <small>Toàn NM · tại ${A.end?dm(A.end):"—"}</small></h3>${c4}</div>
+   <div class="card"><h3>Nhiệm vụ theo bộ phận <small>tại ${A.end?dm(A.end):"—"}</small></h3>${c5}<div class="legend"><span><b style="background:var(--ok)"></b>Hoàn thành</span><span><b style="background:var(--accent)"></b>Đang làm</span><span><b style="background:var(--bad)"></b>Quá hạn</span></div></div>
+  </div>`;
+}
+function alertsHTML(list){
+  if(!list.length)return `<div class="empty">Không có cảnh báo cho kỳ này</div>`;
+  return `<div class="alerts">${list.map(a=>`<div class="alert ${a.sev}"><span class="sv"></span><div class="b"><div class="t">${esc(a.t)}<span class="k">${esc(a.grp)}</span></div><div class="d">${esc(a.d)}</div></div></div>`).join("")}</div>`;
+}
+function reportsHTML(){
+  if(!A.days.length)return `<div class="empty">Chưa có dữ liệu</div>`;
+  if(ST.period==="day"){const rp=DB.reports[A.end]||{};
+    return `<div class="tbl"><table><tr><th>Vị trí</th><th>Tên</th><th class="num">Giờ nộp</th><th>Trạng thái</th></tr>${POSITIONS.map(([c,n])=>{const t=rp[c];const s=!t?"bad":t>CFG.cutoff?"bad":"ok";return `<tr><td class="mono">${c}</td><td>${n}</td><td class="num">${t||"—"}</td><td><span class="pill p-${s}">${!t?"Chưa nộp":t>CFG.cutoff?"Nộp muộn":"Đúng hạn"}</span></td></tr>`}).join("")}</table></div>`}
+  const n=A.days.length;
+  return `<div class="tbl"><table><tr><th>Vị trí</th><th class="num">Đúng hạn</th><th class="num">Muộn</th><th class="num">Không nộp</th><th>Mức</th></tr>${POSITIONS.map(([c])=>{let ok=0,late=0,miss=0;A.days.forEach(d=>{const t=(DB.reports[d]||{})[c];if(!t)miss++;else if(t>CFG.cutoff)late++;else ok++});const p=ok/n*100;const s=p>=95?"ok":p>=85?"warn":"bad";return `<tr><td class="mono">${c}</td><td class="num">${ok}/${n}</td><td class="num">${late}</td><td class="num">${miss}</td><td><span class="pill p-${s}">${fmt(p,0)}%</span></td></tr>`}).join("")}</table></div>`;
+}
+let topSort={k:"sev",dir:1},topQ="";
+function topHTML(){
+  const ref=A.end||ST.date;
+  let rows=DB.issues.filter(i=>i.open<=ref&&(!i.closed||i.closed>ref)).map(i=>({...i,over:i.due<ref}));
+  rows.sort((x,y)=>({bad:0,warn:1}[x.sev]-{bad:0,warn:1}[y.sev])||(x.due<y.due?-1:1));
+  rows=rows.slice(0,10);
+  if(topQ)rows=rows.filter(r=>(r.title+r.dept+r.owner+r.id).toLowerCase().includes(topQ.toLowerCase()));
+  const k=topSort.k;if(k!=="sev")rows.sort((x,y)=>(String(x[k])<String(y[k])?-1:String(x[k])>String(y[k])?1:0)*topSort.dir);
+  const head=[["id","Mã"],["title","Vấn đề"],["dept","BP"],["owner","Phụ trách"],["due","Hạn"],["sev","Mức"],["cause","Vì sao"],["planB","Phương án B"]];
+  return `<div class="tools"><input id="topQ" type="search" placeholder="Tìm mã, nội dung, BP, người phụ trách" value="${esc(topQ)}" style="flex:1;min-width:180px" aria-label="Tìm vấn đề"></div>
+  <div class="tbl"><table><tr>${head.map(h=>`<th class="sort" data-sort="${h[0]}">${h[1]}${topSort.k===h[0]?(topSort.dir>0?" ▲":" ▼"):""}</th>`).join("")}<th>Trạng thái</th></tr>
+  ${rows.length?rows.map(r=>`<tr><td class="mono">${r.id}</td><td>${esc(r.title)}</td><td>${esc(r.dept)}</td><td>${r.owner?esc(r.owner):'<span class="pill p-bad">Chưa giao</span>'}</td><td class="num">${dm(r.due)}</td><td><span class="pill p-${r.sev}">${r.sev==="bad"?"Đỏ":"Vàng"}</span></td><td>${esc(r.cause)}</td><td>${esc(r.planB)}</td><td><span class="pill p-${r.over?"bad":"acc"}">${r.over?"Quá hạn":"Đang xử lý"}</span></td></tr>`).join(""):`<tr><td colspan="9"><div class="empty">Không có vấn đề mở</div></td></tr>`}</table></div>`;
+}
+function filterHTML(){
+  const opts=[`<option value="all">Toàn nhà máy</option>`].concat(CFG.lines.map((l,i)=>`<option value="${i}" ${ST.scope===String(i)?"selected":""}>${esc(l)}</option>`)).join("");
+  return `<div class="fbar" role="region" aria-label="Bộ lọc">
+   <span class="flabel">Kỳ</span>
+   <div class="seg" role="group" aria-label="Kỳ xem">${[["day","Ngày"],["week","Tuần"],["month","Tháng"]].map(([k,n])=>`<button type="button" data-per="${k}" aria-pressed="${ST.period===k}">${n}</button>`).join("")}</div>
+   <div class="datebox"><button type="button" id="prev" aria-label="Kỳ trước">‹</button><input type="date" id="date" value="${ST.date}" min="${DATA_FROM}" aria-label="Chọn ngày"><button type="button" id="next" aria-label="Kỳ sau">›</button></div>
+   <span class="flabel">Phạm vi</span>
+   <select id="scope" aria-label="Phạm vi">${opts}</select>
+   <span class="period">${periodLabel()} <small>· ${A.days.length} ngày làm việc có số liệu${MODE==="DEMO"?" · số liệu mẫu":""}</small></span>
+  </div>`;
+}
+function viewDash(){
+  compute();
+  const nodata=!A.days.length;
+  return filterHTML()+
+   (nodata?`<div class="empty" style="margin-bottom:12px">Kỳ ${esc(periodLabel())} chưa có số liệu. KPI hiển thị xám, không tự đánh giá. Dữ liệu mẫu có từ ${dmy(DATA_FROM)} đến ${dmy(DATA_TO)}.</div>`:"")+
+   `<h2 class="sec">Chỉ số điều hành <small>Bấm thẻ để xem chi tiết nhóm</small></h2>${kpiHTML()}${groupsHTML()}
+   <h2 class="sec">Diễn biến</h2>${chartsHTML()}
+   <div class="two" style="margin-top:4px">
+    <div><h2 class="sec">Cần GĐNM can thiệp <small>${ALERTS.length} cảnh báo · tự sinh theo ngưỡng</small></h2>${alertsHTML(ALERTS)}</div>
+    <div><h2 class="sec">Báo cáo ngày 14 vị trí <small>${ST.period==="day"?"chốt "+CFG.cutoff+" ngày "+(A.end?dm(A.end):"—"):"tỷ lệ nộp đúng hạn trong kỳ"}</small></h2>${reportsHTML()}</div>
+   </div>
+   <h2 class="sec">10 vấn đề quan trọng nhất <small>đang mở tại ${A.end?dmy(A.end):"—"} · xếp theo mức rồi hạn</small></h2>${topHTML()}`;
+}
+function bindDash(){
+  document.querySelectorAll("[data-per]").forEach(b=>b.onclick=()=>{ST.period=b.dataset.per;saveFilter();render()});
+  $("#date").onchange=e=>{const v=e.target.value;if(!/^\d{4}-\d{2}-\d{2}$/.test(v)){e.target.classList.add("err");return}ST.date=v;saveFilter();render()};
+  $("#prev").onclick=()=>{ST.date=stepDate(-1);saveFilter();render()};
+  $("#next").onclick=()=>{ST.date=stepDate(1);saveFilter();render()};
+  $("#scope").onchange=e=>{ST.scope=e.target.value;saveFilter();render()};
+  document.querySelectorAll("[data-grp]").forEach(b=>b.onclick=()=>openGroup(b.dataset.grp));
+  const q=$("#topQ");if(q)q.oninput=e=>{topQ=e.target.value;const pos=e.target.selectionStart;rerenderTop();const n=$("#topQ");n.focus();n.setSelectionRange(pos,pos)};
+  document.querySelectorAll("th.sort").forEach(th=>th.onclick=()=>{const k=th.dataset.sort;topSort=topSort.k===k?{k,dir:-topSort.dir}:{k,dir:1};rerenderTop()});
+}
+function rerenderTop(){const host=$("#topQ").closest(".tools").parentNode;const tmp=document.createElement("div");tmp.innerHTML=topHTML();
+  const tools=$("#topQ").closest(".tools"),tbl=tools.nextElementSibling;tools.replaceWith(tmp.children[0]);tbl.replaceWith(tmp.children[0]);bindTop()}
+function bindTop(){const q=$("#topQ");q.oninput=e=>{topQ=e.target.value;const pos=e.target.selectionStart;rerenderTop();const n=$("#topQ");n.focus();n.setSelectionRange(pos,pos)};
+  document.querySelectorAll("th.sort").forEach(th=>th.onclick=()=>{const k=th.dataset.sort;topSort=topSort.k===k?{k,dir:-topSort.dir}:{k,dir:1};rerenderTop()})}
+
+/* ============================================================
+   CHI TIẾT 8 NHÓM KPI (ngăn kéo)
+   ============================================================ */
+function m(label,val,unit,dec,st){return `<div class="m ${st||"none"}"><div class="l">${label}</div><div class="v">${val==null?"—":fmt(val,dec)} <small>${unit||""}</small></div></div>`}
+function codeTable(){
+  const[a,b]=range(ST.period,ST.date);const by={};
+  DB.prod.filter(x=>x.d>=a&&x.d<=b&&(ST.scope==="all"||x.line===+ST.scope)).forEach(x=>{const o=by[x.code]=by[x.code]||{act:0,mh:0,lines:new Set()};o.act+=x.act;o.mh+=x.hc*(x.hours+x.ot);o.lines.add(CFG.lines[x.line])});
+  const rows=Object.entries(by).map(([c,o])=>{const n=NORM[c];const real=o.act/o.mh;return[c,n,real,real/(n||CFG.stdProd)*100,o.act,[...o.lines].join(", ")]}).sort((x,y)=>x[3]-y[3]);
+  return `<h3 style="font-size:13px">Năng suất theo mã hàng</h3><div class="tbl"><table><tr><th>Mã</th><th>Nhóm</th><th class="num">Định mức</th><th class="num">Thực tế</th><th class="num">% định mức</th><th class="num">Sản lượng</th><th>Line</th></tr>${rows.map(r=>`<tr><td class="mono">${r[0]}</td><td>${famOf(r[0])}</td><td class="num">${r[1]==null?`<span class="pill p-warn">Thiếu · ${fmt(CFG.stdProd)}</span>`:fmt(r[1],1)}</td><td class="num">${fmt(r[2],1)}</td><td class="num"><span class="pill p-${judge("prod",r[3],1).s}">${fmt(r[3],1)}</span></td><td class="num">${fmt(r[4])}</td><td>${esc(r[5])}</td></tr>`).join("")}</table></div>`;
+}
+function lineTable(){
+  const[a,b]=range(ST.period,ST.date);
+  const rows=CFG.lines.map((n,i)=>{const r=DB.prod.filter(x=>x.d>=a&&x.d<=b&&x.line===i);const plan=sum(r.map(x=>x.plan)),act=sum(r.map(x=>x.act)),mh=sum(r.map(x=>x.hc*(x.hours+x.ot))),ng=sum(r.map(x=>x.ng)),q=sum(r.map(x=>x.qcNg)),ins=sum(r.map(x=>x.qcInsp)),sh=sum(r.map(x=>x.act/(x.norm||normOf(x.code)))),op=sum(r.map(x=>sum(DEFECTS.map((t,j)=>t[2]==="op"?x.def[j]:0))));return{n,i,plan,act,op,sup:q-op,pct:plan?act/plan*100:null,pr:mh?sh/mh*100:null,codes:[...new Set(r.map(x=>x.code))],ng,q,dr:ins?q/ins*100:null,dt:sum(r.map(x=>x.dtCD)),ot:sum(r.map(x=>x.hc*x.ot))}});
+  return `<div class="tbl"><table><tr><th>Line</th><th class="num">KH</th><th class="num">Thực tế</th><th class="num">% KH</th><th class="num">% NS định mức</th><th class="num">NG (SX)</th><th class="num">NG (QAC)</th><th class="num">Thao tác</th><th class="num">NCC</th><th class="num">% lỗi</th><th class="num">Dừng máy</th><th class="num">Giờ TC</th></tr>
+  ${rows.map(r=>`<tr${ST.scope===String(r.i)?' style="background:var(--sunk)"':""}><td>${esc(r.n)}</td><td class="num">${fmt(r.plan)}</td><td class="num">${fmt(r.act)}</td><td class="num"><span class="pill p-${judge("out",r.pct,1).s}">${fmt(r.pct,1)}</span></td><td class="num"><span class="pill p-${judge("prod",r.pr,1).s}">${fmt(r.pr,1)}</span></td><td class="num">${fmt(r.ng)}</td><td class="num"${Math.abs(r.q-r.ng)>CFG.ngDiffQty&&Math.abs(r.q-r.ng)/Math.max(1,r.ng)*100>CFG.ngDiffPct?' style="color:var(--warn);font-weight:700"':""}>${fmt(r.q)}</td><td class="num">${fmt(r.op)}</td><td class="num">${fmt(r.sup)}</td><td class="num"><span class="pill p-${judge("def",r.dr,-1).s}">${fmt(r.dr,2)}</span></td><td class="num">${fmt(r.dt)}′</td><td class="num">${fmt(r.ot,1)}</td></tr>`).join("")}</table></div>`;
+}
+function groupBody(g){
+  const nd=A.days.length||1,line=ST.scope!=="all";
+  switch(g){
+  case"sx":return `<div class="mgrid">${m("Kế hoạch sản lượng",A.has?A.plan:null,"sp",0)}${m("Sản lượng đạt",A.has?A.act:null,"sp",0,judge("out",A.pctPlan,1).s)}${m("Không đạt (SX báo)",A.has?A.ng:null,"sp",0)}${m("% hoàn thành KH",A.pctPlan,"%",1,judge("out",A.pctPlan,1).s)}${m("Năng suất theo định mức",A.prodPct,"%",1,judge("prod",A.prodPct,1).s)}${m("Giờ chuẩn đạt",A.has?A.stdH:null,"giờ",0)}${m("Giờ công",A.has?A.mh:null,"giờ",0)}${m("Giờ tăng ca",A.has?A.otH:null,"giờ",1)}${m("Hiệu suất sử dụng nhân lực",A.mh?(A.mh-A.lostMh)/A.mh*100:null,"%",1)}</div><h3 style="font-size:13px">Sản lượng theo line</h3>${lineTable()}${codeTable()}<p class="small">Năng suất theo định mức = Σ(sản lượng mã ÷ định mức sp/người/giờ của mã) ÷ giờ công. Định mức lấy từ BOM Bravo; mã chưa có định mức dùng định mức mặc định ${fmt(CFG.stdProd)} trong Cấu hình và được đánh dấu. Hiệu suất sử dụng nhân lực = (giờ công − giờ công mất do dừng máy) / giờ công. Ô NG (QAC) màu vàng: lệch với SX vượt ${CFG.ngDiffPct}% và ${CFG.ngDiffQty} sp.</p>`;
+  case"cl":{const tot=Math.max(1,A.qcNg);const top5=DEFECTS.map((d,j)=>[d[0],d[1],d[2],A.defT[j]]).sort((x,y)=>y[3]-x[3]).slice(0,5);
+    const codes=Object.entries(A.byCode).map(([c,v])=>[c,v.act,v.ng,v.act?v.ng/v.act*100:0,v.op||0,v.sup||0]).sort((x,y)=>y[3]-x[3]).slice(0,6);
+    const capa=DB.issues.filter(i=>i.dept==="QAC"&&i.open<=(A.end||ST.date));const capaOpen=capa.filter(i=>!i.closed||i.closed>A.end).length;
+    const sup=DEFECTS.map((d,j)=>[d[3],d[1],A.defT[j],d[2]]).filter(x=>x[3]==="sup");
+    return `<div class="mgrid">${m("Tổng kiểm tra",A.has?A.insp:null,"sp",0)}${m("Tổng lỗi (QAC)",A.has?A.qcNg:null,"sp",0)}${m("Tỷ lệ lỗi tổng",A.defRate,"%",2,judge("def",A.defRate,-1).s)}
+     ${m("NG thao tác",A.has?A.ngOp:null,"sp",0)}${m("Tỷ lệ NG thao tác",A.opRate,"%",2,judge("defOp",A.opRate,-1).s)}${m("NG nhà cung cấp",A.has?A.ngSup:null,"sp",0)}${m("Tỷ lệ NG NCC",A.supRate,"%",2,judge("defSup",A.supRate,-1).s)}
+     ${m("FPY",A.fpy,"%",1,judge("fpy",A.fpy,1).s)}${m("Tỷ lệ rework",A.rwRate,"%",2)}${m("CAPA đang mở",capaOpen,"/ "+capa.length,0,capaOpen?"warn":"ok")}</div>
+    <div class="two"><div><h3 style="font-size:13px">Top 5 lỗi</h3><div class="tbl"><table><tr><th>Lỗi</th><th>Nguồn</th><th>Công đoạn</th><th class="num">SL</th><th class="num">%</th></tr>${top5.map(r=>`<tr><td>${r[0]}</td><td><span class="pill p-${r[2]==="op"?"acc":"warn"}">${SRC[r[2]]}</span></td><td>${r[1]}</td><td class="num">${fmt(r[3])}</td><td class="num">${fmt(r[3]/tot*100,0)}%</td></tr>`).join("")}</table></div></div>
+    <div><h3 style="font-size:13px">NG nhà cung cấp theo nhóm linh kiện</h3><div class="tbl"><table><tr><th>Nhóm linh kiện</th><th>Phát hiện tại</th><th class="num">SL</th><th class="num">% NG NCC</th></tr>${sup.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td class="num">${fmt(r[2])}</td><td class="num">${fmt(r[2]/Math.max(1,A.ngSup)*100,0)}%</td></tr>`).join("")}</table></div>
+    <h3 style="font-size:13px">Lỗi theo công đoạn</h3><div class="tbl"><table><tr><th>Công đoạn</th><th class="num">SL</th><th class="num">%</th></tr>${Object.entries(A.stage).sort((x,y)=>y[1]-x[1]).map(([s,v])=>`<tr><td>${s}</td><td class="num">${fmt(v)}</td><td class="num">${fmt(v/tot*100,0)}%</td></tr>`).join("")}</table></div></div></div>
+    <h3 style="font-size:13px">Lỗi theo mã sản phẩm</h3><div class="tbl"><table><tr><th>Mã</th><th class="num">Kiểm tra</th><th class="num">Thao tác</th><th class="num">NCC</th><th class="num">% lỗi</th></tr>${codes.map(r=>`<tr><td class="mono">${r[0]}</td><td class="num">${fmt(r[1])}</td><td class="num">${fmt(r[4])}</td><td class="num">${fmt(r[5])}</td><td class="num"><span class="pill p-${judge("def",r[3],-1).s}">${fmt(r[3],2)}</span></td></tr>`).join("")}</table></div>
+    <p class="small"><b>NG thao tác</b>: lỗi do con người/thao tác trong nhà máy (hàn, lắp, va đập) – trách nhiệm Sản xuất, tính vào KPI SX. <b>NG nhà cung cấp</b>: linh kiện lỗi từ NCC lọt qua IQC (nguồn, mắt LED, vỏ) – QAC siết IQC, Mua hàng claim NCC. Tỷ lệ lỗi tổng = thao tác + NCC. FPY = (kiểm tra − lỗi − rework) / kiểm tra.</p>`}
+  case"dh":{const ref=A.end||ST.date;const O=DB.orders.filter(o=>o.comp>ref&&o.start<=ref).map(o=>({...o,st:o.due<ref?"over":(diffDays(ref,o.due)<=3&&o.risk?"risk":"prod")})).sort((x,y)=>x.due<y.due?-1:1).slice(0,12);
+    return `<div class="mgrid">${m("Đang sản xuất",A.ordCount.prod,"đơn",0)}${m("Phải giao trong kỳ",A.dueIn,"đơn",0)}${m("Hoàn thành trong kỳ",A.ordCount.done,"đơn",0)}${m("Nguy cơ trễ",A.ordCount.risk,"đơn",0,A.ordCount.risk?"warn":"ok")}${m("Quá hạn",A.ordCount.over,"đơn",0,A.ordCount.over?"bad":"ok")}${m("OTD",A.otd,"%",1,judge("otd",A.otd,1).s)}</div>
+    <h3 style="font-size:13px">Đơn đang mở gần hạn nhất <span class="src">BRAVO</span></h3><div class="tbl"><table><tr><th>Đơn</th><th>Kênh</th><th>Mã</th><th class="num">SL</th><th class="num">Hạn giao</th><th>Trạng thái</th></tr>${O.map(o=>`<tr><td class="mono">${o.id}</td><td>${o.chan}</td><td class="mono">${o.code}</td><td class="num">${fmt(o.qty)}</td><td class="num">${dm(o.due)}</td><td><span class="pill p-${o.st==="over"?"bad":o.st==="risk"?"warn":"acc"}">${o.st==="over"?"Quá hạn":o.st==="risk"?"Nguy cơ trễ":"Đang SX"}</span></td></tr>`).join("")}</table></div>
+    <p class="small">OTD = đơn hoàn thành đúng hoặc trước hạn / đơn hoàn thành trong kỳ. Khi chạy thật, đơn hàng lấy từ Bravo.</p>`}
+  case"kho":return `<div class="mgrid">${m("Tổng mã NVL",A.has||A.days.length?3000:null,"mã",0)}${m("Tỷ lệ đáp ứng NVL",A.supply,"%",1,A.shortage?"warn":"ok")}${m("Mã thiếu hàng",A.shortage,"mã",0,A.shortage?"bad":"ok")}${m("Mã dưới MIN",A.belowMin,"mã",0,A.belowMin>25?"warn":"ok")}${m("Độ chính xác tồn",A.invAcc,"%",1,A.invAcc>=98?"ok":"warn")}${m("Giá trị tồn",A.invValue,"tỷ đ",2,judge("inv",A.invValue,-1).s)}${m("Hàng lỗi chờ xử lý",A.ngPending,"sp",0)}</div>
+    <h3 style="font-size:13px">Mã linh kiện thiếu cho lệnh SX</h3><div class="tbl"><table><tr><th>Linh kiện</th><th class="num">Thiếu</th><th class="num">Cần ngày</th></tr>${DB.shortList.slice(0,A.shortage||0).map(x=>`<tr><td>${x[0]}</td><td class="num">${fmt(x[1])}</td><td class="num">${dm(x[2])}</td></tr>`).join("")||`<tr><td colspan="3"><div class="empty">Không thiếu</div></td></tr>`}</table></div><p class="small">Số liệu cuối kỳ, cấp toàn nhà máy.</p>`;
+  case"cp":return `<div class="mgrid">${m("Giá thành kế hoạch",A.unitPlan,"đ/sp",0)}${m("Giá thành thực tế",A.unitAct,"đ/sp",0,A.unitAct&&A.unitAct>A.unitPlan*1.02?"bad":A.unitAct>A.unitPlan?"warn":"ok")}${m("COGS / doanh thu",A.cogs,"%",2,judge("cogs",A.cogs,-1).s)}${m("Chi phí lỗi & sửa chữa",A.defCost,"triệu đ",1)}${m("Chi phí nhân công",A.laborCost,"triệu đ",1)}${m("Chênh lệch định mức NVL",A.matVar,"%",2,A.matVar>2?"warn":"ok")}</div><p class="small">Chi phí lỗi ước tính = số lỗi × giá thành KH bình quân. Khi chạy thật, giá thành lấy từ KT giá thành/Bravo.</p>`;
+  case"tb":return `<div class="mgrid">${m("Số lần dừng máy",A.has?A.stops:null,"lần",0)}${m("Tổng thời gian dừng",A.has?A.dtCD:null,"phút",0,judge("dt",A.has?A.dtCD:null,-1,nd*(line?0.1:1)).s)}${m("MTTR",A.mttr,"phút",0)}${m("MTBF",A.mtbf,"giờ",0)}${m("Hoàn thành bảo trì định kỳ",A.pm,"%",0,A.pm>=90?"ok":A.pm>=80?"warn":"bad")}${m("Thiết bị đang sự cố",A.eqDown,"thiết bị",0,A.eqDown?"bad":"ok")}${m("Thiết bị có nguy cơ hỏng",A.eqRisk,"thiết bị",0,A.eqRisk?"warn":"ok")}</div>
+    <h3 style="font-size:13px">Dừng máy theo line · CĐ báo vs SX báo</h3><div class="tbl"><table><tr><th>Line</th><th class="num">Lượt</th><th class="num">CĐ (phút)</th><th class="num">SX (phút)</th><th class="num">Lệch</th></tr>${CFG.lines.map((n,i)=>{const[a,b]=range(ST.period,ST.date);const r=DB.prod.filter(x=>x.d>=a&&x.d<=b&&x.line===i);const c=sum(r.map(x=>x.dtCD)),s=sum(r.map(x=>x.dtSX));return `<tr><td>${esc(n)}</td><td class="num">${r.filter(x=>x.dtCD>0).length}</td><td class="num">${fmt(c)}</td><td class="num">${fmt(s)}</td><td class="num"${Math.abs(c-s)>CFG.dtDiffMin?' style="color:var(--warn);font-weight:700"':""}>${c-s>0?"+":""}${fmt(c-s)}</td></tr>`}).join("")}</table></div><p class="small">MTTR = phút dừng / lượt dừng. MTBF = giờ chạy chuẩn / lượt dừng.</p>`;
+  case"ns":return `<div class="mgrid">${m("Tổng nhân sự",A.days.length?132:null,"người",0)}${m("Có mặt (TB/ngày)",A.present,"người",1)}${m("Vắng mặt (TB/ngày)",A.absent,"người",1,A.absent>6?"warn":"ok")}${m("Nhu cầu nhân lực SX",A.demand,"người",1)}${m("Nhân lực SX có mặt (TB)",A.hcAvg,"người",1)}${m("Thiếu hụt nhân lực SX",A.hcAvg!=null?Math.max(0,A.demand-A.hcAvg):null,"người",1,judge("hr",A.cover,1).s)}${m("Đáp ứng nhân lực SX",A.cover,"%",1,judge("hr",A.cover,1).s)}${m("Năng suất theo người",A.has?A.act/(sum(A.rows.map(r=>r.hc))||1):null,"sp/người/ngày",0)}${m("Hoàn thành đào tạo",A.training,"%",0,A.training>=90?"ok":A.training>=70?"warn":"bad")}</div><p class="small">Nhân sự lấy từ báo cáo HCNS; nhân lực line từ báo cáo Sản xuất.</p>`;
+  case"bh":{const fam=Object.entries(A.wFam).sort((x,y)=>y[1]-x[1]);const df=Object.entries(A.wDef).sort((x,y)=>y[1]-x[1]);
+    const wf=Object.entries(A.wsF).map(([f,o])=>[f,o.sold,o.wq,o.sold?o.wq/o.sold*100:null]).sort((x,y)=>(y[3]||0)-(x[3]||0));
+    return `<h3 style="font-size:13px;margin-top:0">Tỷ lệ lỗi bảo hành theo nhóm sản phẩm <span class="src">KTGT</span></h3>
+    <div class="mgrid">${m("SL bán ra",A.wSold||null,"sp",0)}${m("SL bảo hành",A.wSold?A.wWq:null,"sp",0)}${m("Tỷ lệ lỗi bảo hành",A.wRate,"%",2,judge("warRate",A.wRate,-1).s)}</div>
+    <div class="tbl" style="margin-bottom:14px"><table><tr><th>Nhóm sản phẩm</th><th class="num">SL bán ra</th><th class="num">SL bảo hành</th><th class="num">Tỷ lệ</th></tr>${wf.map(r=>`<tr><td>${r[0]}</td><td class="num">${fmt(r[1])}</td><td class="num">${fmt(r[2])}</td><td class="num"><span class="pill p-${judge("warRate",r[3],-1).s}">${fmt(r[3],2)}%</span></td></tr>`).join("")||'<tr><td colspan="4"><div class="empty">KTGT chưa cập nhật kỳ này</div></td></tr>'}</table></div>
+    <p class="small">Tỷ lệ = SL bảo hành ÷ SL bán ra của cùng nhóm, cùng kỳ đang lọc. Kế toán giá thành cập nhật theo nhóm sản phẩm; phạm vi toàn nhà máy (không tách line).</p>
+    <h3 style="font-size:13px">Xử lý khiếu nại, bảo hành</h3>
+    <div class="mgrid">${m("Khiếu nại mới",A.wNew.length,"vụ",0)}${m("Đang xử lý",A.wOpen.length,"vụ",0)}${m("Quá hạn (> 7 ngày)",A.wOver.length,"vụ",0,A.wOver.length?"bad":"ok")}${m("SP trong ca bảo hành (BP Bảo hành)",A.wQty,"sp",0)}${m("Thời gian xử lý TB",A.wAvg,"ngày",1,judge("war",A.wAvg,-1).s)}</div>
+    <div class="two"><div><h3 style="font-size:13px">Theo dòng sản phẩm</h3><div class="tbl"><table><tr><th>Dòng</th><th class="num">SL sp</th></tr>${fam.map(r=>`<tr><td>${r[0]}</td><td class="num">${fmt(r[1])}</td></tr>`).join("")||'<tr><td colspan="2">—</td></tr>'}</table></div></div>
+    <div><h3 style="font-size:13px">Nguyên nhân lặp lại</h3><div class="tbl"><table><tr><th>Nguyên nhân</th><th class="num">Số vụ</th></tr>${df.map(r=>`<tr><td>${r[0]}</td><td class="num">${fmt(r[1])}${r[1]>=5?' <span class="pill p-warn">Lặp lại</span>':""}</td></tr>`).join("")||'<tr><td colspan="2">—</td></tr>'}</table></div></div></div><p class="small">Gồm bảo hành tại nhà và tại nhà máy, cấp toàn nhà máy.</p>`}
+  }
+}
+function openGroup(g){
+  const name=GROUPS.find(x=>x[0]===g)[1];
+  $("#drawerHost").innerHTML=`<div class="ovl" id="ovl"><div class="drawer" role="dialog" aria-modal="true" aria-label="${esc(name)}">
+   <header><div><div class="small">${esc(periodLabel())} · ${ST.scope==="all"?"Toàn nhà máy":esc(CFG.lines[+ST.scope])}</div><h2>${esc(name)}</h2></div><button class="x" id="dclose" type="button">Đóng</button></header>
+   ${A.days.length?groupBody(g):`<div class="empty">Chưa có dữ liệu cho kỳ này</div>`}</div></div>`;
+  const close=()=>{$("#drawerHost").innerHTML="";document.removeEventListener("keydown",esc1)};
+  const esc1=e=>{if(e.key==="Escape")close()};
+  $("#dclose").onclick=close;$("#ovl").onclick=e=>{if(e.target.id==="ovl")close()};document.addEventListener("keydown",esc1);$("#dclose").focus();
+}
+
+/* ============================================================
+   KẾT NỐI, ĐĂNG NHẬP, PHÂN QUYỀN (Giai đoạn 3)
+   ============================================================ */
+const EMAIL_DOMAIN="tlc.local";              // email nội bộ ẩn: <tên đăng nhập>@tlc.local
+let RUN=null;                                // "LIVE" = máy chủ Supabase · "DEMO" = dùng thử trên máy, không lưu máy chủ
+let SB=null, ME=null, REF={depts:[],positions:[]}, LAST_PW="";
+const safeStorage={getItem:k=>{try{return localStorage.getItem(k)}catch(e){return null}},setItem:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}},removeItem:k=>{try{localStorage.removeItem(k)}catch(e){}}};
+function sbAvailable(){return !!(window.supabase&&window.supabase.createClient&&CONFIG.SUPABASE_URL&&CONFIG.SUPABASE_KEY)}
+// lock: bỏ khóa liên-tab của trình duyệt (navigator.locks) – nguyên nhân treo "Đang đăng nhập…" ở một số máy/khi mở file trực tiếp
+const noLock=async(name,timeout,fn)=>await fn();
+if(sbAvailable())SB=window.supabase.createClient(CONFIG.SUPABASE_URL,CONFIG.SUPABASE_KEY,{auth:{persistSession:true,autoRefreshToken:true,storage:safeStorage,storageKey:"tlc-auth",lock:noLock}});
+// Mỗi bước gọi máy chủ có giới hạn thời gian để không bao giờ treo im lặng
+function withTimeout(p,ms,step){return Promise.race([p,new Promise((_,rej)=>setTimeout(()=>rej(new Error("TIMEOUT:"+step)),ms))])}
+function setStep(t){const m=$("#lMsg");if(m&&!$("#loginView").hidden){m.className="msg";m.textContent=t}}
+
+// Tên đăng nhập dự kiến: tên + chữ đầu họ, đệm; không dấu (máy chủ kiểm tra trùng và thêm số)
+function makeUsername(full){
+  const p=String(full||"").replace(/[Đđ]/g,"d").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/[^a-z ]/g,"").trim().split(/\s+/).filter(Boolean);
+  if(p.length<2)return"";return p[p.length-1]+p.slice(0,-1).map(x=>x[0]).join("");
+}
+function sbErr(e){
+  const m=String(e&&(e.message||e.error_description||e)||"");
+  if(/Invalid login credentials/i.test(m))return"Sai tên đăng nhập hoặc mật khẩu.";
+  if(/banned/i.test(m))return"Tài khoản đã bị khóa. Liên hệ GĐNM.";
+  if(/Failed to fetch|NetworkError|Load failed/i.test(m))return"Không kết nối được máy chủ. Kiểm tra mạng rồi thử lại.";
+  if(/current.?password|reauthentication/i.test(m))return"Mật khẩu hiện tại không đúng.";
+  if(/same.*password|should be different/i.test(m))return"Mật khẩu mới phải khác mật khẩu cũ.";
+  if(/row-level security|permission denied/i.test(m))return"Không có quyền thực hiện thao tác này.";
+  if(/^TIMEOUT:/.test(m))return"Máy chủ không phản hồi ở bước: "+m.slice(8)+". Kiểm tra mạng, hoặc mở Supabase xem project có đang tạm dừng (Paused) không.";
+  if(/Could not find the function|PGRST202|does not exist/i.test(m))return"Máy chủ chưa có cấu trúc dữ liệu (chưa chạy file SQL Giai đoạn 3). Chi tiết: "+m;
+  return m||"Có lỗi, thử lại.";
+}
+
+/* ---------- DỮ LIỆU DÙNG THỬ (chỉ chế độ DEMO, nằm trên máy) ---------- */
+const DEMO_ORG=(()=>{
+  const depts=[[1,"BGD","Ban giám đốc"],[2,"QAC","Phòng QAC"],[3,"SX","Phòng Sản xuất"],[4,"KHSX","Phòng KHSX"],[5,"KHO","Kho"],[6,"KT","Phòng Kỹ thuật"],[7,"CD","Phòng Cơ điện"],[8,"KTGT","Kế toán giá thành"],[9,"BHM","Bảo hành nhà máy"],[10,"BHN","Bảo hành tại nhà"],[11,"HCNS","HCNS"]].map(([id,code,name])=>({id,code,name,sort:id}));
+  const pos=[["GDNM","Giám đốc nhà máy",1,"director",null],["TBP-QAC","Trưởng phòng QAC",2,"head","QAC"],["TBP-SX","Trưởng phòng Sản xuất",3,"head","SX"],["TBP-KHSX","Trưởng phòng KHSX",4,"head","KHSX"],["TBP-KHO","Trưởng kho",5,"head",null],["TBP-KT","Trưởng phòng Kỹ thuật",6,"head",null],["TBP-CD","Trưởng phòng Cơ điện",7,"head","CĐ"],["TBP-KTGT","Trưởng KT giá thành",8,"head","KTGT"],["TBP-BHM","Trưởng BH nhà máy",9,"head","BHM"],["TBP-BHN","Trưởng BH tại nhà",10,"head","BHN"],["TBP-HCNS","Trưởng phòng HCNS",11,"head","HCNS"],["TKLK","Thủ kho linh kiện",5,"staff","TKLK"],["KTKLK","Kế toán kho linh kiện",5,"staff","KTKLK"],["TKTP","Thủ kho thành phẩm",5,"staff","TKTP"],["KTKTP","Kế toán kho thành phẩm",5,"staff","KTKTP"],["KTSX","Kỹ thuật sản xuất",6,"staff","KTSX"],["KTSP","Kỹ thuật sản phẩm",6,"staff","KTSP"],["NV-QAC","Nhân viên QAC",2,"staff",null],["TT-SX","Tổ trưởng sản xuất",3,"staff",null]].map((x,i)=>({id:i+1,code:x[0],name:x[1],dept_id:x[2],kind:x[3],report_code:x[4],status:"on",status_from:null,status_to:null,acting_profile_id:null}));
+  const P=(id,username,full_name,pc,role)=>{const p=pos.find(x=>x.code===pc);return{id,username,full_name,dept_id:p.dept_id,position_id:p.id,manager_id:null,role,status:"active",must_change_pw:false,created_at:"2026-11-01"}};
+  const profiles=[P("d-an","annv","Nguyễn Văn An","GDNM","admin"),P("d-hoa","hoatt","Trần Thị Hoa","TBP-SX","head"),P("d-hai","haipv","Phan Văn Hải","TBP-KHO","head"),P("d-lan","lanbt","Bùi Thị Lan","TBP-QAC","head"),
+    P("d-sang","sangnt","Nguyễn Thị Sáng","TKTP","staff"),P("d-binh","binhlv","Lê Văn Bình","TKLK","staff"),P("d-ha","hapt","Phạm Thu Hà","KTKTP","staff"),P("d-tu","tunv","Ngô Văn Tú","TT-SX","staff"),P("d-duc","ducmv","Mai Văn Đức","NV-QAC","staff")];
+  profiles.forEach(p=>{if(p.role!=="admin")p.manager_id=p.role==="head"?"d-an":(profiles.find(h=>h.role==="head"&&h.dept_id===p.dept_id)||{}).id||"d-an"});
+  return{depts,positions:pos,profiles,history:[]};
+})();
+let DEMO_DB=null;
+const DEMO_LOGIN={admin:"d-an",head:"d-hoa",staff:"d-sang"};
+
+/* ---------- LỚP TRUY CẬP DỮ LIỆU (LIVE / DEMO cùng giao diện) ---------- */
+function demoAbsent(p,d){d=d||todayISO();if(p.status==="on")return false;if(p.status_from&&d<p.status_from)return false;if(p.status==="leave"&&p.status_to&&d>p.status_to)return false;return true}
+function demoApprover(deptId,d){const h=DEMO_DB.positions.find(p=>p.dept_id===deptId&&p.kind==="head");if(!h)return null;
+  if(!demoAbsent(h,d)){const u=DEMO_DB.profiles.find(x=>x.position_id===h.id&&x.status==="active");if(u)return u.id}
+  if(h.acting_profile_id&&DEMO_DB.profiles.some(x=>x.id===h.acting_profile_id&&x.status==="active"))return h.acting_profile_id;return null}
+function todayISO(){const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
+const api={
+  async me(){if(RUN==="DEMO"){const p=DEMO_DB.profiles.find(x=>x.id===DEMO_DB.uid);const d=DEMO_DB.depts.find(x=>x.id===p.dept_id),ps=DEMO_DB.positions.find(x=>x.id===p.position_id);
+      return{...p,dept_name:d.name,dept_code:d.code,position_name:ps.name,position_kind:ps.kind,report_code:ps.report_code,approves_depts:DEMO_DB.depts.filter(x=>demoApprover(x.id)===p.id).map(x=>x.id),today:todayISO()}}
+    const{data,error}=await SB.rpc("me");if(error)throw error;return data},
+  async ref(){if(RUN==="DEMO")return{depts:DEMO_DB.depts,positions:DEMO_DB.positions};
+    const[a,b]=await Promise.all([SB.from("departments").select("id,code,name,sort").order("sort"),SB.from("positions").select("id,code,name,dept_id,kind,report_code,status,status_from,status_to,acting_profile_id").order("dept_id").order("id")]);
+    if(a.error)throw a.error;if(b.error)throw b.error;return{depts:a.data,positions:b.data}},
+  async profiles(){if(RUN==="DEMO")return DEMO_DB.profiles.slice();
+    const{data,error}=await SB.from("profiles").select("id,username,full_name,dept_id,position_id,manager_id,role,status,must_change_pw,created_at").order("dept_id").order("full_name");if(error)throw error;return data},
+  async approvers(){if(RUN==="DEMO")return DEMO_DB.depts.filter(d=>DEMO_DB.positions.some(p=>p.dept_id===d.id&&p.kind==="head")).map(d=>{const h=DEMO_DB.positions.find(p=>p.dept_id===d.id&&p.kind==="head");const nm=id=>(DEMO_DB.profiles.find(x=>x.id===id)||{}).full_name||null;const holder=DEMO_DB.profiles.find(x=>x.position_id===h.id&&x.status==="active");const ap=demoApprover(d.id);
+      return{dept_id:d.id,dept_name:d.name,head_position_id:h.id,head_name:holder?holder.full_name:null,status:h.status,status_from:h.status_from,status_to:h.status_to,acting_profile_id:h.acting_profile_id,acting_name:nm(h.acting_profile_id),absent_today:demoAbsent(h),approver_id:ap,approver_name:nm(ap)}});
+    const{data,error}=await SB.rpc("dept_approvers");if(error)throw error;return data},
+  async setPosition(id,status,from,to,acting,note){
+    if(RUN==="DEMO"){if(status!=="on"&&!from)throw new Error("Cần nhập Từ ngày");if(status==="leave"&&(!to||to<from))throw new Error("Nghỉ tạm thời cần Đến ngày ≥ Từ ngày");
+      const p=DEMO_DB.positions.find(x=>x.id===id);Object.assign(p,{status,status_from:status==="on"?null:from,status_to:status==="leave"?to:null,acting_profile_id:status==="on"?null:(acting||null)});
+      DEMO_DB.history.unshift({position_id:id,status,status_from:p.status_from,status_to:p.status_to,acting_profile_id:p.acting_profile_id,note,changed_by:ME.id,changed_at:new Date().toISOString()});return}
+    const{error}=await SB.rpc("set_position_status",{p_position:id,p_status:status,p_from:from||null,p_to:to||null,p_acting:acting||null,p_note:note||null});if(error)throw error},
+  async history(){if(RUN==="DEMO")return DEMO_DB.history.slice(0,50);
+    const{data,error}=await SB.from("position_history").select("position_id,status,status_from,status_to,acting_profile_id,note,changed_by,changed_at").order("changed_at",{ascending:false}).limit(50);if(error)throw error;return data},
+  async settings(){if(RUN==="DEMO")return null;
+    const[a,b]=await Promise.all([SB.from("app_settings").select("key,value"),SB.from("production_lines").select("id,name,active").order("id")]);if(a.error)throw a.error;if(b.error)throw b.error;return{rows:a.data,lines:b.data}},
+  async saveSettings(th,rules,lines){if(RUN==="DEMO"){saveCFG();return}
+    let r=await SB.from("app_settings").upsert([{key:"thresholds",value:th,updated_by:ME.id},{key:"rules",value:rules,updated_by:ME.id}]);if(r.error)throw r.error;
+    for(let i=0;i<lines.length;i++){r=await SB.from("production_lines").update({name:lines[i]}).eq("id",i+1);if(r.error)throw r.error}},
+  async admin(action,payload){
+    if(RUN==="DEMO")return demoAdmin(action,payload);
+    const{data,error}=await SB.functions.invoke("admin-users",{body:{action,...payload}});
+    if(error){let m=error.message;try{const j=await error.context.json();m=j.error||m}catch(e){}throw new Error(m)}
+    if(data&&data.error)throw new Error(data.error);return data},
+  async changePassword(cur,nw){if(RUN==="DEMO")return;
+    const{error}=await SB.auth.updateUser({password:nw,current_password:cur});if(error)throw error;const r=await SB.rpc("mark_password_changed");if(r.error)throw r.error}
+};
+function demoAdmin(action,p){
+  const pw=()=>Math.random().toString(36).slice(2,8)+"A7"+Math.floor(Math.random()*90+10);
+  if(action==="create"){const base=makeUsername(p.full_name);if(!base)throw new Error("Nhập đủ họ và tên (ít nhất 2 từ)");let u=base,n=1;while(DEMO_DB.profiles.some(x=>x.username===u)){n++;u=base+n}
+    const ps=DEMO_DB.positions.find(x=>x.id===+p.position_id);if(!ps)throw new Error("Vị trí không tồn tại");if(p.role==="head"&&ps.kind!=="head")throw new Error("Vai trò Trưởng bộ phận phải gắn với vị trí Trưởng bộ phận");
+    DEMO_DB.profiles.push({id:"d-"+u,username:u,full_name:p.full_name.trim(),dept_id:ps.dept_id,position_id:ps.id,manager_id:p.manager_id||null,role:p.role,status:"active",must_change_pw:true,created_at:todayISO()});return{ok:true,username:u,password:pw()}}
+  const x=DEMO_DB.profiles.find(q=>q.id===p.id);if(!x)throw new Error("Không tìm thấy tài khoản");
+  if(action==="reset_password"){x.must_change_pw=true;return{ok:true,password:pw()}}
+  if(action==="set_status"){if(x.id===ME.id)throw new Error("Không tự khóa tài khoản của mình");x.status=p.status;return{ok:true}}
+  if(action==="update"){if(p.position_id){const ps=DEMO_DB.positions.find(q=>q.id===+p.position_id);x.position_id=ps.id;x.dept_id=ps.dept_id}if(p.role)x.role=p.role;if("manager_id"in p)x.manager_id=p.manager_id||null;return{ok:true}}
+}
+
+/* ---------- MÀN ĐĂNG NHẬP / ĐỔI MẬT KHẨU ---------- */
+function showView(v){["loginView","pwView","appView"].forEach(id=>{$("#"+id).hidden=id!==v})}
+function showLogin(msg){
+  showView("loginView");
+  $("#srvState").innerHTML=SB?`Máy chủ: <b>${esc(CONFIG.SUPABASE_URL.replace(/^https:\/\//,""))}</b>`:`<span style="color:var(--bad)">Chưa tải được thư viện kết nối hoặc chưa cấu hình máy chủ. Chỉ dùng được bản DEMO.</span>`;
+  $("#lUser").disabled=$("#lPass").disabled=$("#lBtn").disabled=!SB;
+  const m=$("#lMsg");m.className="msg "+(msg?"bad":"");m.textContent=msg||"";
+}
+$("#loginForm").addEventListener("submit",async e=>{
+  e.preventDefault();const m=$("#lMsg");const u=$("#lUser").value.trim().toLowerCase(),pw=$("#lPass").value;
+  $("#lUser").classList.toggle("err",!/^[a-z0-9]+$/.test(u));$("#lPass").classList.toggle("err",!pw);
+  if(!/^[a-z0-9]+$/.test(u)){m.className="msg bad";m.textContent="Tên đăng nhập chỉ gồm chữ thường không dấu và số, ví dụ sangnt.";return}
+  if(!pw){m.className="msg bad";m.textContent="Nhập mật khẩu.";return}
+  setStep("Bước 1/4: Kiểm tra tên đăng nhập và mật khẩu…");$("#lBtn").disabled=true;
+  try{const{error}=await withTimeout(SB.auth.signInWithPassword({email:u+"@"+EMAIL_DOMAIN,password:pw}),20000,"kiểm tra mật khẩu");if(error)throw error;LAST_PW=pw;RUN="LIVE";await afterLogin()}
+  catch(err){m.className="msg bad";m.textContent=sbErr(err)}finally{$("#lBtn").disabled=!SB}
+});
+document.querySelectorAll("[data-demo]").forEach(b=>b.onclick=()=>{RUN="DEMO";DEMO_DB=JSON.parse(JSON.stringify(DEMO_ORG));DEMO_DB.uid=DEMO_LOGIN[b.dataset.demo];afterLogin()});
+async function afterLogin(){
+  try{
+    setStep("Bước 2/4: Tải hồ sơ người dùng…");
+    ME=await withTimeout(api.me(),20000,"tải hồ sơ");
+    if(!ME){await logout("Đăng nhập đúng nhưng tài khoản chưa được gắn hồ sơ. Với GĐNM: chạy lệnh tlc_bootstrap_admin ở Bước 2 hướng dẫn.");return}
+    if(ME.status!=="active"){await logout("Tài khoản đã bị khóa. Liên hệ GĐNM.");return}
+    setStep("Bước 3/4: Tải danh mục bộ phận, vị trí…");
+    REF=await withTimeout(api.ref(),20000,"tải danh mục");
+    setStep("Bước 4/4: Tải cấu hình…");
+    const st=await withTimeout(api.settings(),20000,"tải cấu hình");
+    if(st){const th=(st.rows.find(r=>r.key==="thresholds")||{}).value,ru=(st.rows.find(r=>r.key==="rules")||{}).value;
+      if(th)CFG.th=Object.assign(JSON.parse(JSON.stringify(DEFAULT_CFG.th)),th);
+      if(ru){["cutoff","stdProd","ngDiffPct","ngDiffQty","dtDiffMin"].forEach(k=>{if(ru[k]!=null)CFG[k]=ru[k]});CFG.warrantyCycle=ru.warrantyCycle||"month"}
+      if(st.lines.length)CFG.lines=st.lines.map(l=>l.name)}
+    if(ME.must_change_pw){showPw(true);return}
+    startApp();
+  }catch(err){await logout(sbErr(err))}
+}
+function showPw(forced){
+  showView("pwView");$("#pwTitle").textContent=forced?"Đổi mật khẩu lần đầu":"Đổi mật khẩu";
+  $("#pwNote").textContent=forced?"Mật khẩu GĐNM cấp là mật khẩu tạm. Đặt mật khẩu riêng để tiếp tục.":"Mật khẩu mới có hiệu lực ngay cho lần đăng nhập sau.";
+  $("#pCur").value=forced?LAST_PW:"";$("#pNew").value=$("#pNew2").value="";$("#pMsg").textContent="";$("#pCancel").hidden=forced;$("#pNew").focus();
+}
+$("#pwForm").addEventListener("submit",async e=>{
+  e.preventDefault();const m=$("#pMsg"),cur=$("#pCur").value,n1=$("#pNew").value,n2=$("#pNew2").value;
+  ["pCur","pNew","pNew2"].forEach(i=>$("#"+i).classList.remove("err"));
+  const bad=(id,t)=>{$("#"+id).classList.add("err");m.className="msg bad";m.textContent=t};
+  if(!cur)return bad("pCur","Nhập mật khẩu hiện tại.");
+  if(n1.length<8||!/[A-Za-z]/.test(n1)||!/\d/.test(n1))return bad("pNew","Mật khẩu mới tối thiểu 8 ký tự, có cả chữ và số.");
+  if(n1===cur)return bad("pNew","Mật khẩu mới phải khác mật khẩu hiện tại.");
+  if(n1!==n2)return bad("pNew2","Nhập lại mật khẩu mới chưa khớp.");
+  m.className="msg";m.textContent="Đang lưu…";
+  try{await api.changePassword(cur,n1);ME.must_change_pw=false;LAST_PW="";toast("Đã đổi mật khẩu");startApp()}catch(err){m.className="msg bad";m.textContent=sbErr(err)}
+});
+$("#pCancel").onclick=()=>startApp();
+async function logout(msg){try{if(RUN==="LIVE"&&SB)await withTimeout(SB.auth.signOut({scope:"local"}),4000,"đăng xuất")}catch(e){try{safeStorage.removeItem("tlc-auth")}catch(_){}}ME=null;RUN=null;DEMO_DB=null;showLogin(msg)}
+if(SB)SB.auth.onAuthStateChange(ev=>{if(ev==="SIGNED_OUT"&&RUN==="LIVE"){ME=null;RUN=null;showLogin("Phiên đăng nhập đã kết thúc. Đăng nhập lại.")}});
+
+/* ============================================================
+   CẤU HÌNH HỆ THỐNG
+   ============================================================ */
+const THN={out:["Hoàn thành KH sản lượng","%",1],def:["Tỷ lệ lỗi tổng","%",-1],defOp:["Tỷ lệ NG thao tác","%",-1],defSup:["Tỷ lệ NG nhà cung cấp","%",-1],prod:["Năng suất theo định mức từng mã","%",1],otd:["OTD","%",1],inv:["Giá trị tồn tối đa","tỷ đ",-1],cogs:["COGS / doanh thu","%",-1],dt:["Dừng máy toàn NM / ngày","phút",-1],fpy:["FPY","%",1],hr:["Đáp ứng nhân lực","%",1],war:["Thời gian xử lý bảo hành","ngày",-1],warRate:["Tỷ lệ lỗi bảo hành (BH / bán ra)","%",-1]};
+const HSTAT={on:"Đang làm việc",leave:"Nghỉ tạm thời",vacant:"Nghỉ việc / chưa tuyển"};
+let cfgTab="tbp",CFG_CACHE=null;
+const CFGTABS=[["tbp","Trưởng bộ phận & kiêm nhiệm"],["kpi","Ngưỡng KPI"],["line","Line & quy tắc"],["bravo","Kết nối Bravo"]];
+const dmyS=iso=>iso?iso.slice(8,10)+"/"+iso.slice(5,7)+"/"+iso.slice(0,4):"";
+function cfgHead(){return `<h2 class="sec" style="margin-top:0">Cấu hình hệ thống <small>Chỉ GĐNM sửa · ${RUN==="DEMO"?"DEMO: thay đổi chỉ nằm trên máy này":"Lưu trên máy chủ, có ghi lịch sử"}</small></h2>
+  <div class="seg" role="tablist" style="margin-bottom:12px;flex-wrap:wrap">${CFGTABS.map(t=>`<button type="button" data-ct="${t[0]}" aria-pressed="${cfgTab===t[0]}">${t[1]}</button>`).join("")}</div>`}
+async function viewConfig(){
+  if(cfgTab==="tbp"){
+    let ap,profiles,hist;
+    try{[ap,profiles,hist]=await Promise.all([api.approvers(),api.profiles(),api.history()])}
+    catch(err){return cfgHead()+`<div class="alert bad"><span class="sv"></span><div class="b"><div class="t">Không tải được danh sách Trưởng bộ phận</div><div class="d">${esc(sbErr(err))}. Kiểm tra đã chạy file SQL Giai đoạn 3 chưa.</div></div></div>`}
+    CFG_CACHE={ap,profiles};
+    const nm=id=>(profiles.find(p=>p.id===id)||{}).full_name||"—";const posName=id=>(REF.positions.find(p=>p.id===id)||{}).name||"";
+    return cfgHead()+`<p class="small" style="margin:0 0 10px">Khai báo tình trạng từng Trưởng bộ phận. Có thể cài trước (Từ ngày là ngày mai). Nghỉ tạm thời hết ngày cuối tự trả quyền về TBP. Không chọn người kiêm nhiệm thì GĐNM duyệt thẳng. Hôm nay: ${dmyS(ME.today||todayISO())}.</p>
+    <div class="tbl"><table><tr><th>Bộ phận</th><th>TBP</th><th>Tình trạng</th><th>Từ ngày</th><th>Đến ngày</th><th>Người kiêm nhiệm</th><th>Hôm nay ai xác nhận</th><th></th></tr>
+    ${ap.map(a=>{const on=a.status==="on";const members=profiles.filter(p=>p.status==="active"&&p.role!=="admin"&&p.position_id!==a.head_position_id).sort((x,y)=>(x.dept_id===a.dept_id?0:1)-(y.dept_id===a.dept_id?0:1));
+      const kind=a.approver_id?(a.absent_today?"warn":"ok"):"bad";
+      return `<tr><td>${esc(a.dept_name)}</td><td><b>${esc(a.head_name||"Chưa có tài khoản")}</b></td>
+      <td><select id="md-${a.head_position_id}" data-md="${a.head_position_id}" style="min-width:165px">${Object.entries(HSTAT).map(([k,v])=>`<option value="${k}" ${a.status===k?"selected":""}>${v}</option>`).join("")}</select></td>
+      <td><input type="date" id="fr-${a.head_position_id}" value="${a.status_from||""}" ${on?"disabled":""}></td>
+      <td><input type="date" id="to-${a.head_position_id}" value="${a.status_to||""}" ${a.status!=="leave"?"disabled":""}></td>
+      <td><select id="ac-${a.head_position_id}" ${on?"disabled":""} style="min-width:180px"><option value="">— Không, GĐNM duyệt thẳng —</option>${members.map(p=>`<option value="${p.id}" ${a.acting_profile_id===p.id?"selected":""}>${esc(p.full_name)} – ${esc(posName(p.position_id))}</option>`).join("")}</select></td>
+      <td><span class="pill p-${kind}">${esc(a.approver_name||"GĐNM duyệt thẳng")}${a.absent_today&&a.approver_id?" (kiêm nhiệm)":""}</span>${!a.absent_today&&!on&&a.status_from?`<div class="small">Từ ${dmyS(a.status_from)}: ${esc(a.acting_name||"GĐNM duyệt thẳng")}</div>`:""}</td>
+      <td><button class="btn ghost" type="button" data-apply="${a.head_position_id}">Áp dụng</button><div class="msg" id="hm-${a.head_position_id}" role="status"></div></td></tr>`}).join("")}</table></div>
+    <h3 style="font-size:13px;margin:14px 0 6px">Lịch sử thay đổi</h3>
+    ${hist.length?`<div class="tbl"><table><tr><th>Lúc</th><th>Vị trí</th><th>Tình trạng</th><th>Kiêm nhiệm</th><th>Người thao tác</th></tr>${hist.map(h=>`<tr><td class="mono">${esc(new Date(h.changed_at).toLocaleString("vi-VN"))}</td><td>${esc(posName(h.position_id))}</td><td>${HSTAT[h.status]}${h.status_from?" từ "+dmyS(h.status_from):""}${h.status_to?" đến "+dmyS(h.status_to):""}</td><td>${esc(h.acting_profile_id?nm(h.acting_profile_id):"—")}</td><td>${esc(nm(h.changed_by))}</td></tr>`).join("")}</table></div>`:`<p class="small">Chưa có thay đổi. Mọi lần áp dụng đều ghi ở đây, không xóa được.</p>`}`;
+  }
+  if(cfgTab==="kpi")return cfgHead()+`<div class="tbl"><table><tr><th>Chỉ số</th><th>Hướng</th><th>Mục tiêu</th><th>Xanh khi đạt ≥ (%)</th><th>Vàng khi đạt ≥ (%)</th></tr>
+  ${Object.entries(THN).map(([k,v])=>`<tr><td>${v[0]} <span class="small">(${v[1]})</span></td><td>${v[2]>0?"Càng cao càng tốt":"Càng thấp càng tốt"}</td>
+   <td><input id="t-${k}" value="${CFG.th[k].tgt}" inputmode="decimal" style="width:90px"></td><td><input id="g-${k}" value="${CFG.th[k].g}" inputmode="decimal" style="width:70px"></td><td><input id="y-${k}" value="${CFG.th[k].y}" inputmode="decimal" style="width:70px"></td></tr>`).join("")}</table></div>
+  <p class="small">"% đạt" = thực tế ÷ mục tiêu (càng cao càng tốt) hoặc mục tiêu ÷ thực tế (càng thấp càng tốt). Ví dụ tỷ lệ lỗi mục tiêu 0,8%: Vàng ≥ 80% nghĩa là lỗi đến 1,00% còn Vàng.</p>${saveBar()}`;
+  if(cfgTab==="line")return cfgHead()+`<div class="two" style="margin-top:0">
+   <div class="card"><h3>Tên line sản xuất</h3><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px">${CFG.lines.map((l,i)=>`<div class="fld"><label for="ln${i}">Line số ${i+1}</label><input id="ln${i}" data-ln="${i}" value="${esc(l)}" maxlength="20"></div>`).join("")}</div></div>
+   <div class="card"><h3>Quy tắc chung</h3><div style="display:grid;gap:8px">
+    <div class="fld"><label for="cut">Giờ chốt báo cáo ngày (HH:MM)</label><input id="cut" value="${CFG.cutoff}"></div>
+    <div class="fld"><label for="std">Định mức năng suất mặc định cho mã chưa có định mức (sp/người/giờ)</label><input id="std" value="${CFG.stdProd}" inputmode="decimal"></div>
+    <div class="fld"><label for="ngp">Lệch NG QAC ↔ SX cảnh báo khi > (%) và > (sp)</label><div style="display:flex;gap:6px"><input id="ngp" value="${CFG.ngDiffPct}" inputmode="decimal"><input id="ngq" value="${CFG.ngDiffQty}" inputmode="numeric" aria-label="Lệch NG tối thiểu (sp)"></div></div>
+    <div class="fld"><label for="dtm">Lệch giờ dừng CĐ ↔ SX cảnh báo khi > (phút)</label><input id="dtm" value="${CFG.dtDiffMin}" inputmode="numeric"></div>
+    <div class="fld"><label for="wcy">KTGT cập nhật tỷ lệ lỗi bảo hành theo</label><select id="wcy">${[["day","Ngày"],["week","Tuần"],["month","Tháng"]].map(([k,n])=>`<option value="${k}" ${(CFG.warrantyCycle||"month")===k?"selected":""}>${n}</option>`).join("")}</select></div>
+   </div></div></div>${saveBar()}`;
+  return cfgHead()+`<div class="alert"><span class="sv"></span><div class="b"><div class="t">Chưa kết nối · làm ở Giai đoạn 5</div><div class="d">Khi chạy thật, màn hình này hiện thời điểm đồng bộ gần nhất, số dòng và lỗi của từng loại dữ liệu từ Bravo 8.</div></div></div>`;
+}
+function saveBar(){return `<div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;align-items:center"><button class="btn" id="cfgSave" type="button">Lưu cấu hình</button><button class="btn ghost" id="cfgReset" type="button">Khôi phục mặc định</button><span class="msg" id="cfgMsg" role="status"></span></div>`}
+function bindConfig(){
+  document.querySelectorAll("[data-ct]").forEach(b=>b.onclick=()=>{cfgTab=b.dataset.ct;render()});
+  document.querySelectorAll("[data-md]").forEach(el=>el.onchange=()=>{const k=el.dataset.md,m=el.value;$("#fr-"+k).disabled=m==="on";$("#to-"+k).disabled=m!=="leave";$("#ac-"+k).disabled=m==="on";if(m!=="on"&&!$("#fr-"+k).value)$("#fr-"+k).value=ME.today||todayISO()});
+  document.querySelectorAll("[data-apply]").forEach(b=>b.onclick=async()=>{const k=+b.dataset.apply,m=$("#md-"+k).value,fr=$("#fr-"+k).value,to=$("#to-"+k).value,ac=$("#ac-"+k).value,msg=$("#hm-"+k);
+    ["fr-","to-"].forEach(p=>$("#"+p+k).classList.remove("err"));
+    if(m!=="on"&&!fr){$("#fr-"+k).classList.add("err");msg.className="msg bad";msg.textContent="Nhập Từ ngày";return}
+    if(m==="leave"&&(!to||to<fr)){$("#to-"+k).classList.add("err");msg.className="msg bad";msg.textContent="Đến ngày phải ≥ Từ ngày";return}
+    b.disabled=true;msg.className="msg";msg.textContent="Đang lưu…";
+    try{await api.setPosition(k,m,fr,to,ac,null);ME=await api.me();REF=await api.ref();toast("Đã áp dụng");render()}catch(err){msg.className="msg bad";msg.textContent=sbErr(err);b.disabled=false}});
+  const save=$("#cfgSave");if(!save)return;
+  const num=el=>{const v=parseFloat(String(el.value).replace(",","."));return isFinite(v)&&v>=0?v:null};
+  save.onclick=async()=>{const msg=$("#cfgMsg");let bad=0;document.querySelectorAll("#main input").forEach(e=>e.classList.remove("err"));
+    const th=JSON.parse(JSON.stringify(CFG.th));
+    if(cfgTab==="kpi")Object.keys(THN).forEach(k=>{["tgt","g","y"].forEach(f=>{const el=$(`#${f==="tgt"?"t":f}-${k}`);const v=num(el);if(v==null||(f==="tgt"&&v===0)){el.classList.add("err");bad++}th[k][f]=v});if(th[k].g!=null&&th[k].y!=null&&th[k].g<th[k].y){$("#g-"+k).classList.add("err");bad++}});
+    const rules={cutoff:CFG.cutoff,stdProd:CFG.stdProd,ngDiffPct:CFG.ngDiffPct,ngDiffQty:CFG.ngDiffQty,dtDiffMin:CFG.dtDiffMin,warrantyCycle:CFG.warrantyCycle||"month",driveExport:"20:00"};let lines=CFG.lines.slice();
+    if(cfgTab==="line"){const cut=$("#cut").value.trim();if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(cut)){$("#cut").classList.add("err");bad++}rules.cutoff=cut;
+      [["std","stdProd",true],["ngp","ngDiffPct"],["ngq","ngDiffQty"],["dtm","dtDiffMin"]].forEach(([id,k,pos])=>{const v=num($("#"+id));if(v==null||(pos&&!v)){$("#"+id).classList.add("err");bad++}rules[k]=v});
+      rules.warrantyCycle=$("#wcy").value;
+      lines=[...document.querySelectorAll("[data-ln]")].map(e=>e.value.trim());lines.forEach((l,i)=>{if(!l){$("#ln"+i).classList.add("err");bad++}});
+      if(new Set(lines).size!==lines.length){msg.className="msg bad";msg.textContent="Tên line bị trùng.";return}}
+    if(bad){msg.className="msg bad";msg.textContent=`${bad} ô sai (ô đỏ): số ≥ 0, mục tiêu khác 0, Xanh ≥ Vàng, giờ dạng HH:MM, tên line không trống.`;return}
+    save.disabled=true;msg.className="msg";msg.textContent="Đang lưu…";
+    try{CFG.th=th;Object.assign(CFG,rules);CFG.lines=lines;await api.saveSettings(th,rules,lines);msg.className="msg ok";msg.textContent="Đã lưu. Tổng quan nhà máy dùng ngưỡng mới.";toast("Đã lưu cấu hình");updateBell()}
+    catch(err){msg.className="msg bad";msg.textContent=sbErr(err)}finally{save.disabled=false}};
+  $("#cfgReset").onclick=()=>{const d=JSON.parse(JSON.stringify(DEFAULT_CFG));if(cfgTab==="kpi")CFG.th=d.th;else{["cutoff","stdProd","ngDiffPct","ngDiffQty","dtDiffMin"].forEach(k=>CFG[k]=d[k]);CFG.lines=d.lines}render();toast("Đã điền giá trị mặc định, bấm Lưu để áp dụng")};
+}
+
+/* ============================================================
+   QUẢN LÝ TÀI KHOẢN (GĐNM)
+   ============================================================ */
+let accQ="",accDept="",ACC_SECRET=null,accConfirm=null;
+async function viewAccounts(){
+  const ps=await api.profiles();const posOf=id=>REF.positions.find(p=>p.id===id)||{};const dep=id=>(REF.depts.find(d=>d.id===id)||{}).name||"";
+  const nm=id=>(ps.find(p=>p.id===id)||{}).full_name||"—";
+  let rows=ps.filter(p=>(!accDept||String(p.dept_id)===accDept)&&(!accQ||(p.full_name+" "+p.username).toLowerCase().includes(accQ.toLowerCase())));
+  const ROLE={admin:"GĐNM",head:"Trưởng BP",staff:"Nhân viên"};
+  const posOpts=REF.depts.map(d=>`<optgroup label="${esc(d.name)}">${REF.positions.filter(p=>p.dept_id===d.id).map(p=>`<option value="${p.id}">${esc(p.name)}${p.report_code?" · BC "+esc(p.report_code):""}</option>`).join("")}</optgroup>`).join("");
+  return `<h2 class="sec" style="margin-top:0">Quản lý tài khoản <small>${ps.length} tài khoản · ${RUN==="DEMO"?"DEMO: không tạo tài khoản thật":"Tạo, khóa, đặt lại mật khẩu qua máy chủ an toàn"}</small></h2>
+  ${ACC_SECRET?`<div class="alert" style="margin-bottom:12px"><span class="sv" style="background:var(--ok)"></span><div class="b"><div class="t">${esc(ACC_SECRET.title)}</div>
+    <div class="d">Tên đăng nhập: <b class="mono" style="font-size:14px">${esc(ACC_SECRET.username)}</b> · Mật khẩu tạm: <b class="mono" style="font-size:14px" id="tmpPw">${esc(ACC_SECRET.password)}</b>
+    <button class="btn ghost" type="button" id="copyPw" style="padding:3px 10px;margin-left:6px">Sao chép</button><br>Mật khẩu chỉ hiện một lần. Người dùng phải đổi mật khẩu ở lần đăng nhập đầu.</div></div></div>`:""}
+  <div class="card" style="margin-bottom:12px"><h3>Tạo tài khoản</h3>
+   <form id="accForm" novalidate style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;align-items:end">
+    <div class="fld"><label for="aName">Họ và tên</label><input id="aName" placeholder="Nguyễn Thị Sáng" autocomplete="off"><span class="small" id="aUser"></span></div>
+    <div class="fld"><label for="aPos">Vị trí</label><select id="aPos"><option value="">— Chọn vị trí —</option>${posOpts}</select></div>
+    <div class="fld"><label for="aRole">Vai trò</label><select id="aRole"><option value="staff">Nhân viên</option><option value="head">Trưởng bộ phận</option><option value="admin">GĐNM (Admin)</option></select></div>
+    <div class="fld"><label for="aMgr">Quản lý trực tiếp</label><select id="aMgr"><option value="">—</option>${ps.filter(p=>p.status==="active"&&p.role!=="staff").map(p=>`<option value="${p.id}">${esc(p.full_name)} – ${esc(posOf(p.position_id).name||"")}</option>`).join("")}</select></div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn" type="submit" id="aBtn">Tạo tài khoản</button><span class="msg" id="aMsg" role="status"></span></div>
+   </form></div>
+  <div class="tools"><input id="accQ" type="search" placeholder="Tìm tên, tên đăng nhập" value="${esc(accQ)}" style="flex:1;min-width:160px" aria-label="Tìm tài khoản">
+   <select id="accDept" aria-label="Lọc bộ phận"><option value="">Tất cả bộ phận</option>${REF.depts.map(d=>`<option value="${d.id}" ${accDept===String(d.id)?"selected":""}>${esc(d.name)}</option>`).join("")}</select></div>
+  <div class="tbl"><table><tr><th>Họ tên</th><th>Tên đăng nhập</th><th>Bộ phận</th><th>Vị trí</th><th>Vai trò</th><th>Quản lý trực tiếp</th><th>Trạng thái</th><th>Thao tác</th></tr>
+  ${rows.map(p=>`<tr><td><b>${esc(p.full_name)}</b>${p.must_change_pw?' <span class="pill p-warn">Chưa đổi MK</span>':""}</td><td class="mono">${esc(p.username)}</td><td>${esc(dep(p.dept_id))}</td><td>${esc(posOf(p.position_id).name||"")}</td><td>${ROLE[p.role]}</td><td>${esc(p.manager_id?nm(p.manager_id):"—")}</td>
+   <td><span class="pill p-${p.status==="active"?"ok":"bad"}">${p.status==="active"?"Hoạt động":"Đã khóa"}</span></td>
+   <td style="white-space:nowrap">${p.id===ME.id?'<span class="small">Tài khoản của bạn</span>':`
+    <button class="btn ghost" type="button" data-act="reset" data-id="${p.id}" style="padding:4px 9px">${accConfirm===("reset"+p.id)?"Xác nhận đặt lại?":"Đặt lại MK"}</button>
+    <button class="btn ghost" type="button" data-act="${p.status==="active"?"lock":"unlock"}" data-id="${p.id}" style="padding:4px 9px;${p.status==="active"?"color:var(--bad)":""}">${accConfirm===((p.status==="active"?"lock":"unlock")+p.id)?"Xác nhận?":p.status==="active"?"Khóa":"Mở khóa"}</button>`}</td></tr>`).join("")||'<tr><td colspan="8"><div class="empty">Không có tài khoản phù hợp</div></td></tr>'}</table></div>
+  <p class="small">Khóa tài khoản khi người dùng nghỉ việc: mất quyền ngay, lịch sử báo cáo giữ nguyên. Nếu đó là Trưởng bộ phận, vào Cấu hình → Trưởng bộ phận & kiêm nhiệm để chọn người kiêm nhiệm.</p>`;
+}
+function bindAccounts(){
+  const name=$("#aName"),pos=$("#aPos"),role=$("#aRole");
+  name.oninput=()=>{const u=makeUsername(name.value);$("#aUser").textContent=u?"Tên đăng nhập dự kiến: "+u+" (trùng sẽ thêm số)":""};
+  pos.onchange=()=>{const p=REF.positions.find(x=>x.id===+pos.value);if(p)role.value=p.kind==="head"?"head":p.kind==="director"?"admin":"staff"};
+  $("#accForm").addEventListener("submit",async e=>{e.preventDefault();const m=$("#aMsg");[name,pos].forEach(x=>x.classList.remove("err"));
+    if(name.value.trim().split(/\s+/).length<2){name.classList.add("err");m.className="msg bad";m.textContent="Nhập đủ họ và tên.";return}
+    if(!pos.value){pos.classList.add("err");m.className="msg bad";m.textContent="Chọn vị trí.";return}
+    const p=REF.positions.find(x=>x.id===+pos.value);if(role.value==="head"&&p.kind!=="head"){role.classList.add("err");m.className="msg bad";m.textContent="Vai trò Trưởng bộ phận phải chọn vị trí Trưởng bộ phận.";return}
+    $("#aBtn").disabled=true;m.className="msg";m.textContent="Đang tạo…";
+    try{const r=await api.admin("create",{full_name:name.value.trim(),position_id:+pos.value,role:role.value,manager_id:$("#aMgr").value||null});
+      ACC_SECRET={title:"Đã tạo tài khoản "+name.value.trim(),username:r.username,password:r.password};toast("Đã tạo tài khoản");render()}
+    catch(err){m.className="msg bad";m.textContent=sbErr(err);$("#aBtn").disabled=false}});
+  const cp=$("#copyPw");if(cp)cp.onclick=()=>{const t=`Tên đăng nhập: ${ACC_SECRET.username}\nMật khẩu tạm: ${ACC_SECRET.password}`;
+    (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast("Đã sao chép")).catch(()=>{const r=document.createRange();r.selectNodeContents($("#tmpPw"));const s=getSelection();s.removeAllRanges();s.addRange(r);toast("Đã chọn mật khẩu, nhấn Ctrl+C")})};
+  $("#accQ").oninput=e=>{accQ=e.target.value;const pos=e.target.selectionStart;render().then(()=>{const n=$("#accQ");if(n){n.focus();n.setSelectionRange(pos,pos)}})};
+  $("#accDept").onchange=e=>{accDept=e.target.value;render()};
+  document.querySelectorAll("[data-act]").forEach(b=>b.onclick=async()=>{const key=b.dataset.act+b.dataset.id;
+    if(accConfirm!==key){accConfirm=key;render();return}accConfirm=null;b.disabled=true;
+    const who=(await api.profiles()).find(p=>p.id===b.dataset.id)||{};
+    try{if(b.dataset.act==="reset"){const r=await api.admin("reset_password",{id:b.dataset.id});ACC_SECRET={title:"Đã đặt lại mật khẩu cho "+who.full_name,username:who.username,password:r.password}}
+      else{await api.admin("set_status",{id:b.dataset.id,status:b.dataset.act==="lock"?"locked":"active"});toast(b.dataset.act==="lock"?"Đã khóa tài khoản":"Đã mở khóa")}render()}
+    catch(err){toast(sbErr(err));render()}});
+}
+
+/* ============================================================
+   BỘ PHẬN CỦA TÔI (TBP / người kiêm nhiệm) · CÔNG VIỆC CỦA TÔI (nhân viên)
+   ============================================================ */
+async function viewMyDept(){
+  const[ap,ps]=await Promise.all([api.approvers(),api.profiles()]);
+  const ids=[...new Set([ME.dept_id].concat(ME.approves_depts||[]))];const posOf=id=>REF.positions.find(p=>p.id===id)||{};
+  return `<h2 class="sec" style="margin-top:0">Bộ phận của tôi</h2>`+ids.map(id=>{const a=ap.find(x=>x.dept_id===id);const mem=ps.filter(p=>p.dept_id===id);const mine=a&&a.approver_id===ME.id;
+    return `<div class="card" style="margin-bottom:12px"><h3>${esc((REF.depts.find(d=>d.id===id)||{}).name||"")} <small>${mem.length} tài khoản</small></h3>
+    ${a?`<p style="margin:0 0 8px">Người xác nhận hôm nay: <span class="pill p-${a.approver_id?(a.absent_today?"warn":"ok"):"bad"}">${esc(a.approver_name||"GĐNM duyệt thẳng")}</span>
+      ${mine?(a.absent_today?' · <b>Bạn đang kiêm nhiệm quyền TBP</b>':' · <b>Bạn là người xác nhận</b>'):""}
+      ${a.status!=="on"?`<span class="small"> · TBP ${esc(a.head_name||"")}: ${HSTAT[a.status]}${a.status_from?" từ "+dmyS(a.status_from):""}${a.status_to?" đến "+dmyS(a.status_to):""}</span>`:""}</p>`:""}
+    <div class="tbl"><table><tr><th>Họ tên</th><th>Tên đăng nhập</th><th>Vị trí</th><th>Mã báo cáo ngày</th><th>Trạng thái</th></tr>${mem.map(p=>`<tr><td>${esc(p.full_name)}</td><td class="mono">${esc(p.username)}</td><td>${esc(posOf(p.position_id).name||"")}</td><td class="mono">${esc(posOf(p.position_id).report_code||"—")}</td><td><span class="pill p-${p.status==="active"?"ok":"bad"}">${p.status==="active"?"Hoạt động":"Đã khóa"}</span></td></tr>`).join("")}</table></div></div>`}).join("")+
+  `<div class="ph-card"><b>Việc của bộ phận, báo cáo chờ xác nhận và KPI bộ phận</b><p class="small" style="margin:6px 0 0">Xây ở Giai đoạn 4 và 6. Quyền xác nhận của bạn đã được hệ thống ghi nhận như trên.</p></div>`;
+}
+function viewMine(){
+  return `<h2 class="sec" style="margin-top:0">Công việc của tôi</h2>
+  <div class="two" style="margin-top:0"><div class="card"><h3>Thông tin tài khoản</h3>
+   <div class="mgrid" style="grid-template-columns:1fr 1fr">${[["Họ tên",ME.full_name],["Tên đăng nhập",ME.username],["Bộ phận",ME.dept_name],["Vị trí",ME.position_name],["Mã báo cáo ngày",ME.report_code||"—"],["Vai trò",{admin:"GĐNM",head:"Trưởng bộ phận",staff:"Nhân viên"}[ME.role]]].map(([l,v])=>`<div class="m"><div class="l">${l}</div><div class="v" style="font-size:14px">${esc(v)}</div></div>`).join("")}</div>
+   <button class="btn ghost" type="button" id="chgPw">Đổi mật khẩu</button></div>
+   <div class="card"><h3>4 câu hỏi mỗi ngày</h3><ol style="margin:0;padding-left:18px;line-height:1.9"><li>Hôm nay tôi phải làm gì?</li><li>Tôi đã làm được gì?</li><li>Kết quả thực tế ra sao?</li><li>Tôi vướng gì, cần ai hỗ trợ?</li></ol>
+   <p class="small">Danh sách việc được giao, báo cáo ngày và cập nhật tiến độ có ở Giai đoạn 4.</p></div></div>`;
+}
+
+/* ============================================================
+   KHUNG ỨNG DỤNG: SIDEBAR THEO VAI TRÒ, THÔNG BÁO
+   ============================================================ */
+const MODS=[["dash","Tổng quan nhà máy",2],["mydept","Bộ phận của tôi",3],["task","Giao việc",4],["mine","Công việc của tôi",3],["daily","Báo cáo hằng ngày",4],["sx","Sản xuất",5],["qc","Chất lượng",5],["kho","Kho",5],["kh","Kế hoạch",5],["kt","Kỹ thuật",5],["bt","Bảo trì",5],["gt","Giá thành",5],["bh","Bảo hành",5],["ns","Nhân sự",5],["kpi","KPI",6],["5s","5S",5],["vd","Vấn đề và cải tiến",6],["lich","Lịch điều hành",6],["acc","Quản lý tài khoản",3],["cfg","Cấu hình hệ thống",3]];
+const DEPT_MOD={SX:"sx",QAC:"qc",KHO:"kho",KHSX:"kh",KT:"kt",CD:"bt",KTGT:"gt",BHM:"bh",BHN:"bh",HCNS:"ns"};
+function allowedMods(){
+  if(!ME)return[];if(ME.role==="admin")return MODS.map(m=>m[0]).filter(k=>k!=="mydept");
+  const a=[];const approver=ME.role==="head"||(ME.approves_depts||[]).length;
+  if(approver)a.push("mydept","task");a.push("mine","daily");
+  const dm=DEPT_MOD[ME.dept_code];if(dm)a.push(dm);
+  (ME.approves_depts||[]).forEach(id=>{const c=(REF.depts.find(d=>d.id===id)||{}).code;const k=DEPT_MOD[c];if(k&&!a.includes(k))a.push(k)});
+  a.push("kpi","5s","vd","lich");return a;
+}
+function homeMod(){return ME.role==="admin"?"dash":((ME.role==="head"||(ME.approves_depts||[]).length)?"mydept":"mine")}
+function renderSide(){
+  const allow=allowedMods();const list=MODS.filter(m=>allow.includes(m[0]));
+  const grp=k=>["dash","mydept","task","mine","daily"].includes(k)?"Điều hành":["acc","cfg","kpi","lich","vd","5s"].includes(k)?(["acc","cfg"].includes(k)?"Quản trị":"Theo dõi"):"Bộ phận";
+  let last="";$("#side").innerHTML=list.map(([k,n,g])=>{const gname=grp(k);const h=gname!==last?`<div class="grp">${gname}</div>`:"";last=gname;
+    return h+`<button type="button" data-mod="${k}" aria-current="${ST.screen===k}"><span>${n}</span>${g>3?`<span class="ph">GĐ${g}</span>`:""}</button>`}).join("");
+  $("#side").querySelectorAll("button").forEach(b=>b.onclick=()=>{ST.screen=b.dataset.mod;ACC_SECRET=null;accConfirm=null;render();window.scrollTo(0,0)});
+}
+function updateBell(){
+  const el=$("#bellN");if(ME&&ME.role==="admin"){if(!A)compute();const n=ALERTS.length;el.hidden=!n;el.textContent=n;
+    $("#notif").innerHTML=`<h4>Thông báo · ${esc(periodLabel())}</h4>`+(n?alertsHTML(ALERTS):`<div class="empty">Không có thông báo</div>`)}
+  else{el.hidden=true;$("#notif").innerHTML=`<h4>Thông báo</h4><div class="empty">Thông báo việc mới, sắp đến hạn, quá hạn có ở Giai đoạn 4.</div>`}
+}
+let renderSeq=0;
+async function render(){
+  const seq=++renderSeq;renderSide();
+  if(!allowedMods().includes(ST.screen))ST.screen=homeMod();
+  const mod=MODS.find(x=>x[0]===ST.screen)||MODS[0];const main=$("#main");
+  try{
+    if(ST.screen==="dash"){main.innerHTML=viewDash();bindDash()}
+    else if(ST.screen==="cfg"){const h=await viewConfig();if(seq!==renderSeq)return;main.innerHTML=h;bindConfig()}
+    else if(ST.screen==="acc"){const h=await viewAccounts();if(seq!==renderSeq)return;main.innerHTML=h;bindAccounts()}
+    else if(ST.screen==="mydept"){const h=await viewMyDept();if(seq!==renderSeq)return;main.innerHTML=h}
+    else if(ST.screen==="mine"){main.innerHTML=viewMine();$("#chgPw").onclick=()=>showPw(false)}
+    else main.innerHTML=`<h2 class="sec" style="margin-top:0">${mod[1]}</h2><div class="ph-card"><b>Xây ở Giai đoạn ${mod[2]}.</b><p class="small" style="margin:6px 0 0">Nội dung và phân quyền đã chốt ở Giai đoạn 1. Bạn thấy mục này vì vai trò của bạn được phép dùng nó.</p></div>`;
+  }catch(err){main.innerHTML=`<div class="alert bad"><span class="sv"></span><div class="b"><div class="t">Không tải được dữ liệu</div><div class="d">${esc(sbErr(err))}</div></div></div>`}
+  updateBell();
+}
+function startApp(){
+  showView("appView");
+  $("#user").innerHTML=`${esc(ME.full_name)}<small>${esc(ME.username)} · ${esc(ME.position_name)}</small>`;
+  const c=$("#conn");c.classList.toggle("live",RUN==="LIVE");
+  c.textContent=RUN==="LIVE"?"Đã kết nối máy chủ · số liệu SX mẫu đến GĐ5":"DEMO · dùng thử, không lưu máy chủ";
+  ST.screen=homeMod();cfgTab="tbp";accQ="";accDept="";ACC_SECRET=null;accConfirm=null;render();
+}
+$("#logout").onclick=()=>logout();
+$("#bell").onclick=e=>{e.stopPropagation();const p=$("#notif");p.hidden=!p.hidden;$("#bell").setAttribute("aria-expanded",String(!p.hidden))};
+document.addEventListener("click",e=>{const p=$("#notif");if(!p.hidden&&!p.contains(e.target)&&e.target!==$("#bell")){p.hidden=true;$("#bell").setAttribute("aria-expanded","false")}});
+function tick(){const d=new Date();$("#clock").textContent=["CN","T2","T3","T4","T5","T6","T7"][d.getDay()]+" "+String(d.getDate()).padStart(2,"0")+"/"+String(d.getMonth()+1).padStart(2,"0")+"/"+d.getFullYear()+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0")}
+tick();setInterval(tick,30000);
+(async()=>{if(SB){try{const{data}=await SB.auth.getSession();if(data&&data.session){RUN="LIVE";await afterLogin();return}}catch(e){}}showLogin()})();
+
+</script>
+
+</html>
