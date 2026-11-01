@@ -836,7 +836,9 @@ function todayISO(){const d=new Date();return d.getFullYear()+"-"+String(d.getMo
 const api={
   async me(){if(RUN==="DEMO"){const p=DEMO_DB.profiles.find(x=>x.id===DEMO_DB.uid);const d=DEMO_DB.depts.find(x=>x.id===p.dept_id),ps=DEMO_DB.positions.find(x=>x.id===p.position_id);
       return{...p,dept_name:d.name,dept_code:d.code,position_name:ps.name,position_kind:ps.kind,report_code:ps.report_code,approves_depts:DEMO_DB.depts.filter(x=>demoApprover(x.id)===p.id).map(x=>x.id),today:todayISO()}}
-    const{data,error}=await SB.rpc("me");if(error)throw error;return data},
+    const{data,error}=await SB.rpc("me");if(error)throw error;
+    if(data){const r=await SB.from("user_roles").select("module").eq("profile_id",data.id).eq("module","overview").eq("can_view",true);data.overview=!!(r.data&&r.data.length)}
+    return data},
   async ref(){if(RUN==="DEMO")return{depts:DEMO_DB.depts,positions:DEMO_DB.positions};
     const[a,b]=await Promise.all([SB.from("departments").select("id,code,name,sort").order("sort"),SB.from("positions").select("id,code,name,dept_id,kind,report_code,status,status_from,status_to,acting_profile_id").order("dept_id").order("id")]);
     if(a.error)throw a.error;if(b.error)throw b.error;return{depts:a.data,positions:b.data}},
@@ -1017,7 +1019,8 @@ function bindConfig(){
    ============================================================ */
 let accQ="",accDept="",ACC_SECRET=null,accConfirm=null;
 async function viewAccounts(){
-  const ps=await api.profiles();const posOf=id=>REF.positions.find(p=>p.id===id)||{};const dep=id=>(REF.depts.find(d=>d.id===id)||{}).name||"";
+  const ps=await api.profiles();
+  const ov=RUN==="LIVE"?new Set((await q(SB.from("user_roles").select("profile_id").eq("module","overview").eq("can_view",true))).map(r=>r.profile_id)):new Set();const posOf=id=>REF.positions.find(p=>p.id===id)||{};const dep=id=>(REF.depts.find(d=>d.id===id)||{}).name||"";
   const nm=id=>(ps.find(p=>p.id===id)||{}).full_name||"—";
   let rows=ps.filter(p=>(!accDept||String(p.dept_id)===accDept)&&(!accQ||(p.full_name+" "+p.username).toLowerCase().includes(accQ.toLowerCase())));
   const ROLE={admin:"GĐNM",head:"Trưởng BP",staff:"Nhân viên"};
@@ -1036,12 +1039,14 @@ async function viewAccounts(){
    </form></div>
   <div class="tools"><input id="accQ" type="search" placeholder="Tìm tên, tên đăng nhập" value="${esc(accQ)}" style="flex:1;min-width:160px" aria-label="Tìm tài khoản">
    <select id="accDept" aria-label="Lọc bộ phận"><option value="">Tất cả bộ phận</option>${REF.depts.map(d=>`<option value="${d.id}" ${accDept===String(d.id)?"selected":""}>${esc(d.name)}</option>`).join("")}</select></div>
-  <div class="tbl"><table><tr><th>Họ tên</th><th>Tên đăng nhập</th><th>Bộ phận</th><th>Vị trí</th><th>Vai trò</th><th>Quản lý trực tiếp</th><th>Trạng thái</th><th>Thao tác</th></tr>
+  <div class="tbl"><table><tr><th>Họ tên</th><th>Tên đăng nhập</th><th>Bộ phận</th><th>Vị trí</th><th>Vai trò</th><th>Quản lý trực tiếp</th><th title="Được xem màn Tổng quan toàn nhà máy">Xem Tổng quan</th><th>Trạng thái</th><th>Thao tác</th></tr>
   ${rows.map(p=>`<tr><td><b>${esc(p.full_name)}</b>${p.must_change_pw?' <span class="pill p-warn">Chưa đổi MK</span>':""}</td><td class="mono">${esc(p.username)}</td><td>${esc(dep(p.dept_id))}</td><td>${esc(posOf(p.position_id).name||"")}</td><td>${ROLE[p.role]}</td><td>${esc(p.manager_id?nm(p.manager_id):"—")}</td>
+   <td style="text-align:center">${p.role==="admin"?'<span class="small">Luôn xem</span>':RUN==="LIVE"?`<input type="checkbox" data-ov="${p.id}" ${ov.has(p.id)?"checked":""} aria-label="Cho ${esc(p.full_name)} xem Tổng quan">`:"—"}</td>
    <td><span class="pill p-${p.status==="active"?"ok":"bad"}">${p.status==="active"?"Hoạt động":"Đã khóa"}</span></td>
    <td style="white-space:nowrap">${p.id===ME.id?'<span class="small">Tài khoản của bạn</span>':`
     <button class="btn ghost" type="button" data-act="reset" data-id="${p.id}" style="padding:4px 9px">${accConfirm===("reset"+p.id)?"Xác nhận đặt lại?":"Đặt lại MK"}</button>
-    <button class="btn ghost" type="button" data-act="${p.status==="active"?"lock":"unlock"}" data-id="${p.id}" style="padding:4px 9px;${p.status==="active"?"color:var(--bad)":""}">${accConfirm===((p.status==="active"?"lock":"unlock")+p.id)?"Xác nhận?":p.status==="active"?"Khóa":"Mở khóa"}</button>`}</td></tr>`).join("")||'<tr><td colspan="8"><div class="empty">Không có tài khoản phù hợp</div></td></tr>'}</table></div>
+    <button class="btn ghost" type="button" data-act="${p.status==="active"?"lock":"unlock"}" data-id="${p.id}" style="padding:4px 9px;${p.status==="active"?"color:var(--bad)":""}">${accConfirm===((p.status==="active"?"lock":"unlock")+p.id)?"Xác nhận?":p.status==="active"?"Khóa":"Mở khóa"}</button>`}</td></tr>`).join("")||'<tr><td colspan="9"><div class="empty">Không có tài khoản phù hợp</div></td></tr>'}</table></div>
+  <p class="small"><b>Xem Tổng quan:</b> tích để người đó xem màn Tổng quan toàn nhà máy (kể cả nhân viên). Trưởng bộ phận chưa được tích chỉ xem số của bộ phận mình. Thay đổi có hiệu lực ở lần đăng nhập sau.</p>
   <p class="small">Khóa tài khoản khi người dùng nghỉ việc: mất quyền ngay, lịch sử báo cáo giữ nguyên. Nếu đó là Trưởng bộ phận, vào Cấu hình → Trưởng bộ phận & kiêm nhiệm để chọn người kiêm nhiệm.</p>`;
 }
 function bindAccounts(){
@@ -1060,6 +1065,10 @@ function bindAccounts(){
     (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast("Đã sao chép")).catch(()=>{const r=document.createRange();r.selectNodeContents($("#tmpPw"));const s=getSelection();s.removeAllRanges();s.addRange(r);toast("Đã chọn mật khẩu, nhấn Ctrl+C")})};
   $("#accQ").oninput=e=>{accQ=e.target.value;const pos=e.target.selectionStart;render().then(()=>{const n=$("#accQ");if(n){n.focus();n.setSelectionRange(pos,pos)}})};
   $("#accDept").onchange=e=>{accDept=e.target.value;render()};
+  document.querySelectorAll("[data-ov]").forEach(c=>c.onchange=async()=>{c.disabled=true;
+    try{if(c.checked)await q(SB.from("user_roles").upsert({profile_id:c.dataset.ov,module:"overview",can_view:true,can_edit:false,created_by:ME.id}).select("profile_id"));
+      else await q(SB.from("user_roles").delete().eq("profile_id",c.dataset.ov).eq("module","overview").select("profile_id"));
+      toast(c.checked?"Đã cấp quyền xem Tổng quan":"Đã bỏ quyền xem Tổng quan")}catch(e){c.checked=!c.checked;toast(sbErr(e))}c.disabled=false});
   document.querySelectorAll("[data-act]").forEach(b=>b.onclick=async()=>{const key=b.dataset.act+b.dataset.id;
     if(accConfirm!==key){accConfirm=key;render();return}accConfirm=null;b.disabled=true;
     const who=(await api.profiles()).find(p=>p.id===b.dataset.id)||{};
@@ -2065,7 +2074,9 @@ function bind5s(){
 /* ============================================================
    TỔNG QUAN NHÀ MÁY – SỐ LIỆU THẬT (từ Form A–E, 3S, giao việc, báo cáo ngày)
    ============================================================ */
-const LD={period:"day",date:null,scope:"all",demo:false};
+const LD={period:"day",date:null,scope:"all",demo:false,dept:null};
+const ldFull=()=>ME&&(ME.role==="admin"||ME.overview);
+const ldDepts=()=>(ME.approves_depts||[]).filter(id=>id!==1);
 function ldTile(label,val,unit,dec,state,sub,mod,stateTxt){
   return `<button class="kpi ${state}" type="button" ${mod?`data-goto="${mod}"`:""} aria-label="${esc(label)}">
    <div class="lbl"><span>${label}</span><span class="pill p-${state}">${stateTxt||SLBL[state]}</span></div>
@@ -2075,8 +2086,15 @@ function ldTrend(cur,prev,dec,dir){if(cur==null||prev==null)return "";const d=cu
 async function viewDashLive(){
   const today=ME.today||todayISO();if(!LD.date)LD.date=today;
   const[d1,d2]=range(LD.period,LD.date);const p1=range(LD.period,addDays(d1,-1));const line=LD.scope==="all"?null:+LD.scope;
-  const[S,P,sum]=await Promise.all([rpc("dash_summary",{d1,d2,p_line:line}),rpc("dash_summary",{d1:p1[0],d2:p1[1],p_line:line}),
+  const full=ldFull();const dps=ldDepts();if(!full&&(!LD.dept||!dps.includes(LD.dept)))LD.dept=dps[0]||null;
+  if(!full&&!LD.dept)return `<h2 class="sec" style="margin-top:0">Tổng quan</h2><div class="ph-card">Bạn chưa được cấp quyền xem Tổng quan. Liên hệ GĐNM.</div>`;
+  const pd=full?null:LD.dept;const dName=pd?((REF.depts.find(d=>d.id===pd)||{}).name||""):"";
+  const[S,P,sum]=await Promise.all([rpc("dash_summary",{d1,d2,p_line:line,p_dept:pd}),rpc("dash_summary",{d1:p1[0],d2:p1[1],p_line:line,p_dept:pd}),
     rpc("daily_summary",{d:d2>today?today:d2}).catch(()=>[])]);
+  const SEC={prod:!!S.prod,lines:!!S.lines,qc:!!S.qc,cd:!!S.cd,hr:!!S.hr,wh:!!S.wh};
+  const Z0={rows:0,days:0,plan:0,plan_rows:0,good:0,ng_op:0,ng_sup:0,man_hours:0,ot_hours:0,std_hours:0,downtime:0,no_norm:0};
+  S.prod=S.prod||Z0;P.prod=P.prod||Z0;S.lines=S.lines||[];S.trend=S.trend||[];S.top_codes=S.top_codes||[];S.defects=S.defects||[];
+  S.qc=S.qc||{pqc_insp:0,pqc_op:0,pqc_sup:0,iqc_insp:0};S.cd=S.cd||{stops:0,downtime:0,open:0};S.hr=S.hr||{days:0};S.wh=S.wh||{shortage_items:0,receipt_sx:0};
   const pr=S.prod,pp=P.prod,has=pr.rows>0;const out=x=>x.good+x.ng_op+x.ng_sup;
   const kh=x=>x.plan_rows?ldPct(x.good,x.plan):null,ng=x=>out(x)?(x.ng_op+x.ng_sup)/out(x)*100:null,ns=x=>x.man_hours?x.std_hours/x.man_hours*100:null;
   const lbl=LD.period==="day"?`${dowVN(d1)} ${dmy(d1)}`:LD.period==="week"?`Tuần ${dm(d1)} – ${dm(d2)}/${d2.slice(0,4)}`:`Tháng ${d1.slice(5,7)}/${d1.slice(0,4)}`;
@@ -2084,7 +2102,7 @@ async function viewDashLive(){
   const entered=sum.filter(s=>s.entered).length;const closed=d2<today||(d2===today&&sxDeadlinePassed(today,today));
   // cảnh báo tự sinh từ số liệu thật
   const AL=[];const add=(sev,t,d,mod)=>AL.push({sev,t,d,mod});
-  if(LD.period==="day"&&closed&&repLines<(line?1:nLines))add("bad",`${(line?1:nLines)-repLines} line chưa nhập báo cáo SX ngày ${dm(d2)}`,S.lines.filter(l=>!l.n_rows).map(l=>l.name).join(", "),"sx");
+  if(SEC.lines&&LD.period==="day"&&closed&&repLines<(line?1:nLines))add("bad",`${(line?1:nLines)-repLines} line chưa nhập báo cáo SX ngày ${dm(d2)}`,S.lines.filter(l=>!l.n_rows).map(l=>l.name).join(", "),"sx");
   if(S.recon_flags)add("bad",`${S.recon_flags} điểm lệch giữa các bộ phận`,"SX ↔ Kho TP, NG SX ↔ QAC, dừng máy SX ↔ Cơ điện – cần giải trình","sx");
   if(S.tasks.overdue)add("bad",`${S.tasks.overdue} việc / chỉ đạo quá hạn`,`${S.tasks.pending_close} việc chờ đóng · ${S.tasks.due_req} xin lùi hạn chờ duyệt`,"task");
   if(S.issues_red)add("bad",`${S.issues_red} vấn đề mức ĐỎ đang mở`,"Từ mục 2 báo cáo ngày các vị trí","sum");
@@ -2102,21 +2120,24 @@ async function viewDashLive(){
    <div class="datebox"><button type="button" id="ldPrev" aria-label="Kỳ trước">‹</button><input type="date" id="ldDate" value="${LD.date}" max="${today}"><button type="button" id="ldNext" aria-label="Kỳ sau">›</button></div>
    <span class="flabel">Phạm vi</span><select id="ldScope">${lineOpt}</select>
    <span class="period">${lbl} <small>· ${pr.days} ngày có số liệu SX · số liệu thật</small></span>
-   <button class="btn ghost" type="button" id="ldDemo" style="margin-left:auto">Xem bản mẫu GĐ2</button></div>
-  ${has?"":`<div class="empty" style="margin-bottom:12px">Kỳ này chưa có báo cáo sản xuất. Các ô còn số là từ bộ phận khác.</div>`}
+   ${!full&&dps.length>1?`<select id="ldDept">${dps.map(id=>`<option value="${id}" ${id===LD.dept?"selected":""}>${esc((REF.depts.find(d=>d.id===id)||{}).name||"")}</option>`).join("")}</select>`:""}
+   ${ME.role==="admin"?'<button class="btn ghost" type="button" id="ldDemo" style="margin-left:auto">Xem bản mẫu GĐ2</button>':""}</div>
+  ${pd?`<div class="alert" style="margin-bottom:10px"><span class="sv" style="background:var(--accent)"></span><div class="b"><div class="t">Tổng quan ${esc(dName)}</div><div class="d">Bạn đang xem số liệu của bộ phận mình. Muốn xem toàn nhà máy, đề nghị GĐNM cấp quyền "Xem Tổng quan".</div></div></div>`:""}
+  ${has||!SEC.prod?"":`<div class="empty" style="margin-bottom:12px">Kỳ này chưa có báo cáo sản xuất. Các ô còn số là từ bộ phận khác.</div>`}
   <h2 class="sec">Chỉ số điều hành <small>Bấm thẻ để mở màn hình nhập liệu tương ứng</small></h2>
   <div class="kpis">
-   ${ldTile("Sản lượng đạt",has?pr.good:null,"sp",0,judge("out",kh(pr),1).s,`KH ${pr.plan_rows?fmt(pr.plan):"chưa có"} · ${ldTrend(has?pr.good:null,pp.rows?pp.good:null,0,1)}`,"sx")}
-   ${ldTile("Hoàn thành KH",kh(pr),"%",1,judge("out",kh(pr),1).s,`MT ${fmt(CFG.th.out.tgt,0)}% · ${ldTrend(kh(pr),kh(pp),1,1)}${pr.plan_rows<pr.rows?` · ${pr.rows-pr.plan_rows} dòng chưa có KH`:""}`,"sx")}
-   ${ldTile("Tỷ lệ NG (SX báo)",has?ng(pr):null,"%",2,judge("def",ng(pr),-1).s,has?`<span class="pill p-${jop.s}">Thao tác ${fmt(ldPct(pr.ng_op,out(pr)),2)}%</span> <span class="pill p-${jsu.s}">NCC ${fmt(ldPct(pr.ng_sup,out(pr)),2)}%</span>`:"","qc")}
-   ${ldTile("Năng suất",has?ns(pr):null,"% định mức",1,jns.s,has?`${fmt(pr.std_hours,0)} giờ chuẩn / ${fmt(pr.man_hours,0)} giờ công${pr.no_norm?` · ${pr.no_norm} dòng mã thiếu ĐM`:""} · ${ldTrend(ns(pr),ns(pp),1,1)}`:"","sx")}
-   ${ldTile("Dừng máy (Cơ điện)",S.cd.stops?S.cd.downtime:(has?0:null),"phút",0,S.cd.stops||has?judge("dt",S.cd.downtime,-1,Math.max(1,pr.days)*(line?0.1:1)).s:"none",`${S.cd.stops} sự cố · SX báo ${fmt(pr.downtime)} phút`,"bt")}
-   ${ldTile("Kiểm PQC (QAC)",S.qc.pqc_insp||null,"sp",0,S.qc.pqc_insp?judge("def",ldPct(S.qc.pqc_op+S.qc.pqc_sup,S.qc.pqc_insp),-1).s:"none",S.qc.pqc_insp?`NG ${fmt(ldPct(S.qc.pqc_op+S.qc.pqc_sup,S.qc.pqc_insp),2)}% · thao tác ${fmt(S.qc.pqc_op)} · NCC ${fmt(S.qc.pqc_sup)} · IQC ${fmt(S.qc.iqc_insp)}`:"QAC chưa nhập","qc")}
-   ${ldTile("Vắng mặt",S.hr.days?S.hr.absent_pct:null,"%",1,S.hr.days?"ok":"none",S.hr.days?`TB ${fmt(S.hr.absent_avg,0)}/${fmt(S.hr.total)} người · nghỉ việc ${fmt(S.hr.quits)} · tuyển mới ${fmt(S.hr.new)}${line?" · toàn NM":""}`:"HCNS chưa nhập","ns",S.hr.days?"Đã nhập":"Chưa có dữ liệu")}
+   ${!(SEC.prod)?"":ldTile("Sản lượng đạt",has?pr.good:null,"sp",0,judge("out",kh(pr),1).s,`KH ${pr.plan_rows?fmt(pr.plan):"chưa có"} · ${ldTrend(has?pr.good:null,pp.rows?pp.good:null,0,1)}`,"sx")}
+   ${!(SEC.prod)?"":ldTile("Hoàn thành KH",kh(pr),"%",1,judge("out",kh(pr),1).s,`MT ${fmt(CFG.th.out.tgt,0)}% · ${ldTrend(kh(pr),kh(pp),1,1)}${pr.plan_rows<pr.rows?` · ${pr.rows-pr.plan_rows} dòng chưa có KH`:""}`,"sx")}
+   ${!(SEC.prod)?"":ldTile("Tỷ lệ NG (SX báo)",has?ng(pr):null,"%",2,judge("def",ng(pr),-1).s,has?`<span class="pill p-${jop.s}">Thao tác ${fmt(ldPct(pr.ng_op,out(pr)),2)}%</span> <span class="pill p-${jsu.s}">NCC ${fmt(ldPct(pr.ng_sup,out(pr)),2)}%</span>`:"","qc")}
+   ${!(SEC.prod)?"":ldTile("Năng suất",has?ns(pr):null,"% định mức",1,jns.s,has?`${fmt(pr.std_hours,0)} giờ chuẩn / ${fmt(pr.man_hours,0)} giờ công${pr.no_norm?` · ${pr.no_norm} dòng mã thiếu ĐM`:""} · ${ldTrend(ns(pr),ns(pp),1,1)}`:"","sx")}
+   ${!(SEC.cd)?"":ldTile("Dừng máy (Cơ điện)",S.cd.stops?S.cd.downtime:(has?0:null),"phút",0,S.cd.stops||has?judge("dt",S.cd.downtime,-1,Math.max(1,pr.days)*(line?0.1:1)).s:"none",`${S.cd.stops} sự cố · SX báo ${fmt(pr.downtime)} phút`,"bt")}
+   ${!(SEC.qc)?"":ldTile("Kiểm PQC (QAC)",S.qc.pqc_insp||null,"sp",0,S.qc.pqc_insp?judge("def",ldPct(S.qc.pqc_op+S.qc.pqc_sup,S.qc.pqc_insp),-1).s:"none",S.qc.pqc_insp?`NG ${fmt(ldPct(S.qc.pqc_op+S.qc.pqc_sup,S.qc.pqc_insp),2)}% · thao tác ${fmt(S.qc.pqc_op)} · NCC ${fmt(S.qc.pqc_sup)} · IQC ${fmt(S.qc.iqc_insp)}`:"QAC chưa nhập","qc")}
+   ${!(SEC.hr)?"":ldTile("Vắng mặt",S.hr.days?S.hr.absent_pct:null,"%",1,S.hr.days?"ok":"none",S.hr.days?`TB ${fmt(S.hr.absent_avg,0)}/${fmt(S.hr.total)} người · nghỉ việc ${fmt(S.hr.quits)} · tuyển mới ${fmt(S.hr.new)}${line?" · toàn NM":""}`:"HCNS chưa nhập","ns",S.hr.days?"Đã nhập":"Chưa có dữ liệu")}
+   ${SEC.wh?ldTile("Kho",S.wh.shortage_items,"mã thiếu",0,S.wh.shortage_items?"warn":"ok",`Nhập kho từ SX ${fmt(S.wh.receipt_sx)} sp · NG trả về ${fmt(S.wh.ng_return||0)}`,"kho",S.wh.shortage_items?"Thiếu hàng":"Ổn"):""}
    ${ldTile("Lỗi 3S trong kỳ",S.fives.s1+S.fives.s2+S.fives.s3,"lỗi",0,S.fives_overdue?"bad":(S.fives.open?"warn":"ok"),`Sàng lọc ${S.fives.s1} · Sắp xếp ${S.fives.s2} · Sạch sẽ ${S.fives.s3} · ${S.fives_overdue} quá hạn${line?" · toàn NM":""}`,"5s",S.fives_overdue?"Quá hạn":S.fives.open?"Đang mở":"Ổn")}
    ${ldTile("Việc quá hạn",S.tasks.overdue,"việc",0,S.tasks.overdue?"bad":"ok",`${S.tasks.open} đang mở · ${S.tasks.done_in} đóng trong kỳ`,"task",S.tasks.overdue?"Cần xử lý":"Ổn")}
    ${ldTile("Đối chiếu lệch",S.recon_flags,"điểm",0,S.recon_flags?"bad":"ok","SX ↔ Kho TP · NG ↔ QAC · dừng máy ↔ CĐ","sx",S.recon_flags?"Lệch":"Khớp")}
-   ${ldTile("OTD · Tồn kho · Giá thành · Bảo hành",null,"",0,"none","Chờ dữ liệu Bravo / KTGT – đang hiện ở bản mẫu GĐ2",null,"Chưa nối")}
+   ${!(full)?"":ldTile("OTD · Tồn kho · Giá thành · Bảo hành",null,"",0,"none","Chờ dữ liệu Bravo / KTGT – đang hiện ở bản mẫu GĐ2",null,"Chưa nối")}
   </div>
   <div class="two" style="margin-top:4px">
    <div><h2 class="sec">Cần GĐNM can thiệp <small>${AL.length} cảnh báo · tự sinh từ số liệu thật</small></h2>
@@ -2124,20 +2145,20 @@ async function viewDashLive(){
    <div><h2 class="sec">Báo cáo ngày ${dm(d2>today?today:d2)} <small>${entered}/${sum.length} vị trí đã nhập</small></h2>
     <div class="tbl"><table><tr><th>Vị trí</th><th>Tên</th><th>Trạng thái</th></tr>${sum.map(s=>`<tr><td class="mono">${esc(s.report_code)}</td><td>${esc(s.position_name)}</td><td>${s.entered?`<span class="pill p-ok">Đã nhập ${s.last_edit_at?new Date(s.last_edit_at).toLocaleTimeString("vi-VN",{hour:"2-digit",minute:"2-digit"}):""}</span>`:closed?'<span class="pill p-bad">CHƯA BÁO CÁO</span>':'<span class="pill p-none">Chưa nhập</span>'}</td></tr>`).join("")}</table></div></div>
   </div>
-  <h2 class="sec">Theo line <small>${repLines}/${S.lines.length} line có báo cáo trong kỳ</small></h2>
+  ${SEC.lines?`<h2 class="sec">Theo line <small>${repLines}/${S.lines.length} line có báo cáo trong kỳ</small></h2>
   <div class="tbl"><table><tr><th>Line</th><th class="num">KH</th><th class="num">Đạt</th><th class="num">% KH</th><th class="num">NG thao tác</th><th class="num">NG NCC</th><th class="num">Năng suất / ĐM</th><th class="num">Dừng SX báo</th><th class="num">Dừng CĐ</th></tr>
   ${S.lines.map(l=>`<tr><td><b>${esc(l.name)}</b></td><td class="num">${l.plan_rows?fmt(l.plan):"—"}</td><td class="num">${l.n_rows?fmt(l.good):"—"}</td><td class="num">${kh(l)!=null?`<span class="pill p-${judge("out",kh(l),1).s}">${fmt(kh(l),1)}%</span>`:"—"}</td>
    <td class="num">${l.n_rows?fmt(ldPct(l.ng_op,out(l)),2)+"%":"—"}</td><td class="num">${l.n_rows?fmt(ldPct(l.ng_sup,out(l)),2)+"%":"—"}</td><td class="num">${ns(l)!=null?`<span class="pill p-${judge("prod",ns(l),1).s}">${fmt(ns(l),0)}%</span>`:"—"}</td>
-   <td class="num">${l.n_rows?fmt(l.dt_sx)+"'":"—"}</td><td class="num">${l.dt_cd?fmt(l.dt_cd)+"'":"—"}</td></tr>`).join("")}</table></div>
-  ${tr.length>1?`<h2 class="sec">Diễn biến theo ngày <small>cột = sản lượng đạt · vạch = kế hoạch · số = năng suất % định mức</small></h2>
+   <td class="num">${l.n_rows?fmt(l.dt_sx)+"'":"—"}</td><td class="num">${l.dt_cd?fmt(l.dt_cd)+"'":"—"}</td></tr>`).join("")}</table></div>`:""}
+  ${SEC.prod&&tr.length>1?`<h2 class="sec">Diễn biến theo ngày <small>cột = sản lượng đạt · vạch = kế hoạch · số = năng suất % định mức</small></h2>
   <div class="card" style="display:flex;gap:6px;align-items:flex-end;overflow-x:auto;min-height:150px">${tr.map(t=>{const h=(+t.good||0)/mx*110,hp=(+t.plan||0)/mx*110,n=t.man_hours?t.std_hours/t.man_hours*100:null;
     return `<div style="flex:1 0 26px;display:flex;flex-direction:column;align-items:center;gap:3px" title="${dmy(t.d)}: đạt ${fmt(t.good)} / KH ${fmt(t.plan)}"><span class="small">${n==null?"":fmt(n,0)}</span>
      <div style="position:relative;width:18px;height:110px"><div style="position:absolute;bottom:0;width:100%;height:${h}px;background:var(--${judge("prod",n,1).s==="none"?"accent":judge("prod",n,1).s});border-radius:3px 3px 0 0"></div>${t.plan?`<div style="position:absolute;bottom:${hp}px;left:-3px;right:-3px;border-top:2px solid var(--fg)"></div>`:""}</div>
      <span class="small">${t.d.slice(8,10)}</span></div>`}).join("")}</div>`:""}
-  <div class="two" style="margin-top:4px">
-   <div><h2 class="sec">Lỗi theo loại (QAC PQC)</h2>${S.defects.length?(()=>{const m=Math.max(...S.defects.map(x=>+x.qty));return `<div class="card">${S.defects.map(x=>`<div style="display:flex;align-items:center;gap:8px;margin:4px 0"><span style="flex:0 0 46%;min-width:0">${esc(x.name)} <span class="small">${x.source==="op"?"thao tác":"NCC"}</span></span><span style="flex:1;background:var(--sunk);border-radius:4px;height:10px"><span style="display:block;height:10px;border-radius:4px;width:${x.qty/m*100}%;background:var(--${x.source==="op"?"warn":"bad"})"></span></span><b class="num">${fmt(x.qty)}</b></div>`).join("")}</div>`})():'<div class="empty">QAC chưa nhập phiếu PQC trong kỳ</div>'}</div>
-   <div><h2 class="sec">Mã sản lượng lớn nhất</h2>${S.top_codes.length?`<div class="tbl"><table><tr><th>Mã</th><th class="num">Đạt</th><th class="num">NG</th><th class="num">NS / ĐM</th></tr>${S.top_codes.map(c=>`<tr><td class="mono" title="${esc(c.name||"")}">${esc(c.code)}</td><td class="num">${fmt(c.good)}</td><td class="num">${fmt(+c.ng_op + +c.ng_sup)}</td><td class="num">${c.prod_pct==null?"—":`<span class="pill p-${judge("prod",+c.prod_pct,1).s}">${fmt(+c.prod_pct,0)}%</span>`}${c.no_norm?' <span class="pill p-warn">thiếu ĐM</span>':""}</td></tr>`).join("")}</table></div>`:'<div class="empty">Chưa có báo cáo sản xuất</div>'}</div>
-  </div>`;
+  ${SEC.qc||SEC.prod?`<div class="two" style="margin-top:4px">
+   <div>${SEC.qc?`<h2 class="sec">Lỗi theo loại (QAC PQC)</h2>${S.defects.length?(()=>{const m=Math.max(...S.defects.map(x=>+x.qty));return `<div class="card">${S.defects.map(x=>`<div style="display:flex;align-items:center;gap:8px;margin:4px 0"><span style="flex:0 0 46%;min-width:0">${esc(x.name)} <span class="small">${x.source==="op"?"thao tác":"NCC"}</span></span><span style="flex:1;background:var(--sunk);border-radius:4px;height:10px"><span style="display:block;height:10px;border-radius:4px;width:${x.qty/m*100}%;background:var(--${x.source==="op"?"warn":"bad"})"></span></span><b class="num">${fmt(x.qty)}</b></div>`).join("")}</div>`})():'<div class="empty">QAC chưa nhập phiếu PQC trong kỳ</div>'}`:""}</div>
+   <div>${SEC.prod?`<h2 class="sec">Mã sản lượng lớn nhất</h2>${S.top_codes.length?`<div class="tbl"><table><tr><th>Mã</th><th class="num">Đạt</th><th class="num">NG</th><th class="num">NS / ĐM</th></tr>${S.top_codes.map(c=>`<tr><td class="mono" title="${esc(c.name||"")}">${esc(c.code)}</td><td class="num">${fmt(c.good)}</td><td class="num">${fmt(+c.ng_op + +c.ng_sup)}</td><td class="num">${c.prod_pct==null?"—":`<span class="pill p-${judge("prod",+c.prod_pct,1).s}">${fmt(+c.prod_pct,0)}%</span>`}${c.no_norm?' <span class="pill p-warn">thiếu ĐM</span>':""}</td></tr>`).join("")}</table></div>`:'<div class="empty">Chưa có báo cáo sản xuất</div>'}`:""}</div>
+  </div>`:""}`;
 }
 function bindDashLive(){
   const today=ME.today||todayISO();
@@ -2146,7 +2167,8 @@ function bindDashLive(){
   const step=dir=>{if(LD.period==="day")return addDays(LD.date,dir);if(LD.period==="week")return addDays(LD.date,7*dir);const d=D0(LD.date.slice(0,8)+"01");d.setUTCMonth(d.getUTCMonth()+dir);return isoOf(d)};
   $("#ldPrev").onclick=()=>{LD.date=step(-1);render()};$("#ldNext").onclick=()=>{const s=step(1);LD.date=s>today?today:s;render()};
   $("#ldScope").onchange=e=>{LD.scope=e.target.value;render()};
-  $("#ldDemo").onclick=()=>{LD.demo=true;render()};
+  const dm_=$("#ldDemo");if(dm_)dm_.onclick=()=>{LD.demo=true;render()};
+  const dd=$("#ldDept");if(dd)dd.onchange=e=>{LD.dept=+e.target.value;render()};
   document.querySelectorAll("[data-goto]").forEach(b=>b.onclick=()=>{const m=b.dataset.goto;if(allowedMods().includes(m)){ST.screen=m;render();window.scrollTo(0,0)}});
 }
 const MODS=[["dash","Tổng quan nhà máy",2],["sum","Tổng hợp báo cáo ngày",4],["mydept","Bộ phận của tôi",3],["task","Giao việc",4],["mine","Công việc của tôi",3],["daily","Báo cáo hằng ngày",4],["sx","Sản xuất",5],["qc","Chất lượng",5],["kho","Kho",5],["kh","Kế hoạch",5],["kt","Kỹ thuật",5],["bt","Bảo trì",5],["gt","Giá thành",5],["bh","Bảo hành",5],["ns","Nhân sự",5],["kpi","KPI",6],["5s","3S",5],["vd","Vấn đề và cải tiến",6],["lich","Lịch điều hành",6],["acc","Quản lý tài khoản",3],["cfg","Cấu hình hệ thống",3]];
@@ -2155,7 +2177,7 @@ const BUILT=["dash","sum","mydept","task","mine","daily","sx","qc","bt","kho","n
 function allowedMods(){
   if(!ME)return[];if(ME.role==="admin")return MODS.map(m=>m[0]).filter(k=>k!=="mydept");
   const a=[];const approver=ME.role==="head"||(ME.approves_depts||[]).length;
-  if(approver)a.push("sum","mydept","task");a.push("mine","daily");
+  if(ME.overview||approver)a.push("dash");if(approver)a.push("sum","mydept","task");a.push("mine","daily");
   const dm=DEPT_MOD[ME.dept_code];if(dm)a.push(dm);
   (ME.approves_depts||[]).forEach(id=>{const c=(REF.depts.find(d=>d.id===id)||{}).code;const k=DEPT_MOD[c];if(k&&!a.includes(k))a.push(k)});
   a.push("kpi","5s","vd","lich");return a;
