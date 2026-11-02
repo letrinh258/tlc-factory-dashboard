@@ -2437,6 +2437,114 @@ function bind5s(){
       toast({counter:"Đã lưu đối sách",request_close:"Đã đề nghị đóng",close:"Đã xác nhận đóng",reopen:"Đã trả lại",delete:"Đã xóa lỗi"}[act]);render()}catch(e){setMsg(m,sbErr(e),"bad")}});
 }
 /* ============================================================
+   VẤN ĐỀ VÀ CẢI TIẾN – Tab A: Vấn đề (CAPA) tổng hợp · Tab B: Dự án cải tiến
+   ============================================================ */
+const VD={tab:"issue",fSev:"",fSt:"open",fDept:"",q:"",projOpen:false,editProj:null};
+const VD_ST=[["open","Mới"],["processing","Đang xử lý"],["waiting","Chờ BP khác"],["resolved","Đã xử lý"],["closed","Đã đóng"]];
+const VD_SEV={red:["Đỏ","bad"],yellow:["Vàng","warn"],green:["Xanh","ok"]};
+const VD_PROJ_ST=[["open","Đang làm"],["done","Hoàn thành"],["paused","Tạm dừng"]];
+async function viewVD(){
+  if(RUN!=="LIVE")return liveOnly("Vấn đề và cải tiến");
+  const head=`<h2 class="sec" style="margin-top:0">Vấn đề và cải tiến</h2>
+  <div class="fbar" style="position:static"><div class="seg">${[["issue","Vấn đề (CAPA)"],["proj","Dự án cải tiến"]].map(([k,n])=>`<button type="button" data-vdtab="${k}" aria-pressed="${VD.tab===k}">${n}</button>`).join("")}</div></div>`;
+  return head+(VD.tab==="proj"?await vdProjHTML():await vdIssueHTML());
+}
+async function vdIssueHTML(){
+  let qf=SB.from("issues").select("*").order("open_date",{ascending:false}).limit(300);
+  if(VD.fSev)qf=qf.eq("severity",VD.fSev);
+  if(VD.fSt==="open")qf=qf.neq("status","closed");else if(VD.fSt==="closed")qf=qf.eq("status","closed");
+  if(VD.fDept)qf=qf.eq("dept_id",+VD.fDept);
+  const rows=await q(qf);
+  const ids=rows.map(r=>r.id);
+  const cas=ids.length?await q(SB.from("corrective_actions").select("*").in("issue_id",ids).order("created_at")):[];
+  const casOf=id=>cas.filter(c=>c.issue_id===id);
+  const text=VD.q.trim().toLowerCase();
+  const filtered=text?rows.filter(r=>(r.code+" "+r.description+" "+(r.owner_name||"")).toLowerCase().includes(text)):rows;
+  const depName=id=>(REF.depts.find(d=>d.id===id)||{}).name||"—";
+  const today=ME.today||todayISO();
+  const bar=`<div class="tools" style="margin-top:10px">
+   <select id="vdSev" aria-label="Mức độ">${opt([["","Tất cả mức"],["red","Đỏ"],["yellow","Vàng"],["green","Xanh"]],VD.fSev)}</select>
+   <select id="vdSt" aria-label="Trạng thái">${opt([["open","Đang mở"],["closed","Đã đóng"],["","Tất cả"]],VD.fSt)}</select>
+   <select id="vdDept" aria-label="Bộ phận">${opt([["","Tất cả BP"]].concat(REF.depts.map(d=>[d.id,d.name])),VD.fDept)}</select>
+   <input id="vdQ" type="search" placeholder="Tìm mã, nội dung, người phụ trách" value="${esc(VD.q)}" style="flex:1;min-width:180px" aria-label="Tìm vấn đề">
+  </div><p class="small" style="margin:6px 0 0">${fmt(filtered.length)} vấn đề · vấn đề mở rộng Mục 2 Báo cáo hằng ngày – tạo/sửa ở màn Báo cáo hằng ngày, màn này để theo dõi/xử lý tổng hợp.</p>`;
+  return bar+filtered.map(r=>{
+    const canEdit=ME.role==="admin"||(ME.approves_depts||[]).includes(r.dept_id)||r.created_by===ME.id;
+    const over=r.status!=="closed"&&r.due_date&&r.due_date<today;
+    const[sevN,sevC]=VD_SEV[r.severity]||["?","none"];
+    return `<div class="card" style="margin:10px 0">
+    <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
+     <div><span class="mono">${esc(r.code)}</span> · <b>${esc(depName(r.dept_id))}</b> · <span class="pill p-${sevC}">${sevN}</span></div>
+     <div><span class="pill p-${r.status==="closed"?"ok":over?"bad":r.status==="resolved"?"warn":"none"}">${ttName(VD_ST,r.status)}${over?" · quá hạn":""}</span></div></div>
+    <div style="margin:6px 0"><b>Mô tả:</b> ${esc(r.description)}</div>
+    <div class="mgrid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin:6px 0">
+     ${r.initial_cause?`<div class="m"><div class="l">Nguyên nhân ban đầu</div><div class="v" style="font-size:13px">${esc(r.initial_cause)}</div></div>`:""}
+     ${r.root_fix?`<div class="m"><div class="l">Nguyên nhân gốc rễ</div><div class="v" style="font-size:13px">${esc(r.root_fix)}</div></div>`:""}
+     <div class="m"><div class="l">Người phụ trách</div><div class="v" style="font-size:13px">${esc(r.owner_name||"—")}</div></div>
+     <div class="m"><div class="l">Hạn xử lý</div><div class="v" style="font-size:13px">${r.due_date?dmyS(r.due_date):"—"}</div></div>
+     ${r.plan_b?`<div class="m"><div class="l">Phương án B</div><div class="v" style="font-size:13px">${esc(r.plan_b)}</div></div>`:""}
+     ${r.verify_result?`<div class="m"><div class="l">Kết quả xác nhận</div><div class="v" style="font-size:13px">${esc(r.verify_result)}</div></div>`:""}
+    </div>
+    <div style="margin-top:6px"><b>Hành động khắc phục</b>${casOf(r.id).map(c=>`<div class="small" style="margin-top:2px">${c.done_date?"☑":"☐"} ${esc(c.action)}${c.owner_id?"":""} ${c.due_date?"· hạn "+dmyS(c.due_date):""} ${c.done_date?"· xong "+dmyS(c.done_date):""}</div>`).join("")||`<div class="small" style="color:var(--muted)">Chưa có hành động</div>`}</div>
+    ${canEdit&&r.status!=="closed"?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center">
+     <input id="vca_${r.id}" placeholder="Thêm hành động khắc phục" style="flex:1;min-width:160px"><button class="btn ghost" type="button" data-vdca="${r.id}" style="padding:3px 9px">+ Thêm</button>
+     <select id="vds_${r.id}">${opt(VD_ST.filter(x=>x[0]!=="closed"),r.status)}</select><button class="btn ghost" type="button" data-vdst="${r.id}" style="padding:3px 9px">Lưu trạng thái</button>
+    </div>`:""}
+    ${ME.role==="admin"&&r.status!=="closed"?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center">
+     <input id="vdv_${r.id}" placeholder="Kết quả xác nhận (bắt buộc để đóng)" style="flex:1;min-width:160px"><button class="btn" type="button" data-vdclose="${r.id}" style="padding:3px 9px">Xác nhận đóng</button>
+    </div>`:""}<span class="msg" id="vdm_${r.id}"></span></div>`}).join("")||`<div class="empty">Không có vấn đề phù hợp bộ lọc</div>`;
+}
+async function vdProjHTML(){
+  const rows=await q(SB.from("improvement_projects").select("*").order("created_at",{ascending:false}));
+  const ps=await api.profiles();const nm=id=>(ps.find(p=>p.id===id)||{}).full_name||"—";
+  const depName=id=>id?(REF.depts.find(d=>d.id===id)||{}).name||"—":"—";
+  const canWrite=r=>ME.role==="admin"||(r.dept_id&&(ME.approves_depts||[]).includes(r.dept_id))||r.created_by===ME.id;
+  const canCreate=ME.role==="admin"||(ME.approves_depts||[]).length;
+  const ed=VD.editProj||{};
+  return `<div class="tools" style="margin-top:10px"><button class="btn" type="button" id="vdProjNew">${VD.projOpen?"Đóng form":(ed.id?"Đang sửa dự án":"+ Dự án cải tiến mới")}</button></div>
+  ${VD.projOpen?`<form class="card" id="fVdProj" novalidate style="margin:10px 0"><h3>${ed.id?"Sửa dự án "+esc(ed.name):"Dự án cải tiến mới"}</h3>
+   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">
+    <div class="fld" style="grid-column:1/-1"><label for="vp_name">Tên dự án *</label><input id="vp_name" value="${esc(ed.name||"")}" placeholder="vd: Giảm NG hàn sóng Line 3"></div>
+    <div class="fld"><label for="vp_dept">Bộ phận</label><select id="vp_dept">${opt([["","— Chọn —"]].concat(REF.depts.map(d=>[d.id,d.name])),ed.dept_id)}</select></div>
+    <div class="fld"><label for="vp_own">Người phụ trách</label><select id="vp_own">${opt([["","— Chọn —"]].concat(ps.map(p=>[p.id,p.full_name])),ed.owner_id)}</select></div>
+    <div class="fld"><label for="vp_s">Ngày bắt đầu</label><input id="vp_s" type="date" value="${ed.start_date||""}"></div>
+    <div class="fld"><label for="vp_e">Ngày kết thúc</label><input id="vp_e" type="date" value="${ed.end_date||""}"></div>
+    <div class="fld" style="grid-column:1/-1"><label for="vp_tgt">Mục tiêu (số liệu)</label><input id="vp_tgt" value="${esc(ed.target||"")}" placeholder="vd: NG hàn sóng 0,8% → 0,5%"></div>
+    <div class="fld"><label for="vp_st">Trạng thái</label><select id="vp_st">${opt(VD_PROJ_ST,ed.status||"open")}</select></div>
+   </div><div style="margin-top:10px;display:flex;gap:8px;align-items:center"><button class="btn" type="submit">Lưu</button><button class="btn ghost" type="button" id="vp_cancel">Hủy</button><span class="msg" id="vpMsg"></span></div></form>`:""}
+  <div class="tbl"><table><tr><th>Tên dự án</th><th>Bộ phận</th><th>Người phụ trách</th><th>Thời gian</th><th>Mục tiêu</th><th>Trạng thái</th><th></th></tr>
+  ${rows.map(p=>`<tr><td><b>${esc(p.name)}</b></td><td>${esc(depName(p.dept_id))}</td><td>${esc(nm(p.owner_id))}</td><td class="small">${p.start_date?dmyS(p.start_date):"—"} – ${p.end_date?dmyS(p.end_date):"—"}</td><td class="small">${esc(p.target||"—")}</td>
+   <td><span class="pill p-${p.status==="done"?"ok":p.status==="paused"?"warn":"none"}">${ttName(VD_PROJ_ST,p.status)}</span></td>
+   <td>${canWrite(p)?`<button class="btn ghost" type="button" data-vpe="${p.id}" style="padding:3px 9px">Sửa</button>`:""}</td></tr>`).join("")||`<tr><td colspan="7"><div class="empty">Chưa có dự án cải tiến nào</div></td></tr>`}</table></div>
+  ${!canCreate?'<p class="small">Chỉ GĐNM/TBP được tạo dự án cải tiến.</p>':""}`;
+}
+function bindVD(){
+  document.querySelectorAll("[data-vdtab]").forEach(b=>b.onclick=()=>{VD.tab=b.dataset.vdtab;VD.projOpen=false;VD.editProj=null;render()});
+  if(VD.tab==="proj"){
+    const nb=$("#vdProjNew");if(nb)nb.onclick=()=>{VD.projOpen=!VD.projOpen;if(!VD.projOpen)VD.editProj=null;render()};
+    const cb=$("#vp_cancel");if(cb)cb.onclick=()=>{VD.projOpen=false;VD.editProj=null;render()};
+    document.querySelectorAll("[data-vpe]").forEach(b=>b.onclick=()=>{VD.projOpen=true;
+      q(SB.from("improvement_projects").select("*").eq("id",+b.dataset.vpe).single()).then(r=>{VD.editProj=r;render()})});
+    const f=$("#fVdProj");if(f)f.addEventListener("submit",async e=>{e.preventDefault();
+      const name=$("#vp_name").value.trim();if(!name)return setMsg("vpMsg","Nhập tên dự án.","bad");
+      const row={name,dept_id:$("#vp_dept").value?+$("#vp_dept").value:null,owner_id:$("#vp_own").value||null,start_date:$("#vp_s").value||null,end_date:$("#vp_e").value||null,target:$("#vp_tgt").value.trim()||null,status:$("#vp_st").value};
+      try{if(VD.editProj&&VD.editProj.id)await q(SB.from("improvement_projects").update(row).eq("id",VD.editProj.id).select("id"));
+        else await q(SB.from("improvement_projects").insert({...row,created_by:ME.id}).select("id"));
+        VD.projOpen=false;VD.editProj=null;toast("Đã lưu dự án cải tiến");render()}catch(err){setMsg("vpMsg",sbErr(err),"bad")}});
+    return;
+  }
+  const sv=$("#vdSev");if(sv)sv.onchange=e=>{VD.fSev=e.target.value;render()};
+  const st=$("#vdSt");if(st)st.onchange=e=>{VD.fSt=e.target.value;render()};
+  const dp=$("#vdDept");if(dp)dp.onchange=e=>{VD.fDept=e.target.value;render()};
+  const qq=$("#vdQ");if(qq)qq.oninput=e=>{VD.q=e.target.value;const pos=e.target.selectionStart;render().then(()=>{const n=$("#vdQ");if(n){n.focus();n.setSelectionRange(pos,pos)}})};
+  document.querySelectorAll("[data-vdca]").forEach(b=>b.onclick=async()=>{const id=+b.dataset.vdca;const v=$("#vca_"+id).value.trim();if(!v)return setMsg("vdm_"+id,"Nhập nội dung hành động.","bad");
+    try{await q(SB.from("corrective_actions").insert({issue_id:id,action:v,created_by:ME.id}).select("id"));toast("Đã thêm hành động");render()}catch(err){setMsg("vdm_"+id,sbErr(err),"bad")}});
+  document.querySelectorAll("[data-vdst]").forEach(b=>b.onclick=async()=>{const id=+b.dataset.vdst;const v=$("#vds_"+id).value;
+    try{await q(SB.from("issues").update({status:v}).eq("id",id).select("id"));toast("Đã lưu trạng thái");render()}catch(err){setMsg("vdm_"+id,sbErr(err),"bad")}});
+  document.querySelectorAll("[data-vdclose]").forEach(b=>b.onclick=async()=>{const id=+b.dataset.vdclose;const v=$("#vdv_"+id).value.trim();if(!v)return setMsg("vdm_"+id,"Ghi kết quả xác nhận trước khi đóng.","bad");
+    try{await rpc("close_item",{p_entity:"issue",p_id:id,p_note:v});toast("Đã đóng vấn đề");render()}catch(err){setMsg("vdm_"+id,sbErr(err),"bad")}});
+}
+/* ============================================================
    TỔNG QUAN NHÀ MÁY – SỐ LIỆU THẬT (từ Form A–E, 3S, giao việc, báo cáo ngày)
    ============================================================ */
 const LD={period:"day",date:null,scope:"all",demo:false,dept:null};
@@ -2538,7 +2646,7 @@ function bindDashLive(){
 }
 const MODS=[["dash","Tổng quan nhà máy",2],["sum","Tổng hợp báo cáo ngày",4],["mydept","Bộ phận của tôi",3],["task","Giao việc",4],["mine","Công việc của tôi",3],["daily","Báo cáo hằng ngày",4],["sx","Sản xuất",5],["qc","Chất lượng",5],["kho","Kho",5],["kh","Kế hoạch",5],["kt","Kỹ thuật",5],["bt","Bảo trì",5],["gt","Giá thành",5],["bh","Bảo hành",5],["ns","Nhân sự",5],["kpi","KPI",6],["5s","3S",5],["vd","Vấn đề và cải tiến",6],["lich","Lịch điều hành",6],["acc","Quản lý tài khoản",3],["cfg","Cấu hình hệ thống",3]];
 const DEPT_MOD={SX:"sx",QAC:"qc",KHO:"kho",KHSX:"kh",KT:"kt",CD:"bt",KTGT:"gt",BHM:"bh",BHN:"bh",HCNS:"ns"};
-const BUILT=["dash","sum","mydept","task","mine","daily","sx","qc","bt","kho","ns","bh","kh","5s","acc","cfg"];
+const BUILT=["dash","sum","mydept","task","mine","daily","sx","qc","bt","kho","ns","bh","kh","5s","vd","acc","cfg"];
 function allowedMods(){
   if(!ME)return[];if(ME.role==="admin")return MODS.map(m=>m[0]).filter(k=>k!=="mydept");
   const a=[];const approver=ME.role==="head"||(ME.approves_depts||[]).length;
@@ -2584,6 +2692,7 @@ async function render(){
     else if(ST.screen==="bh"){const h=await viewBH();if(seq!==renderSeq)return;main.innerHTML=h;bindBH()}
     else if(ST.screen==="kh"){const h=await viewKH();if(seq!==renderSeq)return;main.innerHTML=h;bindKH()}
     else if(ST.screen==="5s"){const h=await view5s();if(seq!==renderSeq)return;main.innerHTML=h;bind5s()}
+    else if(ST.screen==="vd"){const h=await viewVD();if(seq!==renderSeq)return;main.innerHTML=h;bindVD()}
     else if(ST.screen==="sum"){const h=await viewSummary();if(seq!==renderSeq)return;main.innerHTML=h;bindSummary()}
     else main.innerHTML=`<h2 class="sec" style="margin-top:0">${mod[1]}</h2><div class="ph-card"><b>Xây ở Giai đoạn ${mod[2]}.</b><p class="small" style="margin:6px 0 0">Nội dung và phân quyền đã chốt ở Giai đoạn 1. Bạn thấy mục này vì vai trò của bạn được phép dùng nó.</p></div>`;
   }catch(err){main.innerHTML=`<div class="alert bad"><span class="sv"></span><div class="b"><div class="t">Không tải được dữ liệu</div><div class="d">${esc(sbErr(err))}</div></div></div>`}
@@ -2594,7 +2703,7 @@ function startApp(){
   $("#user").innerHTML=`${esc(ME.full_name)}<small>${esc(ME.username)} · ${esc(ME.position_name)}</small>`;
   const c=$("#conn");c.classList.toggle("live",RUN==="LIVE");
   c.textContent=RUN==="LIVE"?"Đã kết nối máy chủ · số liệu thật":"DEMO · dùng thử, không lưu máy chủ";
-  ST.screen=homeMod();cfgTab="tbp";RP.code=null;RP.date=null;RP.editIssue=RP.editPlan=RP.editSr=null;SM.date=null;SXF.date=null;SXF.line=null;SXF.edit=null;SXF.assignOpen=false;SXF.unlockOpen=false;SX_CACHE=null;Object.keys(FM).forEach(k=>delete FM[k]);NM.q="";NM.f="all";NM.page=0;NM.dirty={};NM.bulkOpen=false;FS.date=null;FS.per="week";FS.tab="stat";FS.fstat="open";FS.fs="";FS.newOpen=false;FS.newS="";FS_CRIT=null;LD.period="day";LD.date=null;LD.scope="all";LD.demo=false;GV.f="open";GV.pos="";GV.q="";accQ="";accDept="";ACC_SECRET=null;accConfirm=null;render();
+  ST.screen=homeMod();cfgTab="tbp";RP.code=null;RP.date=null;RP.editIssue=RP.editPlan=RP.editSr=null;SM.date=null;SXF.date=null;SXF.line=null;SXF.edit=null;SXF.assignOpen=false;SXF.unlockOpen=false;SX_CACHE=null;Object.keys(FM).forEach(k=>delete FM[k]);NM.q="";NM.f="all";NM.page=0;NM.dirty={};NM.bulkOpen=false;FS.date=null;FS.per="week";FS.tab="stat";FS.fstat="open";FS.fs="";FS.newOpen=false;FS.newS="";FS_CRIT=null;VD.tab="issue";VD.fSev="";VD.fSt="open";VD.fDept="";VD.q="";VD.projOpen=false;VD.editProj=null;LD.period="day";LD.date=null;LD.scope="all";LD.demo=false;GV.f="open";GV.pos="";GV.q="";accQ="";accDept="";ACC_SECRET=null;accConfirm=null;render();
 }
 $("#logout").onclick=()=>logout();
 $("#bell").onclick=e=>{e.stopPropagation();const p=$("#notif");p.hidden=!p.hidden;$("#bell").setAttribute("aria-expanded",String(!p.hidden))};
