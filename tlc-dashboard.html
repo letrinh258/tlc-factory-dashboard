@@ -221,6 +221,7 @@ textarea{font:inherit;color:var(--fg);background:var(--surface);border:1px solid
 </div>
 <div id="drawerHost"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 
 <script>
 "use strict";
@@ -1922,15 +1923,18 @@ async function reconHTML(D,flows){
 }
 
 /* ---------- FORM B – QAC ---------- */
+const QC_TAB={v:"daily"};
 async function viewQc(){
   if(RUN!=="LIVE")return liveOnly("Chất lượng – QAC");
+  const tabs=`<div class="fbar" style="position:static"><div class="seg">${[["daily","Kiểm tra hàng ngày"],["hotline","Hotline"]].map(([k,n])=>`<button type="button" data-qctab="${k}" aria-pressed="${QC_TAB.v===k}">${n}</button>`).join("")}</div></div>`;
+  if(QC_TAB.v==="hotline")return `<h2 class="sec" style="margin-top:0">Chất lượng</h2>${tabs}${await hlHTML()}`;
   const head=await formHead("qc","Chất lượng – Kiểm tra QAC","Form B · PQC/OQC theo line × mã · IQC theo vật tư × NCC · lỗi chia NG thao tác / NG NCC");
   const st=FM.qc,D=st.date,C=await sxCache();
   const rows=await q(SB.from("quality_reports").select("id,stage,line_id,product_code,material_code,supplier,inspected,rework,note,quality_defects(defect_type_id,qty)").eq("report_date",D).order("stage").order("line_id"));
   const dn=id=>C.defects.find(d=>d.id===id)||{};const ng=(r,src)=>r.quality_defects.filter(x=>dn(x.defect_type_id).source===src).reduce((a,x)=>a+x.qty,0);
   const ed=st.edit==="new"?{stage:"PQC",quality_defects:[]}:rows.find(r=>r.id===st.edit);const defs=(ed&&ed.quality_defects)||[];
   const T={ins:0,op:0,sup:0};rows.forEach(r=>{T.ins+=r.inspected;T.op+=ng(r,"op");T.sup+=ng(r,"sup")});
-  return head+`<div class="mgrid" style="margin-bottom:10px">${[["Số phiếu kiểm",fmt(rows.length)],["Số lượng kiểm",fmt(T.ins)],["NG thao tác",fmt(T.op)+(T.ins?" · "+fmt(T.op/T.ins*100,2)+"%":"")],["NG nhà cung cấp",fmt(T.sup)+(T.ins?" · "+fmt(T.sup/T.ins*100,2)+"%":"")]].map(([l,v])=>`<div class="m"><div class="l">${l}</div><div class="v" style="font-size:16px">${v}</div></div>`).join("")}</div>
+  return head+tabs+`<div class="mgrid" style="margin-bottom:10px">${[["Số phiếu kiểm",fmt(rows.length)],["Số lượng kiểm",fmt(T.ins)],["NG thao tác",fmt(T.op)+(T.ins?" · "+fmt(T.op/T.ins*100,2)+"%":"")],["NG nhà cung cấp",fmt(T.sup)+(T.ins?" · "+fmt(T.sup/T.ins*100,2)+"%":"")]].map(([l,v])=>`<div class="m"><div class="l">${l}</div><div class="v" style="font-size:16px">${v}</div></div>`).join("")}</div>
   <div class="tbl"><table><tr><th>Công đoạn</th><th>Line</th><th>Mã SP / vật tư</th><th class="num">Kiểm</th><th class="num">NG thao tác</th><th class="num">NG NCC</th><th class="num">Sửa lại</th><th>Chi tiết lỗi</th>${st.editable?"<th></th>":""}</tr>
   ${rows.map(r=>`<tr><td><b>${r.stage}</b></td><td>${esc(lineNm(r.line_id))}</td><td class="mono">${esc(r.product_code||r.material_code||"")}${r.supplier?`<br><span class="small">${esc(r.supplier)}</span>`:""}</td><td class="num">${fmt(r.inspected)}</td><td class="num">${fmt(ng(r,"op"))}</td><td class="num">${fmt(ng(r,"sup"))}</td><td class="num">${fmt(r.rework)}</td>
    <td class="small">${r.quality_defects.map(x=>esc(dn(x.defect_type_id).name)+": "+x.qty).join("; ")||"—"}${r.note?"<br>"+esc(r.note):""}</td>${st.editable?`<td style="white-space:nowrap">${actBtns("qc",r.id)}</td>`:""}</tr>`).join("")||`<tr><td colspan="9"><div class="empty">Chưa có phiếu kiểm ngày ${dmyS(D)}</div></td></tr>`}</table></div>
@@ -1949,7 +1953,10 @@ async function viewQc(){
    ${formBtns}</form><datalist id="prodList">${C.prods.map(p=>`<option value="${esc(p.code)}">${esc(p.name)}</option>`).join("")}</datalist></div>`:""}
   ${await reconHTML(D,["NG"])}`;
 }
-function bindQc(){bindFormHead("qc");bindDelete("qc","delete_qc");const f=$("#fForm");if(!f)return;
+function bindQc(){
+  document.querySelectorAll("[data-qctab]").forEach(b=>b.onclick=()=>{QC_TAB.v=b.dataset.qctab;render()});
+  if(QC_TAB.v==="hotline"){bindHL();return}
+  bindFormHead("qc");bindDelete("qc","delete_qc");const f=$("#fForm");if(!f)return;
   const tog=()=>{const iq=$("#q_stage").value==="IQC";f.querySelectorAll("[data-pq]").forEach(x=>x.hidden=iq);f.querySelectorAll("[data-iq]").forEach(x=>x.hidden=!iq)};$("#q_stage").onchange=tog;tog();
   f.addEventListener("submit",async e=>{e.preventDefault();f.querySelectorAll(".err").forEach(x=>x.classList.remove("err"));
     const stg=$("#q_stage").value,iq=stg==="IQC",ins=numOrNull($("#q_ins").value),rw=numOrNull($("#q_rw").value);
@@ -1962,6 +1969,95 @@ function bindQc(){bindFormHead("qc");bindDelete("qc","delete_qc");const f=$("#fF
     $("#fSave").disabled=true;setMsg("fMsg","Đang lưu…");
     try{await rpc("save_qc",{d:FM.qc.date,p_stage:stg,p_line:iq?null:+$("#q_line").value,p_product:iq?null:$("#q_prod").value.trim(),p_material:iq?$("#q_mat").value.trim():null,p_supplier:iq?$("#q_sup").value.trim():null,p_inspected:ins,p_rework:rw||0,p_defects:defs,p_note:$("#q_note").value.trim()||null});
       FM.qc.edit=null;toast("Đã lưu phiếu kiểm");render()}catch(err){setMsg("fMsg",sbErr(err),"bad");$("#fSave").disabled=false}})}
+
+/* ---------- QAC – Hotline (vấn đề/khiếu nại thị trường) ---------- */
+const HL={fStatus:"",fDept:"",q:"",open:false,edit:null,del:null};
+const HL_ST=[["open","Mở sự vụ"],["processing","Đang xử lý"],["closed","Đã đóng"]];
+const HL_STC={open:"bad",processing:"warn",closed:"ok"};
+async function hlHTML(){
+  let qf=SB.from("hotline_issues").select("*").order("opened_at",{ascending:false}).order("id",{ascending:false}).limit(300);
+  if(HL.fStatus)qf=qf.eq("status",HL.fStatus);
+  if(HL.fDept)qf=qf.eq("dept_id",+HL.fDept);
+  const rows=await q(qf);
+  const text=HL.q.trim().toLowerCase();
+  const filtered=text?rows.filter(r=>(r.code+" "+(r.product_code||"")+" "+r.issue_desc).toLowerCase().includes(text)):rows;
+  const depName=id=>id?(REF.depts.find(d=>d.id===id)||{}).name||"—":"—";
+  const canWrite=ME.role==="admin"||ME.dept_id===(REF.depts.find(d=>d.code==="QAC")||{}).id||(ME.approves_depts||[]).includes((REF.depts.find(d=>d.code==="QAC")||{}).id);
+  const ed=HL.edit||{status:"open"};
+  const bar=`<div class="tools" style="margin-top:10px"><div class="seg">${[["","Tất cả"],["open","Mở sự vụ"],["processing","Đang xử lý"],["closed","Đã đóng"]].map(([k,n])=>`<button type="button" data-hlf="${k}" aria-pressed="${HL.fStatus===k}">${n}</button>`).join("")}</div>
+   <select id="hlDept" aria-label="Bộ phận phụ trách">${opt([["","Tất cả BP"]].concat(REF.depts.map(d=>[d.id,d.name])),HL.fDept)}</select>
+   <input id="hlQ" type="search" placeholder="Tìm mã, mã SP, nội dung" value="${esc(HL.q)}" style="flex:1;min-width:180px" aria-label="Tìm vấn đề hotline">
+   <button class="btn ghost" type="button" id="hlExport">Xuất báo cáo Excel</button>
+   ${canWrite?`<button class="btn" type="button" id="hlNew">${HL.open?"Đóng form":(ed.id?"Đang sửa":"+ Vấn đề hotline mới")}</button>`:""}</div>
+  <p class="small" style="margin:6px 0 0">${fmt(filtered.length)} vấn đề hotline${canWrite?"":" · chỉ QAC/GĐNM được thêm, sửa, đổi trạng thái"}</p>`;
+  const form=HL.open?`<form class="card" id="fHl" novalidate style="margin:10px 0"><h3>${ed.id?"Sửa vấn đề "+esc(ed.code):"Vấn đề hotline mới"}</h3>
+   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">
+    <div class="fld"><label for="h_prod">Mã SP</label><input id="h_prod" value="${esc(ed.product_code||"")}" placeholder="vd: Buld trụ Eco 30w"></div>
+    <div class="fld"><label for="h_dept">Bộ phận phụ trách</label><select id="h_dept">${opt([["","— Chọn —"]].concat(REF.depts.map(d=>[d.id,d.name])),ed.dept_id)}</select></div>
+    <div class="fld"><label for="h_qty">Số lượng phản hồi</label><input id="h_qty" inputmode="numeric" value="${ed.response_qty??""}"></div>
+    <div class="fld" style="grid-column:1/-1"><label for="h_desc">Nội dung vấn đề *</label><input id="h_desc" value="${esc(ed.issue_desc||"")}"></div>
+    <div class="fld" style="grid-column:1/-1"><label for="h_cause">Nguyên nhân</label><input id="h_cause" value="${esc(ed.cause||"")}"></div>
+    <div class="fld" style="grid-column:1/-1"><label for="h_cm">Đối sách</label><input id="h_cm" value="${esc(ed.countermeasure||"")}"></div>
+    <div class="fld" style="grid-column:1/-1"><label for="h_st">Xử lý ngắn hạn</label><input id="h_st" value="${esc(ed.short_term_action||"")}"></div>
+    <div class="fld" style="grid-column:1/-1"><label for="h_lt">Xử lý dài hạn</label><input id="h_lt" value="${esc(ed.long_term_action||"")}"></div>
+    <div class="fld"><label for="h_status">Trạng thái</label><select id="h_status">${opt(HL_ST,ed.status||"open")}</select></div>
+   </div><div style="margin-top:10px;display:flex;gap:8px;align-items:center"><button class="btn" type="submit">Lưu</button><button class="btn ghost" type="button" id="hl_cancel">Hủy</button><span class="msg" id="hlNewMsg"></span></div></form>`:"";
+  const list=filtered.map(r=>`<div class="card" style="margin:10px 0">
+   <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
+    <div><span class="mono">${esc(r.code)}</span>${r.product_code?" · "+esc(r.product_code):""} · <b>${esc(depName(r.dept_id))}</b></div>
+    <div><span class="pill p-${HL_STC[r.status]}">${ttName(HL_ST,r.status)}</span></div></div>
+   <div style="margin:6px 0"><b>Vấn đề:</b> ${esc(r.issue_desc)}</div>
+   <div class="mgrid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin:6px 0">
+    ${r.cause?`<div class="m"><div class="l">Nguyên nhân</div><div class="v" style="font-size:13px">${esc(r.cause)}</div></div>`:""}
+    ${r.countermeasure?`<div class="m"><div class="l">Đối sách</div><div class="v" style="font-size:13px">${esc(r.countermeasure)}</div></div>`:""}
+    ${r.response_qty!=null?`<div class="m"><div class="l">SL phản hồi</div><div class="v" style="font-size:13px">${fmt(r.response_qty)}</div></div>`:""}
+    <div class="m"><div class="l">Ngày mở</div><div class="v" style="font-size:13px">${dmyS(r.opened_at)}</div></div>
+    ${r.closed_at?`<div class="m"><div class="l">Ngày đóng</div><div class="v" style="font-size:13px">${dmyS(r.closed_at)}</div></div>`:""}
+   </div>
+   ${r.short_term_action?`<div class="small"><b>Xử lý ngắn hạn:</b> ${esc(r.short_term_action)}</div>`:""}
+   ${r.long_term_action?`<div class="small"><b>Xử lý dài hạn:</b> ${esc(r.long_term_action)}</div>`:""}
+   ${canWrite?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center">
+    <select id="hls_${r.id}">${opt(HL_ST,r.status)}</select><button class="btn ghost" type="button" data-hlst="${r.id}" style="padding:3px 9px">Lưu trạng thái</button>
+    <button class="btn ghost" type="button" data-hle="${r.id}" style="padding:3px 9px">Sửa</button>
+    <button class="btn ghost" type="button" data-hld="${r.id}" style="padding:3px 9px;color:var(--bad)">${HL.del===r.id?"Xác nhận xóa?":"Xóa"}</button>
+   </div>`:""}<span class="msg" id="hlm_${r.id}"></span></div>`).join("")||`<div class="empty">Không có vấn đề hotline phù hợp bộ lọc</div>`;
+  return bar+form+list;
+}
+function hlExport(rows){
+  const depName=id=>id?(REF.depts.find(d=>d.id===id)||{}).name||"":"";
+  const data=rows.map((r,i)=>({"STT":i+1,"Mã":r.code,"Mã SP":r.product_code||"","Nội dung vấn đề":r.issue_desc,"Nguyên nhân":r.cause||"","Đối sách":r.countermeasure||"","Số lượng phản hồi":r.response_qty??"","Bộ phận phụ trách":depName(r.dept_id),"Xử lý ngắn hạn":r.short_term_action||"","Xử lý dài hạn":r.long_term_action||"","Trạng thái":ttName(HL_ST,r.status),"Ngày mở":r.opened_at?dmyS(r.opened_at):"","Ngày đóng":r.closed_at?dmyS(r.closed_at):""}));
+  const ws=XLSX.utils.json_to_sheet(data);ws["!cols"]=[6,10,22,34,28,28,10,18,28,28,12,12,12].map(w=>({wch:w}));
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Hotline");
+  XLSX.writeFile(wb,`Hotline_QAC_${yymmdd(todayISO())}.xlsx`);
+}
+function bindHL(){
+  document.querySelectorAll("[data-hlf]").forEach(b=>b.onclick=()=>{HL.fStatus=b.dataset.hlf;render()});
+  const dp=$("#hlDept");if(dp)dp.onchange=e=>{HL.fDept=e.target.value;render()};
+  const qq=$("#hlQ");if(qq)qq.oninput=e=>{HL.q=e.target.value;const pos=e.target.selectionStart;render().then(()=>{const n=$("#hlQ");if(n){n.focus();n.setSelectionRange(pos,pos)}})};
+  const ex=$("#hlExport");if(ex)ex.onclick=async()=>{let qf=SB.from("hotline_issues").select("*").order("opened_at",{ascending:false}).limit(2000);
+    if(HL.fStatus)qf=qf.eq("status",HL.fStatus);if(HL.fDept)qf=qf.eq("dept_id",+HL.fDept);
+    const rows=await q(qf);const text=HL.q.trim().toLowerCase();
+    hlExport(text?rows.filter(r=>(r.code+" "+(r.product_code||"")+" "+r.issue_desc).toLowerCase().includes(text)):rows);toast("Đã xuất báo cáo Excel")};
+  const nb=$("#hlNew");if(nb)nb.onclick=()=>{HL.open=!HL.open;if(!HL.open)HL.edit=null;render()};
+  const cb=$("#hl_cancel");if(cb)cb.onclick=()=>{HL.open=false;HL.edit=null;render()};
+  document.querySelectorAll("[data-hle]").forEach(b=>b.onclick=()=>{HL.open=true;
+    q(SB.from("hotline_issues").select("*").eq("id",+b.dataset.hle).single()).then(r=>{HL.edit=r;render()})});
+  const f=$("#fHl");if(f)f.addEventListener("submit",async e=>{e.preventDefault();
+    const desc=$("#h_desc").value.trim();if(!desc)return setMsg("hlNewMsg","Nhập nội dung vấn đề.","bad");
+    const row={product_code:$("#h_prod").value.trim()||null,issue_desc:desc,cause:$("#h_cause").value.trim()||null,countermeasure:$("#h_cm").value.trim()||null,
+      response_qty:$("#h_qty").value!==""?+$("#h_qty").value:null,dept_id:$("#h_dept").value?+$("#h_dept").value:null,
+      short_term_action:$("#h_st").value.trim()||null,long_term_action:$("#h_lt").value.trim()||null,status:$("#h_status").value};
+    if(row.status==="closed"&&!(HL.edit&&HL.edit.closed_at))row.closed_at=todayISO();if(row.status!=="closed")row.closed_at=null;
+    try{if(HL.edit&&HL.edit.id)await q(SB.from("hotline_issues").update(row).eq("id",HL.edit.id).select("id"));
+      else{const code=await rpc("next_code",{p_prefix:"HL"+ddmm(ME.today||todayISO())+"-"});await q(SB.from("hotline_issues").insert({...row,code,created_by:ME.id}).select("id"))}
+      HL.open=false;HL.edit=null;toast("Đã lưu vấn đề hotline");render()}catch(err){setMsg("hlNewMsg",sbErr(err),"bad")}});
+  document.querySelectorAll("[data-hlst]").forEach(b=>b.onclick=async()=>{const id=+b.dataset.hlst,v=$("#hls_"+id).value;
+    const row={status:v,closed_at:v==="closed"?todayISO():null};
+    try{await q(SB.from("hotline_issues").update(row).eq("id",id).select("id"));toast("Đã lưu trạng thái");render()}catch(err){setMsg("hlm_"+id,sbErr(err),"bad")}});
+  document.querySelectorAll("[data-hld]").forEach(b=>b.onclick=async()=>{const id=+b.dataset.hld;
+    if(HL.del!==id){HL.del=id;render();return}
+    try{await q(SB.from("hotline_issues").delete().eq("id",id));HL.del=null;toast("Đã xóa");render()}catch(err){setMsg("hlm_"+id,sbErr(err),"bad")}});
+}
 
 /* ---------- FORM C – CƠ ĐIỆN ---------- */
 const MTK=[["breakdown","Sự cố / hỏng máy"],["pm","Bảo dưỡng định kỳ"],["improvement","Cải tiến"]];
