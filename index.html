@@ -1973,6 +1973,19 @@ function bindMt(){bindFormHead("bt");bindDelete("bt","delete_mt");const f=$("#fF
 
 /* ---------- FORM D – KHO ---------- */
 const WHK={receipt_sx:"Nhập kho từ SX",shortage:"Thiếu vật tư",ng_return:"NG trả về / chờ trả NCC"};
+const INV={open:false};
+async function invSnapHTML(D,W){
+  const items=await q(SB.from("inventory_snapshots").select("item_code,opening_qty,in_qty,out_qty,closing_qty").eq("snapshot_date",D).eq("warehouse",W));
+  const sum=k=>items.reduce((a,r)=>a+Number(r[k]||0),0);
+  return `<div class="card" style="margin-top:10px"><h3>Tồn kho ${W==="TP"?"thành phẩm":"linh kiện"} ngày ${dmyS(D)} <small>${items.length?fmt(items.length)+" mã · nguồn Bravo (dán tay)":"Chưa có dữ liệu tồn kho ngày này"}</small></h3>
+  ${items.length?`<div class="mgrid" style="grid-template-columns:repeat(4,1fr)">${[["Số mã",items.length,0],["Đầu kỳ",sum("opening_qty"),0],["Nhập",sum("in_qty"),0],["Cuối kỳ",sum("closing_qty"),0]].map(([l,v,d])=>`<div class="m"><div class="l">${l}</div><div class="v">${fmt(v,d)}</div></div>`).join("")}</div>`:""}
+  <p class="small" style="margin:8px 0">Mở file Bravo "Nhập-Xuất-Tồn" ${W==="TP"?"TP":"LK"}, bôi đen từ cột <b>Mã số</b> đến <b>Cuối kỳ</b> (bỏ dòng tiêu đề, bỏ các dòng nhóm/Tổng cộng không có Mã số), sao chép rồi dán vào ô dưới. Dán lại cùng ngày sẽ ghi đè số liệu ngày đó.</p>
+  <button class="btn ghost" type="button" id="invBulkBtn">${INV.open?"Đóng":items.length?"Dán lại / cập nhật":"Dán dữ liệu tồn kho"}</button>
+  ${INV.open?`<div style="margin-top:8px"><textarea id="invBulk" rows="8" style="width:100%;box-sizing:border-box;font-family:var(--mono,monospace)" placeholder="Mã số	Mặt hàng	Đvt	Đầu kỳ	Nhập	Xuất	Cuối kỳ"></textarea>
+   <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap"><button class="btn" type="button" id="invBulkGo">Lưu tồn kho ngày ${dmyS(D)}</button><span class="msg" id="invBulkMsg"></span></div></div>`:""}
+  </div>`;
+}
+function parseInvNum(s){s=String(s??"").trim();if(!s)return 0;s=s.replace(/\./g,"").replace(",",".");const n=Number(s);return isFinite(n)?n:0}
 async function viewWh(){
   if(RUN!=="LIVE")return liveOnly("Kho");
   const head=await formHead("kho","Kho","Form D · Kho TP: nhập kho từ SX theo line × mã · Kho LK: vật tư thiếu, hàng NG trả về");
@@ -1992,10 +2005,32 @@ async function viewWh(){
    ${W==="LK"?`<div class="fld"><label for="w_exp">Ngày dự kiến có hàng</label><input id="w_exp" type="date" value="${ed.expected_date||""}"></div>`:""}
    <div class="fld" style="grid-column:1/-1"><label for="w_note">Ghi chú</label><input id="w_note" value="${esc(ed.note||"")}"></div>
    ${formBtns}</form>${W==="TP"?`<datalist id="prodList">${C.prods.map(p=>`<option value="${esc(p.code)}">${esc(p.name)}</option>`).join("")}</datalist>`:""}</div>`:""}
-  ${W==="TP"?await reconHTML(D,["SX → Kho TP"]):""}`;
+  ${W==="TP"?await reconHTML(D,["SX → Kho TP"]):""}
+  ${(ME.role==="admin"||ME.dept_code==="KHO")?await invSnapHTML(D,W):""}`;
 }
 function bindWh(){bindFormHead("kho");bindDelete("kho","delete_wh");
-  document.querySelectorAll("[data-wh]").forEach(b=>b.onclick=()=>{FM.kho.wh=b.dataset.wh;FM.kho.edit=null;render()});
+  document.querySelectorAll("[data-wh]").forEach(b=>b.onclick=()=>{FM.kho.wh=b.dataset.wh;FM.kho.edit=null;INV.open=false;render()});
+  const ibb=$("#invBulkBtn");if(ibb)ibb.onclick=()=>{INV.open=!INV.open;render()};
+  const ibg=$("#invBulkGo");if(ibg)ibg.onclick=async()=>{
+    const D=FM.kho.date,W=FM.kho.wh,lines=$("#invBulk").value.split(/\r?\n/);
+    const rows=[];
+    for(const raw of lines){
+      const l=raw.replace(/\s+$/,"");if(!l.trim())continue;
+      const c=l.split("\t");if(c.length<7)continue;
+      const code=c[0].trim();if(!code||code==="Mã số")continue;
+      rows.push({snapshot_date:D,warehouse:W,item_code:code,item_name:(c[1]||"").trim()||null,unit:(c[2]||"").trim()||null,
+        opening_qty:parseInvNum(c[3]),in_qty:parseInvNum(c[4]),out_qty:parseInvNum(c[5]),closing_qty:parseInvNum(c[6]),source:"bravo",created_by:ME.id});
+    }
+    if(!rows.length){setMsg("invBulkMsg","Không đọc được dòng nào — kiểm tra đã dán đủ cột (Mã số…Cuối kỳ) và còn dòng dữ liệu.","bad");return}
+    $("#invBulkGo").disabled=true;setMsg("invBulkMsg","Đang lưu "+fmt(rows.length)+" mã…");
+    try{
+      const CH=500;let saved=0;
+      for(let i=0;i<rows.length;i+=CH){
+        const {error}=await SB.from("inventory_snapshots").upsert(rows.slice(i,i+CH),{onConflict:"snapshot_date,warehouse,item_code"});
+        if(error)throw error;saved+=Math.min(CH,rows.length-i);setMsg("invBulkMsg","Đang lưu… "+saved+"/"+rows.length);
+      }
+      INV.open=false;toast("Đã lưu tồn kho "+fmt(rows.length)+" mã");render()}
+    catch(err){setMsg("invBulkMsg",sbErr(err),"bad");$("#invBulkGo").disabled=false}};
   const f=$("#fForm");if(!f)return;const W=FM.kho.wh;
   f.addEventListener("submit",async e=>{e.preventDefault();f.querySelectorAll(".err").forEach(x=>x.classList.remove("err"));
     const item=$("#w_item").value.trim(),qty=numOrNull($("#w_qty").value);
