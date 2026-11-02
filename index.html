@@ -2434,15 +2434,15 @@ async function fsCrit(){if(!FS_CRIT){const r=await q(SB.from("app_settings").sel
 function fsRange(iso,per){if(per==="month"){const a=iso.slice(0,8)+"01";const d=D0(a);d.setUTCMonth(d.getUTCMonth()+1);d.setUTCDate(0);return[a,isoOf(d)]}
   const k=(D0(iso).getUTCDay()+6)%7;const a=addDays(iso,-k);return[a,addDays(a,6)]}
 const fsSName=(C,k)=>(C.find(x=>x.k===k)||{}).name||k;
-async function fsUpload(id,file){
-  const blob=await compressImage(file);const path=`fsb/${id}/${Date.now()}.jpg`;
+async function fsUpload(id,file,entity){
+  entity=entity||"fsb";const blob=await compressImage(file);const path=`${entity}/${id}/${Date.now()}.jpg`;
   const up=await SB.storage.from("evidence").upload(path,blob,{contentType:"image/jpeg",upsert:false});if(up.error)throw up.error;
-  const ins=await SB.from("attachments").insert({entity:"fsb",entity_id:+id,storage_path:path,file_name:file.name,uploaded_by:ME.id});
+  const ins=await SB.from("attachments").insert({entity,entity_id:+id,storage_path:path,file_name:file.name,uploaded_by:ME.id});
   if(ins.error){await SB.storage.from("evidence").remove([path]);throw ins.error}return blob.size}
 async function view5s(){
   if(RUN!=="LIVE")return liveOnly("3S");
   const today=ME.today||todayISO();if(!FS.date)FS.date=today;const[d1,d2]=fsRange(FS.date,FS.per);const C=await fsCrit();
-  const head=`<h2 class="sec" style="margin-top:0">3S – Sàng lọc · Sắp xếp · Sạch sẽ <small>Thống kê theo số lỗi từng S · mỗi lỗi 1 ảnh · BP nhận nhập đối sách</small></h2>
+  const head=`<h2 class="sec" style="margin-top:0">3S – Sàng lọc · Sắp xếp · Sạch sẽ <small>Thống kê theo số lỗi từng S · mỗi lỗi 1 ảnh lỗi + 1 ảnh khắc phục · BP nhận nhập đối sách và tải ảnh khắc phục trước khi đề nghị đóng</small></h2>
   <div class="fbar" style="position:static"><div class="seg">${[["week","Tuần"],["month","Tháng"]].map(([k,n])=>`<button type="button" data-fper="${k}" aria-pressed="${FS.per===k}">${n}</button>`).join("")}</div>
    <div class="datebox"><button type="button" data-fw="-1" aria-label="Kỳ trước">‹</button><input type="date" id="fsDate" value="${FS.date}" max="${today}"><button type="button" data-fw="1" aria-label="Kỳ sau">›</button></div>
    <span class="small">${dmyS(d1)} – ${dmyS(d2)}</span>
@@ -2463,15 +2463,19 @@ async function view5s(){
   let qf=SB.from("fives_findings").select("id,criterion,description,countermeasure,owner_name,due_date,status,verify_note,fives_audits!inner(audit_date,area,target_dept_id,auditor_id)").gte("fives_audits.audit_date",d1).lte("fives_audits.audit_date",d2).order("due_date");
   if(FS.fstat==="open")qf=qf.neq("status","closed");else qf=qf.eq("status","closed");if(FS.fs)qf=qf.eq("criterion",FS.fs);
   const rows=await q(qf.limit(300));const ids=rows.map(r=>r.id);
-  const ph=ids.length?await q(SB.from("attachments").select("id,entity_id,storage_path").eq("entity","fsb").in("entity_id",ids)):[];
+  const ph=ids.length?await q(SB.from("attachments").select("id,entity,entity_id,storage_path").in("entity",["fsb","fsa"]).in("entity_id",ids)):[];
   let urls={};if(ph.length){const{data}=await SB.storage.from("evidence").createSignedUrls(ph.map(p=>p.storage_path),3600);(data||[]).forEach(d=>{if(d.signedUrl)urls[d.path]=d.signedUrl})}
   const ps=await api.profiles();const nm=id=>(ps.find(p=>p.id===id)||{}).full_name||"";const dep=id=>(REF.depts.find(d=>d.id===id)||{}).name||"";
   return head+`<div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0"><div class="seg">${[["open","Đang mở"],["closed","Đã đóng"]].map(([k,n])=>`<button type="button" data-fsf="${k}" aria-pressed="${FS.fstat===k}">${n}</button>`).join("")}</div>
    <div class="seg">${[["","Tất cả"]].concat(C.map(c=>[c.k,c.name])).map(([k,n])=>`<button type="button" data-fss="${k}" aria-pressed="${FS.fs===k}">${esc(n)}</button>`).join("")}</div></div>
-  ${rows.map(r=>{const a=r.fives_audits||{};const p=ph.find(x=>x.entity_id===r.id);const mineDept=ME.role==="admin"||ME.dept_id===a.target_dept_id;const auditor=ME.role==="admin"||a.auditor_id===ME.id;const over=r.status!=="closed"&&r.due_date<today;
-    return `<div class="card" style="margin-bottom:10px;display:grid;grid-template-columns:minmax(0,140px) minmax(0,1fr);gap:12px">
-     <div>${p?`<a href="${urls[p.storage_path]||"#"}" target="_blank" rel="noopener"><img src="${urls[p.storage_path]||""}" alt="Ảnh lỗi 3S" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;background:var(--sunk)"></a>`:'<div class="empty" style="aspect-ratio:1;display:grid;place-items:center;color:var(--bad)">Chưa có ảnh</div>'}
-      ${auditor&&r.status!=="closed"?`<label class="btn ghost" style="display:block;text-align:center;margin-top:6px;padding:3px 6px" for="fsPh_${r.id}">${p?"Thay ảnh":"Tải ảnh"}</label><input type="file" id="fsPh_${r.id}" data-fsph="${r.id}" data-old="${p?p.id+"|"+p.storage_path:""}" accept="image/*" capture="environment" hidden>`:""}</div>
+  ${rows.map(r=>{const a=r.fives_audits||{};const pb=ph.find(x=>x.entity==="fsb"&&x.entity_id===r.id);const pa=ph.find(x=>x.entity==="fsa"&&x.entity_id===r.id);const mineDept=ME.role==="admin"||ME.dept_id===a.target_dept_id;const auditor=ME.role==="admin"||a.auditor_id===ME.id;const over=r.status!=="closed"&&r.due_date<today;
+    const photoBlock=(label,p,canUp,entity)=>`<div><div class="small" style="margin-bottom:2px">${label}</div>${p?`<a href="${urls[p.storage_path]||"#"}" target="_blank" rel="noopener"><img src="${urls[p.storage_path]||""}" alt="${label}" style="width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;background:var(--sunk)"></a>`:'<div class="empty" style="aspect-ratio:1;display:grid;place-items:center;color:var(--bad);font-size:12px;text-align:center;padding:4px">Chưa có ảnh</div>'}
+      ${canUp?`<label class="btn ghost" style="display:block;text-align:center;margin-top:6px;padding:3px 6px" for="fsPh_${entity}_${r.id}">${p?"Thay ảnh":"Tải ảnh"}</label><input type="file" id="fsPh_${entity}_${r.id}" data-fsph="${entity}:${r.id}" data-old="${p?p.id+"|"+p.storage_path:""}" accept="image/*" capture="environment" hidden>`:""}</div>`;
+    return `<div class="card" style="margin-bottom:10px;display:grid;grid-template-columns:minmax(0,230px) minmax(0,1fr);gap:12px">
+     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      ${photoBlock("Ảnh lỗi",pb,auditor&&r.status!=="closed","fsb")}
+      ${photoBlock("Ảnh khắc phục",pa,mineDept&&["open","fixing"].includes(r.status),"fsa")}
+     </div>
      <div style="min-width:0"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap"><div><span class="pill p-none">${esc(r.criterion)} ${esc(fsSName(C,r.criterion))}</span> <b>${esc(dep(a.target_dept_id))}</b> · ${esc(a.area||"")}</div>
        <div><span class="pill p-${r.status==="closed"?"ok":r.status==="pending_verify"?"warn":over?"bad":"none"}">${ttName(FS_ST,r.status)}${over?" · quá hạn":""}</span></div></div>
       <div style="margin:6px 0"><b>Lỗi:</b> ${esc(r.description)}</div><div class="small">Ghi ngày ${dmyS(a.audit_date)} bởi ${esc(nm(a.auditor_id))} · hạn ${dmyS(r.due_date)}</div>
@@ -2480,7 +2484,7 @@ async function view5s(){
         <div class="fld" style="grid-column:1/-1"><label for="fc_${r.id}">Đối sách</label><input id="fc_${r.id}" value="${esc(r.countermeasure||"")}"></div>
         <div class="fld"><label for="fo_${r.id}">Người phụ trách</label><input id="fo_${r.id}" value="${esc(r.owner_name||"")}"></div>
         <div class="fld"><label for="fd_${r.id}">Hạn</label><input id="fd_${r.id}" type="date" value="${r.due_date||""}"></div>
-        <div style="grid-column:1/-1;display:flex;gap:6px;flex-wrap:wrap;align-items:center"><button class="btn ghost" type="button" data-fsa="counter:${r.id}">Lưu đối sách</button><button class="btn" type="button" data-fsa="request_close:${r.id}">Đã khắc phục – đề nghị đóng</button><span class="msg" id="fm_${r.id}"></span></div></div>`:""}
+        <div style="grid-column:1/-1;display:flex;gap:6px;flex-wrap:wrap;align-items:center"><button class="btn ghost" type="button" data-fsa="counter:${r.id}">Lưu đối sách</button><button class="btn" type="button" data-fsa="request_close:${r.id}" ${pa?"":"disabled"} title="${pa?"":"Tải ảnh khắc phục trước khi đề nghị đóng"}">Đã khắc phục – đề nghị đóng</button>${pa?"":'<span class="small" style="color:var(--bad)">Cần tải ảnh khắc phục trước</span>'}<span class="msg" id="fm_${r.id}"></span></div></div>`:""}
       ${auditor&&r.status!=="closed"?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center"><input id="fv_${r.id}" placeholder="Nhận xét / lý do trả lại" style="flex:1;min-width:160px">
         <button class="btn" type="button" data-fsa="close:${r.id}" ${r.status!=="pending_verify"&&ME.role!=="admin"?"disabled":""}>Xác nhận đóng</button><button class="btn ghost" type="button" data-fsa="reopen:${r.id}">Trả lại</button>
         ${r.status==="open"?`<button class="btn ghost" type="button" data-fsa="delete:${r.id}" style="color:var(--bad)">Xóa (ghi nhầm)</button>`:""}<span class="msg" id="fm2_${r.id}"></span></div>`:""}</div></div>`}).join("")||'<div class="empty">Không có lỗi 3S nào trong kỳ bạn được xem</div>'}`;
@@ -2522,13 +2526,13 @@ function bind5s(){
       toast(`Đã lưu lỗi 3S (ảnh ${Math.round(sz/1024)} KB)`);render()}
     catch(err){if(id){try{await rpc("update_5s_finding",{p_id:id,p_action:"delete",p_counter:null,p_owner:null,p_due:null,p_note:null})}catch(_){}}
       setMsg("fsMsg",sbErr(err)+(id?" – lỗi chưa được lưu, thử lại.":""),"bad");$("#fsSave").disabled=false}});
-  document.querySelectorAll("[data-fsph]").forEach(inp=>inp.onchange=async()=>{const file=inp.files[0];if(!file)return;const id=inp.dataset.fsph;
+  document.querySelectorAll("[data-fsph]").forEach(inp=>inp.onchange=async()=>{const file=inp.files[0];if(!file)return;const[entity,id]=inp.dataset.fsph.split(":");
     try{if(inp.dataset.old){const[aid,path]=inp.dataset.old.split("|");const rm=await SB.storage.from("evidence").remove([path]);if(rm.error)throw rm.error;await q(SB.from("attachments").delete().eq("id",+aid).select("id"))}
-      await fsUpload(id,file);toast("Đã cập nhật ảnh");render()}catch(e){toast(sbErr(e))}});
+      await fsUpload(id,file,entity);toast("Đã cập nhật ảnh");render()}catch(e){toast(sbErr(e))}});
   document.querySelectorAll("[data-fsa]").forEach(b=>b.onclick=async()=>{const[act,id]=b.dataset.fsa.split(":");const m=["counter","request_close"].includes(act)?"fm_"+id:"fm2_"+id;
     if(act==="delete"&&b.dataset.c!=="1"){b.dataset.c="1";b.textContent="Xác nhận xóa?";return}
     const g=x=>{const el=$("#"+x+id);return el?el.value.trim():null};
-    try{if(act==="delete"){const ph=await q(SB.from("attachments").select("storage_path").eq("entity","fsb").eq("entity_id",+id));if(ph.length)await SB.storage.from("evidence").remove(ph.map(p=>p.storage_path))}
+    try{if(act==="delete"){const ph=await q(SB.from("attachments").select("storage_path").in("entity",["fsb","fsa"]).eq("entity_id",+id));if(ph.length)await SB.storage.from("evidence").remove(ph.map(p=>p.storage_path))}
       await rpc("update_5s_finding",{p_id:+id,p_action:act,p_counter:g("fc_"),p_owner:g("fo_"),p_due:g("fd_")||null,p_note:g("fv_")});
       toast({counter:"Đã lưu đối sách",request_close:"Đã đề nghị đóng",close:"Đã xác nhận đóng",reopen:"Đã trả lại",delete:"Đã xóa lỗi"}[act]);render()}catch(e){setMsg(m,sbErr(e),"bad")}});
 }
