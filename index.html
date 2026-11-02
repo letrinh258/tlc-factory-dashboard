@@ -2,6 +2,14 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>TLC Factory Dashboard</title>
 <meta name="claude:viewport-fit-sides" content="cover">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#20409A">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TLC Dashboard">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
 <style>
@@ -1974,6 +1982,7 @@ function bindMt(){bindFormHead("bt");bindDelete("bt","delete_mt");const f=$("#fF
 /* ---------- FORM D – KHO ---------- */
 const WHK={receipt_sx:"Nhập kho từ SX",shortage:"Thiếu vật tư",ng_return:"NG trả về / chờ trả NCC"};
 const INV={open:false};
+const BHF={month:null,open:false};
 async function invSnapHTML(D,W){
   const items=await q(SB.from("inventory_snapshots").select("item_code,opening_qty,in_qty,out_qty,closing_qty").eq("snapshot_date",D).eq("warehouse",W));
   const sum=k=>items.reduce((a,r)=>a+Number(r[k]||0),0);
@@ -2040,6 +2049,87 @@ function bindWh(){bindFormHead("kho");bindDelete("kho","delete_wh");
     $("#fSave").disabled=true;setMsg("fMsg","Đang lưu…");
     try{await rpc("save_wh",{p_id:FM.kho.edit==="new"?null:FM.kho.edit,d:FM.kho.date,p_wh:W,p_kind:$("#w_kind").value,p_line:$("#w_line").value?+$("#w_line").value:null,p_item:item,p_qty:qty,p_ref:$("#w_ref").value.trim()||null,p_expected:W==="LK"&&$("#w_exp").value||null,p_note:$("#w_note").value.trim()||null});
       FM.kho.edit=null;toast("Đã lưu phiếu");render()}catch(err){setMsg("fMsg",sbErr(err),"bad");$("#fSave").disabled=false}})}
+
+/* ---------- BẢO HÀNH (BHM/BHN) ---------- */
+function monthISO(d){return (d||todayISO()).slice(0,8)+"01"}
+function monthLabel(d){return "Tháng "+d.slice(5,7)+"/"+d.slice(0,4)}
+function stepMonth(iso,n){const d=D0(iso);d.setUTCMonth(d.getUTCMonth()+n);return isoOf(d)}
+function parseBhPaste(text){
+  const lines=text.split(/\r?\n/).filter(l=>l.trim()!=="");
+  if(!lines.length)return{error:"Chưa dán dữ liệu."};
+  const header=lines[0].split("\t").map(h=>h.trim());
+  const idx=name=>header.indexOf(name);
+  const iStt=idx("STT"),iKh=idx("Khách hàng"),iDc=idx("Địa chỉ"),iMh=idx("Mặt hàng"),iDvt=idx("ĐVT"),iTsx=idx("Tháng sản xuất"),iGui=idx("Số lượng KH gửi"),iNhan=idx("Số lượng nhận"),iTong=idx("Tổng cộng");
+  if(iMh<0)return{error:"Không tìm thấy cột 'Mặt hàng' — nhớ dán CẢ dòng tiêu đề (dòng có STT, Khách hàng, Mặt hàng…)."};
+  const causeCols=[];header.forEach((h,i)=>{if(h.trim().startsWith("Nguyên nhân"))causeCols.push({i,name:h.replace(/^\s*Nguyên nhân:\s*/,"").trim()})});
+  const claims=[];
+  for(let r=1;r<lines.length;r++){
+    const c=lines[r].split("\t");const first=(c[0]||"").trim();
+    if(!first||/^Tổng cộng/i.test(first))continue;
+    const item=(iMh>=0?c[iMh]:"")?.trim();if(!item)continue;
+    const causes=[];causeCols.forEach(({i,name})=>{const v=parseInvNum(c[i]);if(v)causes.push({cause:name,qty:v})});
+    const totalQ=iTong>=0?parseInvNum(c[iTong]):causes.reduce((a,x)=>a+x.qty,0);
+    claims.push({stt:iStt>=0?(c[iStt]||"").trim():first,customer:iKh>=0?(c[iKh]||"").trim()||null:null,address:iDc>=0?(c[iDc]||"").trim()||null:null,
+      item_name:item,unit:iDvt>=0?(c[iDvt]||"").trim()||null:null,prod_month:iTsx>=0?(c[iTsx]||"").trim()||null:null,
+      qty_sent:iGui>=0?parseInvNum(c[iGui]):0,qty_received:iNhan>=0?parseInvNum(c[iNhan]):0,total_qty:totalQ,causes});
+  }
+  if(!claims.length)return{error:"Không đọc được dòng nào có dữ liệu."};
+  return{claims};
+}
+async function viewBH(){
+  if(RUN!=="LIVE")return liveOnly("Bảo hành");
+  const M=BHF.month=BHF.month||monthISO(ME.today);
+  const rows=await q(SB.from("warranty_batches").select("*").eq("report_month",M).eq("channel","ALL"));
+  const b=rows[0];
+  const causeTop=b?Object.entries(b.cause_totals||{}).sort((x,y)=>y[1]-x[1]).slice(0,12):[];
+  const itemTop=b?Object.entries(b.item_totals||{}).sort((x,y)=>y[1]-x[1]).slice(0,12):[];
+  return `<h2 class="sec" style="margin-top:0">Bảo hành</h2>
+  <p class="small" style="margin:0 0 10px">Bảng kê phiếu sửa chữa hàng bảo hành theo tháng (BHM + BHN gộp chung, nguồn nội bộ/Bravo).</p>
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+   <button class="btn ghost" type="button" id="bhPrev">‹</button>
+   <b>${monthLabel(M)}</b>
+   <button class="btn ghost" type="button" id="bhNext" ${M>=monthISO(ME.today)?"disabled":""}>›</button>
+  </div>
+  <div class="card">
+   <h3>${b?`Đã nạp ${fmt(b.total_claims)} phiếu · ${fmt(b.total_qty)} sản phẩm bảo hành — ${monthLabel(M)}`:`Chưa có dữ liệu bảo hành ${monthLabel(M)}`}</h3>
+   ${b?`<div class="mgrid" style="grid-template-columns:repeat(2,1fr)"><div class="m"><div class="l">Số phiếu</div><div class="v">${fmt(b.total_claims)}</div></div><div class="m"><div class="l">Tổng SL bảo hành</div><div class="v">${fmt(b.total_qty)}</div></div></div>`:""}
+   <p class="small" style="margin:8px 0">Mở file "Bảng kê phiếu sửa chữa hàng bảo hành", bôi đen từ dòng tiêu đề (STT, Khách hàng, Địa chỉ, Mặt hàng… đến Tổng cộng) đến dòng cuối có dữ liệu (bỏ dòng "Tổng cộng:" ở cuối), sao chép rồi dán vào ô dưới — <b>nhớ lấy cả dòng tiêu đề</b> vì mỗi tháng có thể khác cột nguyên nhân. Dán lại cùng tháng sẽ XÓA và NẠP LẠI toàn bộ tháng đó.</p>
+   <button class="btn ghost" type="button" id="bhBtn">${BHF.open?"Đóng":b?"Dán lại / cập nhật tháng này":"Dán dữ liệu bảo hành"}</button>
+   ${BHF.open?`<div style="margin-top:8px"><textarea id="bhBulk" rows="10" style="width:100%;box-sizing:border-box;font-family:var(--mono,monospace)" placeholder="STT	Khách hàng	Địa chỉ	Mặt hàng	ĐVT	Tháng sản xuất	Số lượng KH gửi	Số lượng nhận	 Nguyên nhân: …	…	Tổng cộng"></textarea>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap"><button class="btn" type="button" id="bhGo">Lưu bảo hành ${monthLabel(M)}</button><span class="msg" id="bhMsg"></span></div></div>`:""}
+  </div>
+  ${causeTop.length?`<div class="card" style="margin-top:10px"><h3>Nguyên nhân lỗi nhiều nhất — ${monthLabel(M)}</h3><div class="tbl"><table><tr><th>Nguyên nhân</th><th class="num">Số lượng</th></tr>${causeTop.map(([n,v])=>`<tr><td>${esc(n)}</td><td class="num">${fmt(v)}</td></tr>`).join("")}</table></div></div>`:""}
+  ${itemTop.length?`<div class="card" style="margin-top:10px"><h3>Mặt hàng bị bảo hành nhiều nhất — ${monthLabel(M)}</h3><div class="tbl"><table><tr><th>Mặt hàng</th><th class="num">Số lượng</th></tr>${itemTop.map(([n,v])=>`<tr><td>${esc(n)}</td><td class="num">${fmt(v)}</td></tr>`).join("")}</table></div></div>`:""}`;
+}
+function bindBH(){
+  $("#bhPrev").onclick=()=>{BHF.month=stepMonth(BHF.month,-1);BHF.open=false;render()};
+  const bn=$("#bhNext");if(bn)bn.onclick=()=>{const s=stepMonth(BHF.month,1);BHF.month=s>monthISO(ME.today)?monthISO(ME.today):s;BHF.open=false;render()};
+  $("#bhBtn").onclick=()=>{BHF.open=!BHF.open;render()};
+  const go=$("#bhGo");if(go)go.onclick=async()=>{
+    const M=BHF.month,parsed=parseBhPaste($("#bhBulk").value);
+    if(parsed.error){setMsg("bhMsg",parsed.error,"bad");return}
+    const claims=parsed.claims;
+    const causeTotals={},itemTotals={};let totalQty=0;
+    claims.forEach(cl=>{totalQty+=cl.total_qty;itemTotals[cl.item_name]=(itemTotals[cl.item_name]||0)+cl.total_qty;cl.causes.forEach(c=>{causeTotals[c.cause]=(causeTotals[c.cause]||0)+c.qty})});
+    $("#bhGo").disabled=true;setMsg("bhMsg","Đang lưu "+fmt(claims.length)+" phiếu…");
+    try{
+      await SB.from("warranty_batches").delete().eq("report_month",M).eq("channel","ALL");
+      const{data:bi,error:e0}=await SB.from("warranty_batches").insert({report_month:M,channel:"ALL",total_claims:claims.length,total_qty:totalQty,source:"paste",created_by:ME.id,cause_totals:causeTotals,item_totals:itemTotals}).select().single();
+      if(e0)throw e0;
+      const CH=300;let saved=0;
+      for(let i=0;i<claims.length;i+=CH){
+        const part=claims.slice(i,i+CH);
+        const rows=part.map(cl=>({batch_id:bi.id,stt:cl.stt,customer:cl.customer,address:cl.address,item_name:cl.item_name,unit:cl.unit,prod_month:cl.prod_month,qty_sent:cl.qty_sent,qty_received:cl.qty_received,total_qty:cl.total_qty}));
+        const{data:ins,error:e1}=await SB.from("warranty_claims").insert(rows).select("id");
+        if(e1)throw e1;
+        const causeRows=[];ins.forEach((r,k)=>part[k].causes.forEach(c=>causeRows.push({claim_id:r.id,cause:c.cause,qty:c.qty})));
+        for(let j=0;j<causeRows.length;j+=1000){const{error:e2}=await SB.from("warranty_claim_causes").insert(causeRows.slice(j,j+1000));if(e2)throw e2}
+        saved+=part.length;setMsg("bhMsg","Đang lưu… "+saved+"/"+claims.length+" phiếu");
+      }
+      BHF.open=false;toast("Đã lưu bảo hành "+fmt(claims.length)+" phiếu — "+monthLabel(M));render();
+    }catch(err){setMsg("bhMsg",sbErr(err),"bad");$("#bhGo").disabled=false}
+  };
+}
 
 /* ---------- FORM E – HCNS ---------- */
 async function viewHr(){
@@ -2278,7 +2368,7 @@ function bindDashLive(){
 }
 const MODS=[["dash","Tổng quan nhà máy",2],["sum","Tổng hợp báo cáo ngày",4],["mydept","Bộ phận của tôi",3],["task","Giao việc",4],["mine","Công việc của tôi",3],["daily","Báo cáo hằng ngày",4],["sx","Sản xuất",5],["qc","Chất lượng",5],["kho","Kho",5],["kh","Kế hoạch",5],["kt","Kỹ thuật",5],["bt","Bảo trì",5],["gt","Giá thành",5],["bh","Bảo hành",5],["ns","Nhân sự",5],["kpi","KPI",6],["5s","3S",5],["vd","Vấn đề và cải tiến",6],["lich","Lịch điều hành",6],["acc","Quản lý tài khoản",3],["cfg","Cấu hình hệ thống",3]];
 const DEPT_MOD={SX:"sx",QAC:"qc",KHO:"kho",KHSX:"kh",KT:"kt",CD:"bt",KTGT:"gt",BHM:"bh",BHN:"bh",HCNS:"ns"};
-const BUILT=["dash","sum","mydept","task","mine","daily","sx","qc","bt","kho","ns","5s","acc","cfg"];
+const BUILT=["dash","sum","mydept","task","mine","daily","sx","qc","bt","kho","ns","bh","5s","acc","cfg"];
 function allowedMods(){
   if(!ME)return[];if(ME.role==="admin")return MODS.map(m=>m[0]).filter(k=>k!=="mydept");
   const a=[];const approver=ME.role==="head"||(ME.approves_depts||[]).length;
@@ -2321,6 +2411,7 @@ async function render(){
     else if(ST.screen==="bt"){const h=await viewMt();if(seq!==renderSeq)return;main.innerHTML=h;bindMt()}
     else if(ST.screen==="kho"){const h=await viewWh();if(seq!==renderSeq)return;main.innerHTML=h;bindWh()}
     else if(ST.screen==="ns"){const h=await viewHr();if(seq!==renderSeq)return;main.innerHTML=h;bindHr()}
+    else if(ST.screen==="bh"){const h=await viewBH();if(seq!==renderSeq)return;main.innerHTML=h;bindBH()}
     else if(ST.screen==="5s"){const h=await view5s();if(seq!==renderSeq)return;main.innerHTML=h;bind5s()}
     else if(ST.screen==="sum"){const h=await viewSummary();if(seq!==renderSeq)return;main.innerHTML=h;bindSummary()}
     else main.innerHTML=`<h2 class="sec" style="margin-top:0">${mod[1]}</h2><div class="ph-card"><b>Xây ở Giai đoạn ${mod[2]}.</b><p class="small" style="margin:6px 0 0">Nội dung và phân quyền đã chốt ở Giai đoạn 1. Bạn thấy mục này vì vai trò của bạn được phép dùng nó.</p></div>`;
