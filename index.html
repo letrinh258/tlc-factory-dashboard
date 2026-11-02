@@ -1971,7 +1971,7 @@ function bindQc(){
       FM.qc.edit=null;toast("Đã lưu phiếu kiểm");render()}catch(err){setMsg("fMsg",sbErr(err),"bad");$("#fSave").disabled=false}})}
 
 /* ---------- QAC – Hotline (vấn đề/khiếu nại thị trường) ---------- */
-const HL={fStatus:"",fDept:"",q:"",open:false,edit:null,del:null};
+const HL={fStatus:"",fDept:"",q:"",open:false,edit:null,del:null,dueEdit:null};
 const HL_ST=[["open","Mở sự vụ"],["processing","Đang xử lý"],["closed","Đã đóng"]];
 const HL_STC={open:"bad",processing:"warn",closed:"ok"};
 async function hlHTML(){
@@ -1984,6 +1984,12 @@ async function hlHTML(){
   const depName=id=>id?(REF.depts.find(d=>d.id===id)||{}).name||"—":"—";
   const canWrite=ME.role==="admin"||ME.dept_id===(REF.depts.find(d=>d.code==="QAC")||{}).id||(ME.approves_depts||[]).includes((REF.depts.find(d=>d.code==="QAC")||{}).id);
   const ed=HL.edit||{status:"open"};
+  const ids=filtered.map(r=>r.id);
+  const pendDue=ids.length?await q(SB.from("hotline_due_requests").select("*").eq("status","pending").in("issue_id",ids).order("requested_at",{ascending:false})):[];
+  const pendOf=id=>pendDue.find(x=>x.issue_id===id);
+  const ps=pendDue.length?await api.profiles():[];
+  const nm=id=>(ps.find(p=>p.id===id)||{}).full_name||"";
+  const today=ME.today||todayISO();
   const bar=`<div class="tools" style="margin-top:10px"><div class="seg">${[["","Tất cả"],["open","Mở sự vụ"],["processing","Đang xử lý"],["closed","Đã đóng"]].map(([k,n])=>`<button type="button" data-hlf="${k}" aria-pressed="${HL.fStatus===k}">${n}</button>`).join("")}</div>
    <select id="hlDept" aria-label="Bộ phận phụ trách">${opt([["","Tất cả BP"]].concat(REF.depts.map(d=>[d.id,d.name])),HL.fDept)}</select>
    <input id="hlQ" type="search" placeholder="Tìm mã, mã SP, nội dung" value="${esc(HL.q)}" style="flex:1;min-width:180px" aria-label="Tìm vấn đề hotline">
@@ -2002,7 +2008,8 @@ async function hlHTML(){
     <div class="fld" style="grid-column:1/-1"><label for="h_lt">Xử lý dài hạn</label><input id="h_lt" value="${esc(ed.long_term_action||"")}"></div>
     <div class="fld"><label for="h_status">Trạng thái</label><select id="h_status">${opt(HL_ST,ed.status||"open")}</select></div>
    </div><div style="margin-top:10px;display:flex;gap:8px;align-items:center"><button class="btn" type="submit">Lưu</button><button class="btn ghost" type="button" id="hl_cancel">Hủy</button><span class="msg" id="hlNewMsg"></span></div></form>`:"";
-  const list=filtered.map(r=>`<div class="card" style="margin:10px 0">
+  const list=filtered.map(r=>{const pend=pendOf(r.id);const over=r.response_due&&r.status!=="closed"&&r.response_due<today;
+    return `<div class="card" style="margin:10px 0">
    <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
     <div><span class="mono">${esc(r.code)}</span>${r.product_code?" · "+esc(r.product_code):""} · <b>${esc(depName(r.dept_id))}</b></div>
     <div><span class="pill p-${HL_STC[r.status]}">${ttName(HL_ST,r.status)}</span></div></div>
@@ -2010,23 +2017,32 @@ async function hlHTML(){
    <div class="mgrid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin:6px 0">
     ${r.cause?`<div class="m"><div class="l">Nguyên nhân</div><div class="v" style="font-size:13px">${esc(r.cause)}</div></div>`:""}
     ${r.countermeasure?`<div class="m"><div class="l">Đối sách</div><div class="v" style="font-size:13px">${esc(r.countermeasure)}</div></div>`:""}
+    <div class="m"><div class="l">Hạn trả lời</div><div class="v" style="font-size:13px${over?";color:var(--bad)":""}">${r.response_due?dmyS(r.response_due)+(over?" · quá hạn":""):"Chưa đặt"}</div></div>
     ${r.response_qty!=null?`<div class="m"><div class="l">SL phản hồi</div><div class="v" style="font-size:13px">${fmt(r.response_qty)}</div></div>`:""}
     <div class="m"><div class="l">Ngày mở</div><div class="v" style="font-size:13px">${dmyS(r.opened_at)}</div></div>
     ${r.closed_at?`<div class="m"><div class="l">Ngày đóng</div><div class="v" style="font-size:13px">${dmyS(r.closed_at)}</div></div>`:""}
    </div>
    ${r.short_term_action?`<div class="small"><b>Xử lý ngắn hạn:</b> ${esc(r.short_term_action)}</div>`:""}
    ${r.long_term_action?`<div class="small"><b>Xử lý dài hạn:</b> ${esc(r.long_term_action)}</div>`:""}
+   ${pend?`<div class="small" style="margin-top:6px;padding:6px 8px;border-radius:6px;background:var(--sunk)">
+     <b>Đang chờ Admin duyệt đổi hạn trả lời:</b> ${dmyS(pend.new_due)}${pend.reason?` · Lý do: ${esc(pend.reason)}`:""} · đề nghị bởi ${esc(nm(pend.requested_by))}
+     ${ME.role==="admin"?`<div style="margin-top:4px;display:flex;gap:6px;flex-wrap:wrap"><button class="btn ghost" type="button" data-hldec="approve:${pend.id}" style="padding:2px 8px">Duyệt</button><button class="btn ghost" type="button" data-hldec="reject:${pend.id}" style="padding:2px 8px;color:var(--bad)">Từ chối</button></div>`:""}</div>`:""}
+   ${canWrite&&HL.dueEdit===r.id?`<div class="card" style="margin-top:6px;background:var(--sunk)"><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;align-items:end">
+     <div class="fld"><label for="hd_${r.id}">Hạn trả lời mới</label><input id="hd_${r.id}" type="date" value="${r.response_due||""}"></div>
+     <div class="fld" style="grid-column:span 2"><label for="hr_${r.id}">Lý do đổi hạn</label><input id="hr_${r.id}" placeholder="${ME.role==="admin"?"vd: GĐNM điều chỉnh theo tình hình thực tế":"Bắt buộc với yêu cầu chờ duyệt"}"></div></div>
+     <div style="margin-top:8px;display:flex;gap:6px;align-items:center"><button class="btn" type="button" data-hlduesave="${r.id}">${ME.role==="admin"?"Đặt hạn":"Gửi đề nghị"}</button><button class="btn ghost" type="button" data-hlduecancel="${r.id}">Hủy</button><span class="msg" id="hdm_${r.id}"></span></div></div>`:""}
    ${canWrite?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center">
     <select id="hls_${r.id}">${opt(HL_ST,r.status)}</select><button class="btn ghost" type="button" data-hlst="${r.id}" style="padding:3px 9px">Lưu trạng thái</button>
     <button class="btn ghost" type="button" data-hle="${r.id}" style="padding:3px 9px">Sửa</button>
+    ${HL.dueEdit===r.id?"":`<button class="btn ghost" type="button" data-hldue="${r.id}" style="padding:3px 9px">${r.response_due?"Đổi hạn trả lời":"Đặt hạn trả lời"}</button>`}
     <button class="btn ghost" type="button" data-hld="${r.id}" style="padding:3px 9px;color:var(--bad)">${HL.del===r.id?"Xác nhận xóa?":"Xóa"}</button>
-   </div>`:""}<span class="msg" id="hlm_${r.id}"></span></div>`).join("")||`<div class="empty">Không có vấn đề hotline phù hợp bộ lọc</div>`;
+   </div>`:""}<span class="msg" id="hlm_${r.id}"></span></div>`}).join("")||`<div class="empty">Không có vấn đề hotline phù hợp bộ lọc</div>`;
   return bar+form+list;
 }
 function hlExport(rows){
   const depName=id=>id?(REF.depts.find(d=>d.id===id)||{}).name||"":"";
-  const data=rows.map((r,i)=>({"STT":i+1,"Mã":r.code,"Mã SP":r.product_code||"","Nội dung vấn đề":r.issue_desc,"Nguyên nhân":r.cause||"","Đối sách":r.countermeasure||"","Số lượng phản hồi":r.response_qty??"","Bộ phận phụ trách":depName(r.dept_id),"Xử lý ngắn hạn":r.short_term_action||"","Xử lý dài hạn":r.long_term_action||"","Trạng thái":ttName(HL_ST,r.status),"Ngày mở":r.opened_at?dmyS(r.opened_at):"","Ngày đóng":r.closed_at?dmyS(r.closed_at):""}));
-  const ws=XLSX.utils.json_to_sheet(data);ws["!cols"]=[6,10,22,34,28,28,10,18,28,28,12,12,12].map(w=>({wch:w}));
+  const data=rows.map((r,i)=>({"STT":i+1,"Mã":r.code,"Mã SP":r.product_code||"","Nội dung vấn đề":r.issue_desc,"Nguyên nhân":r.cause||"","Đối sách":r.countermeasure||"","Hạn trả lời":r.response_due?dmyS(r.response_due):"","Số lượng phản hồi":r.response_qty??"","Bộ phận phụ trách":depName(r.dept_id),"Xử lý ngắn hạn":r.short_term_action||"","Xử lý dài hạn":r.long_term_action||"","Trạng thái":ttName(HL_ST,r.status),"Ngày mở":r.opened_at?dmyS(r.opened_at):"","Ngày đóng":r.closed_at?dmyS(r.closed_at):""}));
+  const ws=XLSX.utils.json_to_sheet(data);ws["!cols"]=[6,10,22,34,28,28,12,10,18,28,28,12,12,12].map(w=>({wch:w}));
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,"Hotline");
   XLSX.writeFile(wb,`Hotline_QAC_${yymmdd(todayISO())}.xlsx`);
 }
@@ -2057,6 +2073,18 @@ function bindHL(){
   document.querySelectorAll("[data-hld]").forEach(b=>b.onclick=async()=>{const id=+b.dataset.hld;
     if(HL.del!==id){HL.del=id;render();return}
     try{await q(SB.from("hotline_issues").delete().eq("id",id));HL.del=null;toast("Đã xóa");render()}catch(err){setMsg("hlm_"+id,sbErr(err),"bad")}});
+  document.querySelectorAll("[data-hldue]").forEach(b=>b.onclick=()=>{HL.dueEdit=+b.dataset.hldue;render()});
+  document.querySelectorAll("[data-hlduecancel]").forEach(b=>b.onclick=()=>{HL.dueEdit=null;render()});
+  document.querySelectorAll("[data-hlduesave]").forEach(b=>b.onclick=async()=>{const id=+b.dataset.hlduesave;
+    const due=$("#hd_"+id).value,reason=$("#hr_"+id).value.trim();
+    if(!due)return setMsg("hdm_"+id,"Chọn hạn trả lời mới.","bad");
+    if(ME.role!=="admin"&&!reason)return setMsg("hdm_"+id,"Nhập lý do đổi hạn (để Admin xét duyệt).","bad");
+    try{await rpc("hotline_request_due",{p_issue_id:id,p_new_due:due,p_reason:reason||null});
+      HL.dueEdit=null;toast(ME.role==="admin"?"Đã đặt hạn trả lời":"Đã gửi đề nghị đổi hạn, chờ Admin duyệt");render()}
+    catch(err){setMsg("hdm_"+id,sbErr(err),"bad")}});
+  document.querySelectorAll("[data-hldec]").forEach(b=>b.onclick=async()=>{const[act,id]=b.dataset.hldec.split(":");
+    try{await rpc("hotline_decide_due",{p_id:+id,p_action:act,p_note:null});toast(act==="approve"?"Đã duyệt đổi hạn":"Đã từ chối đổi hạn");render()}
+    catch(err){toast(sbErr(err))}});
 }
 
 /* ---------- FORM C – CƠ ĐIỆN ---------- */
