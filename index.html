@@ -2132,7 +2132,8 @@ async function invSnapHTML(D,W){
   return `<div class="card" style="margin-top:10px"><h3>Tồn kho ${W==="TP"?"thành phẩm":"linh kiện"} ngày ${dmyS(D)} <small>${items.length?fmt(items.length)+" mã · nguồn Bravo (dán tay)":"Chưa có dữ liệu tồn kho ngày này"}</small></h3>
   ${items.length?`<div class="mgrid" style="grid-template-columns:repeat(4,1fr)">${[["Số mã",items.length,0],["Đầu kỳ",sum("opening_qty"),0],["Nhập",sum("in_qty"),0],["Cuối kỳ",sum("closing_qty"),0]].map(([l,v,d])=>`<div class="m"><div class="l">${l}</div><div class="v">${fmt(v,d)}</div></div>`).join("")}</div>`:""}
   <p class="small" style="margin:8px 0">Mở file Bravo "Nhập-Xuất-Tồn" ${W==="TP"?"TP":"LK"}, bôi đen từ cột <b>Mã số</b> đến <b>Cuối kỳ</b> (bỏ dòng tiêu đề, bỏ các dòng nhóm/Tổng cộng không có Mã số), sao chép rồi dán vào ô dưới. Dán lại cùng ngày sẽ ghi đè số liệu ngày đó.</p>
-  <button class="btn ghost" type="button" id="invBulkBtn">${INV.open?"Đóng":items.length?"Dán lại / cập nhật":"Dán dữ liệu tồn kho"}</button>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn ghost" type="button" id="invBulkBtn">${INV.open?"Đóng":items.length?"Dán lại / cập nhật":"Dán dữ liệu tồn kho"}</button>
+  ${items.length&&ME.role==="admin"?`<button class="btn ghost" type="button" id="invDelBtn" data-invdel="${D}:${W}" style="color:var(--bad)">Xóa dữ liệu tồn kho ngày này</button>`:""}</div>
   ${INV.open?`<div style="margin-top:8px"><textarea id="invBulk" rows="8" style="width:100%;box-sizing:border-box;font-family:var(--mono,monospace)" placeholder="Mã số	Mặt hàng	Đvt	Đầu kỳ	Nhập	Xuất	Cuối kỳ"></textarea>
    <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap"><button class="btn" type="button" id="invBulkGo">Lưu tồn kho ngày ${dmyS(D)}</button><span class="msg" id="invBulkMsg"></span></div></div>`:""}
   </div>`;
@@ -2183,6 +2184,13 @@ function bindWh(){bindFormHead("kho");bindDelete("kho","delete_wh");
       }
       INV.open=false;toast("Đã lưu tồn kho "+fmt(rows.length)+" mã");render()}
     catch(err){setMsg("invBulkMsg",sbErr(err),"bad");$("#invBulkGo").disabled=false}};
+  const idb=$("#invDelBtn");if(idb)idb.onclick=async()=>{
+    const[D,W]=idb.dataset.invdel.split(":");
+    if(!confirm("Xóa toàn bộ dữ liệu tồn kho ngày "+dmyS(D)+"? Không thể hoàn tác."))return;
+    idb.disabled=true;
+    try{await SB.from("inventory_snapshots").delete().eq("snapshot_date",D).eq("warehouse",W);toast("Đã xóa dữ liệu tồn kho ngày "+dmyS(D));render()}
+    catch(err){alert(sbErr(err));idb.disabled=false}
+  };
   const f=$("#fForm");if(!f)return;const W=FM.kho.wh;
   f.addEventListener("submit",async e=>{e.preventDefault();f.querySelectorAll(".err").forEach(x=>x.classList.remove("err"));
     const item=$("#w_item").value.trim(),qty=numOrNull($("#w_qty").value);
@@ -2237,7 +2245,8 @@ async function viewBH(){
    <h3>${b?`Đã nạp ${fmt(b.total_claims)} phiếu · ${fmt(b.total_qty)} sản phẩm bảo hành — ${monthLabel(M)}`:`Chưa có dữ liệu bảo hành ${monthLabel(M)}`}</h3>
    ${b?`<div class="mgrid" style="grid-template-columns:repeat(2,1fr)"><div class="m"><div class="l">Số phiếu</div><div class="v">${fmt(b.total_claims)}</div></div><div class="m"><div class="l">Tổng SL bảo hành</div><div class="v">${fmt(b.total_qty)}</div></div></div>`:""}
    <p class="small" style="margin:8px 0">Mở file "Bảng kê phiếu sửa chữa hàng bảo hành", bôi đen từ dòng tiêu đề (STT, Khách hàng, Địa chỉ, Mặt hàng… đến Tổng cộng) đến dòng cuối có dữ liệu (bỏ dòng "Tổng cộng:" ở cuối), sao chép rồi dán vào ô dưới — <b>nhớ lấy cả dòng tiêu đề</b> vì mỗi tháng có thể khác cột nguyên nhân. Dán lại cùng tháng sẽ XÓA và NẠP LẠI toàn bộ tháng đó.</p>
-   <button class="btn ghost" type="button" id="bhBtn">${BHF.open?"Đóng":b?"Dán lại / cập nhật tháng này":"Dán dữ liệu bảo hành"}</button>
+   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn ghost" type="button" id="bhBtn">${BHF.open?"Đóng":b?"Dán lại / cập nhật tháng này":"Dán dữ liệu bảo hành"}</button>
+   ${b&&ME.role==="admin"?`<button class="btn ghost" type="button" id="bhDelBtn" style="color:var(--bad)">Xóa dữ liệu bảo hành tháng này</button>`:""}</div>
    ${BHF.open?`<div style="margin-top:8px"><textarea id="bhBulk" rows="10" style="width:100%;box-sizing:border-box;font-family:var(--mono,monospace)" placeholder="STT	Khách hàng	Địa chỉ	Mặt hàng	ĐVT	Tháng sản xuất	Số lượng KH gửi	Số lượng nhận	 Nguyên nhân: …	…	Tổng cộng"></textarea>
     <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap"><button class="btn" type="button" id="bhGo">Lưu bảo hành ${monthLabel(M)}</button><span class="msg" id="bhMsg"></span></div></div>`:""}
   </div>
@@ -2248,6 +2257,12 @@ function bindBH(){
   $("#bhPrev").onclick=()=>{BHF.month=stepMonth(BHF.month,-1);BHF.open=false;render()};
   const bn=$("#bhNext");if(bn)bn.onclick=()=>{const s=stepMonth(BHF.month,1);BHF.month=s>monthISO(ME.today)?monthISO(ME.today):s;BHF.open=false;render()};
   $("#bhBtn").onclick=()=>{BHF.open=!BHF.open;render()};
+  const bd=$("#bhDelBtn");if(bd)bd.onclick=async()=>{
+    if(!confirm("Xóa toàn bộ dữ liệu bảo hành "+monthLabel(BHF.month)+"? Không thể hoàn tác."))return;
+    bd.disabled=true;
+    try{await rpc("warranty_begin_replace",{p_month:BHF.month});toast("Đã xóa dữ liệu bảo hành "+monthLabel(BHF.month));render()}
+    catch(err){alert(sbErr(err));bd.disabled=false}
+  };
   const go=$("#bhGo");if(go)go.onclick=async()=>{
     const M=BHF.month,parsed=parseBhPaste($("#bhBulk").value);
     if(parsed.error){setMsg("bhMsg",parsed.error,"bad");return}
@@ -2256,7 +2271,7 @@ function bindBH(){
     claims.forEach(cl=>{totalQty+=cl.total_qty;itemTotals[cl.item_name]=(itemTotals[cl.item_name]||0)+cl.total_qty;cl.causes.forEach(c=>{causeTotals[c.cause]=(causeTotals[c.cause]||0)+c.qty})});
     $("#bhGo").disabled=true;setMsg("bhMsg","Đang lưu "+fmt(claims.length)+" phiếu…");
     try{
-      await SB.from("warranty_batches").delete().eq("report_month",M).eq("channel","ALL");
+      await rpc("warranty_begin_replace",{p_month:M});
       const{data:bi,error:e0}=await SB.from("warranty_batches").insert({report_month:M,channel:"ALL",total_claims:claims.length,total_qty:totalQty,source:"paste",created_by:ME.id,cause_totals:causeTotals,item_totals:itemTotals}).select().single();
       if(e0)throw e0;
       const CH=300;let saved=0;
@@ -2322,7 +2337,8 @@ async function lsxTabHTML(){
   <div class="card">
    <div class="fld" style="max-width:220px"><label for="lsxDate">Ngày sản xuất</label><input id="lsxDate" type="date" value="${D}"></div>
    <p class="small" style="margin:8px 0">Dán theo 4 cột: <b>Mã lệnh</b> (tự điền, vd số lệnh Bravo) · <b>Line</b> (số thứ tự line, 1–${nLines}) · <b>Mã sản phẩm</b> (phải có trong danh mục) · <b>SL kế hoạch</b>.</p>
-   <button class="btn ghost" type="button" id="lsxBtn">${LSX.open?"Đóng":batches.length?"Dán lại / cập nhật":"Dán lệnh sản xuất"}</button>
+   <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn ghost" type="button" id="lsxBtn">${LSX.open?"Đóng":batches.length?"Dán lại / cập nhật":"Dán lệnh sản xuất"}</button>
+   ${batches.length&&ME.role==="admin"?`<button class="btn ghost" type="button" id="lsxDelBtn" style="color:var(--bad)">Xóa lệnh SX ngày này</button>`:""}</div>
    ${LSX.open?`<div style="margin-top:8px"><textarea id="lsxBulk" rows="8" style="width:100%;box-sizing:border-box;font-family:var(--mono,monospace)" placeholder="Mã lệnh	Line	Mã sản phẩm	SL kế hoạch
 LSX00123	1	TLC-AMC-VV-07W-04	800
 LSX00123	1	TLACB/12W04	300
@@ -2340,6 +2356,12 @@ function lineOptsName(id){return (CFG.lines||[])[id-1]||("Line "+id)}
 function bindLsx(){
   const d=$("#lsxDate");if(d)d.onchange=()=>{LSX.date=d.value;render()};
   const b=$("#lsxBtn");if(b)b.onclick=()=>{LSX.open=!LSX.open;render()};
+  const ld=$("#lsxDelBtn");if(ld)ld.onclick=async()=>{
+    if(!confirm("Xóa toàn bộ lệnh sản xuất ngày "+dmyS(LSX.date)+"? Không thể hoàn tác."))return;
+    ld.disabled=true;
+    try{await rpc("lsx_begin_replace",{p_date:LSX.date});toast("Đã xóa lệnh SX ngày "+dmyS(LSX.date));render()}
+    catch(err){alert(sbErr(err));ld.disabled=false}
+  };
   const go=$("#lsxGo");if(go)go.onclick=async()=>{
     const D=LSX.date,C=await sxCache(),nLines=(CFG.lines||[]).length||10;
     const parsed=parseLsxPaste($("#lsxBulk").value,C.byCode,nLines);
@@ -2347,7 +2369,7 @@ function bindLsx(){
     const items=parsed.items;
     $("#lsxGo").disabled=true;setMsg("lsxMsg","Đang lưu "+fmt(items.length)+" dòng…"+(parsed.bad&&parsed.bad.length?" (bỏ qua "+parsed.bad.length+" dòng lỗi)":""));
     try{
-      await SB.from("production_order_batches").delete().eq("order_date",D);
+      await rpc("lsx_begin_replace",{p_date:D});
       const byCode={};items.forEach(i=>{(byCode[i.lsx_code]=byCode[i.lsx_code]||[]).push(i)});
       const codes=Object.keys(byCode);
       for(const lsxCode of codes){
@@ -2440,7 +2462,7 @@ async function viewHr(){
    <div class="fld"><label for="h_r">Đang tuyển (vị trí)</label><input id="h_r" inputmode="numeric" value="${r.recruiting??0}" ${ro}></div>
    <div class="fld" style="grid-column:1/-1"><label for="h_note">Ghi chú (vắng theo bộ phận, lý do)</label><input id="h_note" value="${esc(r.note||"")}" ${ro}></div>
    ${st.editable?`<div style="grid-column:1/-1;display:flex;gap:8px;align-items:center"><button class="btn" type="submit" id="fSave">Lưu</button><span class="msg" id="fMsg" role="status"></span>${r.updated_at?`<span class="small">Cập nhật ${new Date(r.updated_at).toLocaleTimeString("vi-VN",{hour:"2-digit",minute:"2-digit"})}</span>`:""}</div>`:""}
-  </form></div>`;
+  </form>${r.id&&ME.role==="admin"?`<div style="margin-top:10px"><button class="btn ghost" type="button" id="hrDelBtn" data-hrdel="${r.id}" style="color:var(--bad)">Xóa phiếu ngày này</button></div>`:""}</div>`;
 }
 function bindHr(){bindFormHead("ns");const f=$("#fForm");if(!f||!$("#fSave"))return;
   const calc=()=>{const t=numOrNull($("#h_t").value),p=numOrNull($("#h_p").value);$("#h_a").textContent=t>0&&p!=null&&p>=0?(t-p)+(t?" · "+fmt((t-p)/t*100,1)+"%":""):"—"};
@@ -2450,7 +2472,13 @@ function bindHr(){bindFormHead("ns");const f=$("#fForm");if(!f||!$("#fSave"))ret
     if(!(v.h_t>0))return fErr("h_t","Nhập tổng định biên.");if(v.h_p==null||v.h_p>v.h_t)return fErr("h_p","Đi làm phải từ 0 đến tổng định biên.");
     $("#fSave").disabled=true;setMsg("fMsg","Đang lưu…");
     try{await rpc("save_hr",{d:FM.ns.date,p_total:v.h_t,p_present:v.h_p,p_new:v.h_n||0,p_quits:v.h_q||0,p_recruiting:v.h_r||0,p_note:$("#h_note").value.trim()||null});toast("Đã lưu");render()}
-    catch(err){setMsg("fMsg",sbErr(err),"bad");$("#fSave").disabled=false}})}
+    catch(err){setMsg("fMsg",sbErr(err),"bad");$("#fSave").disabled=false}});
+  const hd=$("#hrDelBtn");if(hd)hd.onclick=async()=>{
+    if(!confirm("Xóa phiếu nhân sự ngày "+dmyS(FM.ns.date)+"? Không thể hoàn tác."))return;
+    hd.disabled=true;
+    try{await SB.from("hr_reports").delete().eq("id",+hd.dataset.hrdel);toast("Đã xóa phiếu");render()}
+    catch(err){alert(sbErr(err));hd.disabled=false}
+  };}
 /* ============================================================
    GIAI ĐOẠN 5C – 3S (chốt 01/11): Sàng lọc · Sắp xếp · Sạch sẽ
    Không chấm điểm – thống kê SỐ LỖI theo từng S · mỗi lỗi 1 ảnh
@@ -2818,7 +2846,7 @@ function bindKP(){
 /* ============================================================
    KỸ THUẬT – ECR (Engineering Change Request): duyệt thay đổi BOM/định mức/mã mới
    ============================================================ */
-const KT={tab:"list",fStatus:"pending",newOpen:false,ctype:"norm",histCode:""};
+const KT={tab:"list",fStatus:"pending",newOpen:false,ctype:"norm",histCode:"",editId:null};
 const KT_TYPE=[["bom","BOM"],["norm","Định mức NS"],["spec","Quy cách"],["new_product","Mã mới"],["other","Khác"]];
 const KT_ST=[["pending","Chờ duyệt"],["approved","Đã duyệt"],["rejected","Từ chối"]];
 async function viewKT(){
@@ -2837,7 +2865,8 @@ async function ktListHTML(){
   const bar=`<div class="tools" style="margin-top:10px"><div class="seg">${[["pending","Chờ duyệt"],["approved","Đã duyệt"],["rejected","Từ chối"],["","Tất cả"]].map(([k,n])=>`<button type="button" data-ktf="${k}" aria-pressed="${KT.fStatus===k}">${n}</button>`).join("")}</div>
    <button class="btn" type="button" id="ktNew" style="margin-left:auto">${KT.newOpen?"Đóng form":"+ Phiếu ECR mới"}</button></div>`;
   return bar+(KT.newOpen?ktNewForm(prods,today):"")
-   +rows.map(r=>{const approver=ME.role==="admin";
+   +rows.map(r=>{const approver=ME.role==="admin";const canEdit=r.status==="pending"&&(ME.role==="admin"||r.proposed_by===ME.id);
+    if(KT.editId===r.id)return ktEditForm(r,prods);
     return`<div class="card" style="margin:10px 0"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
      <div><span class="mono">${esc(r.code)}</span> · ${ttName(KT_TYPE,r.change_type)} · ${r.product_code?esc(r.product_code):r.change_type==="new_product"?esc(r.new_code||"")+" (mã mới)":"—"}</div>
      <div><span class="pill p-${r.status==="approved"?"ok":r.status==="rejected"?"bad":"warn"}">${ttName(KT_ST,r.status)}</span></div></div>
@@ -2850,7 +2879,20 @@ async function ktListHTML(){
     ${approver&&r.status==="pending"?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center">
      <input id="ktn_${r.id}" placeholder="Ghi chú / lý do" style="flex:1;min-width:160px"><input id="ktd_${r.id}" type="date" value="${today}" title="Ngày áp dụng" style="width:150px">
      <button class="btn" type="button" data-kta="approve:${r.id}" style="padding:3px 9px">Duyệt</button><button class="btn ghost" type="button" data-kta="reject:${r.id}" style="padding:3px 9px;color:var(--bad)">Từ chối</button></div>`:""}
+    ${canEdit?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px"><button class="btn ghost" type="button" data-ktedit="${r.id}" style="padding:3px 9px">Sửa</button>${ME.role==="admin"?`<button class="btn ghost" type="button" data-ktdel="${r.id}" style="padding:3px 9px;color:var(--bad)">Xóa</button>`:""}</div>`:""}
     <span class="msg" id="ktm_${r.id}"></span></div>`}).join("")||`<div class="empty">Không có phiếu ECR nào</div>`;
+}
+function ktEditForm(r,prods){
+  return`<form class="card" id="fKtEdit" data-ktid="${r.id}" novalidate style="margin:10px 0"><h3>Sửa phiếu ECR <span class="mono">${esc(r.code)}</span> · ${ttName(KT_TYPE,r.change_type)}</h3>
+   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">
+    ${r.change_type!=="new_product"?`<div class="fld" style="grid-column:span 2"><label for="ke_code">Mã sản phẩm liên quan *</label><input id="ke_code" list="ktProdListE" autocomplete="off" value="${esc(r.product_code||"")}"></div>`
+     :`<div class="fld"><label for="ke_ncode">Mã sản phẩm mới *</label><input id="ke_ncode" value="${esc(r.new_code||"")}"></div>
+       <div class="fld" style="grid-column:span 2"><label for="ke_nname">Tên sản phẩm mới *</label><input id="ke_nname" value="${esc(r.new_name||"")}"></div>`}
+    ${r.change_type==="norm"||r.change_type==="new_product"?`<div class="fld"><label for="ke_norm">Định mức ${r.change_type==="norm"?"mới ":""}(sp/người/giờ)</label><input id="ke_norm" inputmode="decimal" value="${r.new_norm??""}"></div>`:""}
+    <div class="fld" style="grid-column:1/-1"><label for="ke_content">Nội dung đề xuất (từ → đến) *</label><input id="ke_content" value="${esc(r.content)}"></div>
+    <div class="fld" style="grid-column:1/-1"><label for="ke_reason">Lý do</label><input id="ke_reason" value="${esc(r.reason||"")}"></div>
+   </div><div style="margin-top:10px;display:flex;gap:8px;align-items:center"><button class="btn" type="submit">Lưu</button><button class="btn ghost" type="button" id="ke_cancel">Hủy</button><span class="msg" id="ktEditMsg"></span></div>
+  </form><datalist id="ktProdListE">${prods.map(p=>`<option value="${esc(p.code)}">${esc(p.name)}</option>`).join("")}</datalist>`;
 }
 function ktNewForm(prods,today){
   return`<form class="card" id="fKtNew" novalidate style="margin:10px 0"><h3>Phiếu đề xuất thay đổi kỹ thuật (ECR)</h3>
@@ -2899,6 +2941,26 @@ function bindKT(){
     if(act==="reject"&&!note)return setMsg("ktm_"+id,"Ghi lý do từ chối.","bad");
     try{await rpc("ecr_decide",{p_id:+id,p_action:act,p_note:note||null,p_effective:act==="approve"?eff:null});
       toast(act==="approve"?"Đã duyệt ECR":"Đã từ chối ECR");render()}catch(err){setMsg("ktm_"+id,sbErr(err),"bad")}});
+  document.querySelectorAll("[data-ktedit]").forEach(b=>b.onclick=()=>{KT.editId=+b.dataset.ktedit;render()});
+  document.querySelectorAll("[data-ktdel]").forEach(b=>b.onclick=async()=>{
+    if(!confirm("Xóa phiếu ECR này? Không thể hoàn tác."))return;
+    const id=+b.dataset.ktdel;b.disabled=true;
+    try{await SB.from("ecr").delete().eq("id",id);toast("Đã xóa phiếu ECR");render()}
+    catch(err){alert(sbErr(err));b.disabled=false}
+  });
+  const ef=$("#fKtEdit");if(ef){
+    const cancel=$("#ke_cancel");if(cancel)cancel.onclick=()=>{KT.editId=null;render()};
+    const ct=ef.dataset.ktid;
+    ef.addEventListener("submit",async e=>{e.preventDefault();
+      const id=+ct,content=$("#ke_content").value.trim();
+      if(!content)return setMsg("ktEditMsg","Nhập nội dung đề xuất.","bad");
+      const ncodeEl=$("#ke_ncode"),ncode=ncodeEl?ncodeEl.value.trim():null;
+      const nnameEl=$("#ke_nname"),nname=nnameEl?nnameEl.value.trim():null;
+      const codeEl=$("#ke_code"),pcode=codeEl?codeEl.value.trim():null;
+      const normEl=$("#ke_norm"),norm=normEl&&normEl.value!==""?+normEl.value:null;
+      try{await rpc("ecr_edit",{p_id:id,p_content:content,p_reason:$("#ke_reason").value.trim()||null,p_product_code:pcode,p_new_code:ncode,p_new_name:nname,p_new_norm:norm});
+        KT.editId=null;toast("Đã lưu phiếu ECR");render()}catch(err){setMsg("ktEditMsg",sbErr(err),"bad")}});
+  }
 }
 /* ============================================================
    LỊCH ĐIỀU HÀNH – cơ chế họp (Giao ban ngày/Tuần/Tháng/Đột xuất)
