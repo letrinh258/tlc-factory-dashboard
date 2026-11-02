@@ -12,6 +12,7 @@ Hệ thống điều hành nhà máy TLC Lighting: Dashboard GĐNM, giao việc,
 | `index.html` | Toàn bộ giao diện |
 | `supabase/01_tlc_schema.sql` | Bảng, hàm phân quyền, RLS, dữ liệu gốc (chạy trong SQL Editor) |
 | `supabase/02_gd4.sql` | GĐ4: báo cáo ngày 5 mục, giao việc, ảnh minh chứng, khóa 23:59 (chạy sau file 01) |
+| `supabase/09_vi_tri.sql` | GĐ6b: cập nhật vị trí theo danh sách nhân sự thực tế (Phó GĐNM, Phó phòng kế hoạch, Tổ trưởng Dãy A/B) — chạy 1 lần |
 | `supabase/functions/admin-users/index.ts` | Edge Function tạo / khóa / đặt lại mật khẩu tài khoản (tắt Verify JWT) |
 
 ## Bảo mật
@@ -23,3 +24,4 @@ Hệ thống điều hành nhà máy TLC Lighting: Dashboard GĐNM, giao việc,
 - GĐ2 Dashboard GĐNM – xong (số liệu sản xuất mẫu đến GĐ5)
 - GĐ3 Đăng nhập, phân quyền – nghiệm thu đạt 01/11
 - GĐ4 Giao việc, báo cáo ngày 14 vị trí – đang nghiệm thu
+- GĐ6b Vị trí tự tạo (GĐNM tự thêm vị trí, không cần SQL) + nhập 1 lần 16 nhân sự theo danh sách 02/11 – chờ chạy `09_vi_tri.sql` rồi bấm nút trong Quản lý tài khoản

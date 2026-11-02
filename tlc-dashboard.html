@@ -787,6 +787,27 @@ function openGroup(g){
 const EMAIL_DOMAIN="tlc.local";              // email nội bộ ẩn: <tên đăng nhập>@tlc.local
 let RUN=null;                                // "LIVE" = máy chủ Supabase · "DEMO" = dùng thử trên máy, không lưu máy chủ
 let SB=null, ME=null, REF={depts:[],positions:[]}, LAST_PW="";
+const POS_KIND_VN={director:"Ban giám đốc",head:"Trưởng/Phó phòng",staff:"Nhân viên"};
+// Danh sách nhân sự nhà máy gửi 02/11/2026 (17 người, 1 chưa có tên nên không có ở đây) — nhập 1 lần qua nút trong Quản lý tài khoản
+const BULK_LIST=[
+ {name:"Đỗ Tuấn Anh",code:"PGD-NM",role:"head"},
+ {name:"Trần Thị Hân",code:"TBP-BHM",role:"head"},
+ {name:"Phạm Thị Thanh Huyền",code:"TBP-BHN",role:"head"},
+ {name:"Mai Phong Thu",code:"TBP-CD",role:"head"},
+ {name:"Hoàng Thị Thiêm",code:"TBP-HCNS",role:"head"},
+ {name:"Nguyễn Thị Cúc",code:"KHVT",role:"staff"},
+ {name:"Phạm Thị Sáng",code:"PP-KHSX",role:"head"},
+ {name:"Lã Tùng Linh",code:"NV-KTGT",role:"staff"},
+ {name:"Nguyễn Hồng Giang",code:"TKLK",role:"staff"},
+ {name:"Nguyễn Thị Hiền",code:"KTKTP",role:"staff"},
+ {name:"Đoàn Văn Lương",code:"TKTP",role:"staff"},
+ {name:"Nguyễn Giang Nam",code:"KTSX",role:"staff"},
+ {name:"Nguyễn Trung Kiên",code:"KTSP",role:"staff"},
+ {name:"Nguyễn Quang Khải",code:"TBP-QAC",role:"head"},
+ {name:"Đinh Hữu Nam",code:"TT-SXA",role:"staff"},
+ {name:"Nguyễn Thị Thu Hường",code:"TT-SXB",role:"staff"}
+];
+let PENDING_BULK=[];
 const safeStorage={getItem:k=>{try{return localStorage.getItem(k)}catch(e){return null}},setItem:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}},removeItem:k=>{try{localStorage.removeItem(k)}catch(e){}}};
 function sbAvailable(){return !!(window.supabase&&window.supabase.createClient&&CONFIG.SUPABASE_URL&&CONFIG.SUPABASE_KEY)}
 // lock: bỏ khóa liên-tab của trình duyệt (navigator.locks) – nguyên nhân treo "Đang đăng nhập…" ở một số máy/khi mở file trực tiếp
@@ -800,6 +821,11 @@ function setStep(t){const m=$("#lMsg");if(m&&!$("#loginView").hidden){m.classNam
 function makeUsername(full){
   const p=String(full||"").replace(/[Đđ]/g,"d").normalize("NFD").replace(/[̀-ͯ]/g,"").toLowerCase().replace(/[^a-z ]/g,"").trim().split(/\s+/).filter(Boolean);
   if(p.length<2)return"";return p[p.length-1]+p.slice(0,-1).map(x=>x[0]).join("");
+}
+// Mã vị trí tự sinh khi GĐNM tự tạo vị trí mới: <mã phòng>-<chữ đầu từng từ>-<4 ký tự thời gian, tránh trùng>
+function posCode(name,deptCode){
+  const init=String(name||"").replace(/[Đđ]/g,"d").normalize("NFD").replace(/[̀-ͯ]/g,"").toUpperCase().replace(/[^A-Z ]/g,"").trim().split(/\s+/).filter(Boolean).map(w=>w[0]).join("");
+  return (String(deptCode||"BP")+"-"+(init||"VT")+"-"+Date.now().toString(36).slice(-4)).toUpperCase();
 }
 function sbErr(e){
   const m=String(e&&(e.message||e.error_description||e)||"");
@@ -1020,6 +1046,7 @@ function bindConfig(){
 let accQ="",accDept="",ACC_SECRET=null,accConfirm=null;
 async function viewAccounts(){
   const ps=await api.profiles();
+  PENDING_BULK=BULK_LIST.filter(r=>!ps.some(p=>p.full_name===r.name));
   const ov=RUN==="LIVE"?new Set((await q(SB.from("user_roles").select("profile_id").eq("module","overview").eq("can_view",true))).map(r=>r.profile_id)):new Set();const posOf=id=>REF.positions.find(p=>p.id===id)||{};const dep=id=>(REF.depts.find(d=>d.id===id)||{}).name||"";
   const nm=id=>(ps.find(p=>p.id===id)||{}).full_name||"—";
   let rows=ps.filter(p=>(!accDept||String(p.dept_id)===accDept)&&(!accQ||(p.full_name+" "+p.username).toLowerCase().includes(accQ.toLowerCase())));
@@ -1037,6 +1064,23 @@ async function viewAccounts(){
     <div class="fld"><label for="aMgr">Quản lý trực tiếp</label><select id="aMgr"><option value="">—</option>${ps.filter(p=>p.status==="active"&&p.role!=="staff").map(p=>`<option value="${p.id}">${esc(p.full_name)} – ${esc(posOf(p.position_id).name||"")}</option>`).join("")}</select></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn" type="submit" id="aBtn">Tạo tài khoản</button><span class="msg" id="aMsg" role="status"></span></div>
    </form></div>
+  ${PENDING_BULK.length?`<div class="card" style="margin-bottom:12px"><h3>Nhập nhân sự theo danh sách gửi 02/11 <small>${PENDING_BULK.length} người chưa có tài khoản</small></h3>
+   <div class="tbl"><table><tr><th>Họ tên</th><th>Vị trí</th></tr>
+   ${PENDING_BULK.map(r=>`<tr><td>${esc(r.name)}</td><td>${esc((REF.positions.find(p=>p.code===r.code)||{}).name||r.code)}</td></tr>`).join("")}</table></div>
+   <button class="btn" type="button" id="bulkBtn">Tạo ${PENDING_BULK.length} tài khoản này</button> <span class="msg" id="bulkMsg" role="status"></span>
+   <div id="bulkOut" style="margin-top:8px"></div>
+   <p class="small">Mật khẩu tạm hiện ngay dưới đây sau khi tạo xong từng người — chỉ hiện một lần, ghi lại trước khi rời màn hình này.</p></div>`:""}
+  <div class="card" style="margin-bottom:12px"><h3>Vị trí trong nhà máy <small>${REF.positions.length} vị trí · GĐNM tự thêm, không cần lập trình</small></h3>
+   <div class="tbl"><table><tr><th>Mã</th><th>Tên vị trí</th><th>Phòng</th><th>Cấp</th><th>Mã báo cáo ngày</th></tr>
+   ${REF.positions.map(p=>`<tr><td class="mono">${esc(p.code)}</td><td>${esc(p.name)}</td><td>${esc(dep(p.dept_id))}</td><td>${POS_KIND_VN[p.kind]||p.kind}</td><td class="mono">${esc(p.report_code||"—")}</td></tr>`).join("")}</table></div>
+   <form id="posForm" novalidate style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;align-items:end;margin-top:10px">
+    <div class="fld"><label for="pName">Tên vị trí mới</label><input id="pName" placeholder="VD: Phó phòng Cơ điện" autocomplete="off"></div>
+    <div class="fld"><label for="pDept">Phòng</label><select id="pDept"><option value="">— Chọn phòng —</option>${REF.depts.map(d=>`<option value="${d.id}">${esc(d.name)}</option>`).join("")}</select></div>
+    <div class="fld"><label for="pKind">Cấp</label><select id="pKind"><option value="staff">Nhân viên</option><option value="head">Trưởng/Phó phòng (đứng đầu phòng)</option><option value="director">Ban giám đốc</option></select></div>
+    <div class="fld"><label for="pRep">Mã báo cáo ngày (nếu có)</label><input id="pRep" placeholder="VD: TBP-XYZ" autocomplete="off"></div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn ghost" type="submit" id="pBtn">Thêm vị trí</button><span class="msg" id="pMsg" role="status"></span></div>
+   </form>
+   <p class="small">Mỗi phòng chỉ có 1 vị trí cấp "Trưởng/Phó phòng". Vị trí mới hiện ngay trong danh sách chọn ở "Tạo tài khoản" phía trên.</p></div>
   <div class="tools"><input id="accQ" type="search" placeholder="Tìm tên, tên đăng nhập" value="${esc(accQ)}" style="flex:1;min-width:160px" aria-label="Tìm tài khoản">
    <select id="accDept" aria-label="Lọc bộ phận"><option value="">Tất cả bộ phận</option>${REF.depts.map(d=>`<option value="${d.id}" ${accDept===String(d.id)?"selected":""}>${esc(d.name)}</option>`).join("")}</select></div>
   <div class="tbl"><table><tr><th>Họ tên</th><th>Tên đăng nhập</th><th>Bộ phận</th><th>Vị trí</th><th>Vai trò</th><th>Quản lý trực tiếp</th><th title="Được xem màn Tổng quan toàn nhà máy">Xem Tổng quan</th><th>Trạng thái</th><th>Thao tác</th></tr>
@@ -1061,6 +1105,31 @@ function bindAccounts(){
     try{const r=await api.admin("create",{full_name:name.value.trim(),position_id:+pos.value,role:role.value,manager_id:$("#aMgr").value||null});
       ACC_SECRET={title:"Đã tạo tài khoản "+name.value.trim(),username:r.username,password:r.password};toast("Đã tạo tài khoản");render()}
     catch(err){m.className="msg bad";m.textContent=sbErr(err);$("#aBtn").disabled=false}});
+  const bb=$("#bulkBtn");
+  if(bb)bb.onclick=async()=>{bb.disabled=true;const msg=$("#bulkMsg"),out=$("#bulkOut");let ok=0,fail=0;
+    for(const r of PENDING_BULK){
+      const p=REF.positions.find(x=>x.code===r.code);
+      msg.textContent="Đang tạo "+r.name+"…";
+      if(!p){out.insertAdjacentHTML("beforeend",`<div class="small" style="color:var(--bad)">Thiếu vị trí ${esc(r.code)} cho ${esc(r.name)} — bỏ qua (chạy supabase/09_vi_tri.sql trước).</div>`);fail++;continue}
+      try{const res=await api.admin("create",{full_name:r.name,position_id:p.id,role:r.role,manager_id:null});
+        out.insertAdjacentHTML("beforeend",`<div class="alert" style="margin:6px 0"><span class="sv" style="background:var(--ok)"></span><div class="b"><div class="t">${esc(r.name)}</div><div class="d">Tên đăng nhập: <b class="mono">${esc(res.username)}</b> · Mật khẩu tạm: <b class="mono">${esc(res.password)}</b></div></div></div>`);ok++}
+      catch(err){out.insertAdjacentHTML("beforeend",`<div class="small" style="color:var(--bad)">${esc(r.name)}: ${esc(sbErr(err))}</div>`);fail++}
+    }
+    msg.textContent=`Xong: ${ok} tạo thành công${fail?", "+fail+" lỗi":""}.`;toast("Đã nhập xong danh sách nhân sự")};
+  const pForm=$("#posForm");
+  if(pForm)pForm.addEventListener("submit",async e=>{e.preventDefault();const m=$("#pMsg");
+    const pname=$("#pName").value.trim(),deptId=+$("#pDept").value,kind=$("#pKind").value,rep=$("#pRep").value.trim()||null;
+    if(!pname){m.className="msg bad";m.textContent="Nhập tên vị trí.";return}
+    if(!deptId){m.className="msg bad";m.textContent="Chọn phòng.";return}
+    const dc=(REF.depts.find(d=>d.id===deptId)||{}).code;
+    $("#pBtn").disabled=true;m.className="msg";m.textContent="Đang thêm…";
+    try{const{error}=await SB.from("positions").insert({code:posCode(pname,dc),name:pname,dept_id:deptId,kind,report_code:rep});
+      if(error)throw error;
+      REF=await api.ref();toast("Đã thêm vị trí "+pname);render()}
+    catch(err){const msg=String(err&&err.message||"");
+      m.className="msg bad";
+      m.textContent=/positions_one_head_per_dept/.test(msg)?"Phòng này đã có vị trí Trưởng/Phó phòng, không thêm vị trí cấp này nữa.":/positions_report_code_key/.test(msg)?"Mã báo cáo ngày này đã dùng cho vị trí khác.":sbErr(err);
+      $("#pBtn").disabled=false}});
   const cp=$("#copyPw");if(cp)cp.onclick=()=>{const t=`Tên đăng nhập: ${ACC_SECRET.username}\nMật khẩu tạm: ${ACC_SECRET.password}`;
     (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>toast("Đã sao chép")).catch(()=>{const r=document.createRange();r.selectNodeContents($("#tmpPw"));const s=getSelection();s.removeAllRanges();s.addRange(r);toast("Đã chọn mật khẩu, nhấn Ctrl+C")})};
   $("#accQ").oninput=e=>{accQ=e.target.value;const pos=e.target.selectionStart;render().then(()=>{const n=$("#accQ");if(n){n.focus();n.setSelectionRange(pos,pos)}})};
