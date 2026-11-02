@@ -2131,6 +2131,82 @@ function bindBH(){
   };
 }
 
+/* ---------- KẾ HOẠCH – THEO DÕI MUA HÀNG (PO) ---------- */
+const KHF={date:null,open:false,view:null,viewRows:null};
+function parsePoPaste(text){
+  const lines=text.split(/\r?\n/).map(l=>l.replace(/\s+$/,"")).filter(l=>l.trim()!=="");
+  if(!lines.length)return{error:"Chưa dán dữ liệu."};
+  const items=[];
+  for(const l of lines){
+    const c=l.split("\t");
+    const first=(c[0]||"").trim();
+    if(!first||/^stt$/i.test(first)||/^tổng/i.test(first))continue;
+    const itemCode=(c[3]||"").trim();
+    if(!itemCode)continue; // dòng tổng theo NCC (không có Mã vật tư) — bỏ qua
+    const itemName=(c[4]||"").trim();if(!itemName)continue;
+    items.push({stt:first,supplier_code:(c[1]||"").trim()||null,supplier_name:(c[2]||"").trim()||null,
+      item_code:itemCode,item_name:itemName,unit:(c[5]||"").trim()||null,qty:parseInvNum(c[6])});
+  }
+  if(!items.length)return{error:"Không đọc được dòng nào — kiểm tra đã dán đủ cột (Stt…Số lượng) và bỏ dòng tiêu đề/dòng tổng theo NCC."};
+  return{items};
+}
+async function viewKH(){
+  if(RUN!=="LIVE")return liveOnly("Kế hoạch");
+  const D=KHF.date=KHF.date||todayISO();
+  const batches=await q(SB.from("purchase_batches").select("*").order("order_date",{ascending:false}).order("created_at",{ascending:false}).limit(30));
+  let viewHtml="";
+  if(KHF.view){
+    const b=batches.find(x=>x.id===KHF.view);
+    if(b&&!KHF.viewRows){KHF.viewRows=await q(SB.from("purchase_items").select("*").eq("batch_id",KHF.view).order("supplier_name").order("item_code"))}
+    if(b){
+      const bySup={};(KHF.viewRows||[]).forEach(r=>{const k=r.supplier_name||"(không ghi NCC)";(bySup[k]=bySup[k]||[]).push(r)});
+      viewHtml=`<div class="card" style="margin-top:10px"><h3>Chi tiết đợt ${dmyS(b.order_date)} <small>${fmt(b.total_items)} vật tư · ${fmt(b.total_suppliers)} NCC</small></h3>
+      ${Object.entries(bySup).map(([sup,rows])=>`<h4 style="margin:10px 0 4px;font-size:13px">${esc(sup)}</h4><div class="tbl"><table><tr><th>Mã vật tư</th><th>Tên vật tư</th><th>Đvt</th><th class="num">Số lượng</th></tr>${rows.map(r=>`<tr><td class="mono">${esc(r.item_code)}</td><td>${esc(r.item_name)}</td><td>${esc(r.unit||"")}</td><td class="num">${fmt(r.qty)}</td></tr>`).join("")}</table></div>`).join("")}
+      <button class="btn ghost" type="button" id="khCloseView" style="margin-top:8px">Đóng chi tiết</button></div>`;
+    }
+  }
+  return `<h2 class="sec" style="margin-top:0">Kế hoạch – Theo dõi mua hàng (PO)</h2>
+  <p class="small" style="margin:0 0 10px">Mỗi lần dán là MỘT ĐỢT kế hoạch mua hàng mới (không ghi đè đợt cũ) — cộng dồn thành lịch sử các đợt đã đặt.</p>
+  <div class="card">
+   <div class="fld" style="max-width:220px"><label for="khDate">Ngày lập đợt mua hàng</label><input id="khDate" type="date" value="${D}" max="${todayISO()}"></div>
+   <p class="small" style="margin:8px 0">Mở file Bravo "Kế hoạch mua hàng", bôi đen từ dòng tiêu đề (Stt, Mã đối tượng, Tên NCC, Mã vật tư, Tên vật tư, Đvt, Số lượng) đến dòng cuối có dữ liệu, sao chép rồi dán vào ô dưới — hệ thống tự bỏ dòng tiêu đề và dòng tổng theo từng NCC (không có Mã vật tư).</p>
+   <button class="btn ghost" type="button" id="khBtn">${KHF.open?"Đóng":"Dán đợt mua hàng mới"}</button>
+   ${KHF.open?`<div style="margin-top:8px"><textarea id="khBulk" rows="8" style="width:100%;box-sizing:border-box;font-family:var(--mono,monospace)" placeholder="Stt	Mã đối tượng	Tên NCC	Mã vật tư	Tên vật tư	Đvt	Số lượng"></textarea>
+   <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap"><button class="btn" type="button" id="khGo">Lưu đợt mua hàng</button><span class="msg" id="khMsg"></span></div></div>`:""}
+  </div>
+  <h2 class="sec">Lịch sử các đợt đã đặt <small>${fmt(batches.length)} đợt gần nhất</small></h2>
+  <div class="tbl"><table><tr><th>Ngày</th><th class="num">Số vật tư</th><th class="num">Số NCC</th><th></th>${ME.role==="admin"?"<th></th>":""}</tr>
+  ${batches.map(b=>`<tr><td>${dmyS(b.order_date)}</td><td class="num">${fmt(b.total_items)}</td><td class="num">${fmt(b.total_suppliers)}</td><td><button class="btn ghost" type="button" data-khview="${b.id}" style="padding:3px 8px">${KHF.view===b.id?"Đang xem":"Xem chi tiết"}</button></td>${ME.role==="admin"?`<td><button class="btn ghost" type="button" data-khdel="${b.id}" style="padding:3px 8px;color:var(--bad)">Xóa</button></td>`:""}</tr>`).join("")||`<tr><td colspan="5"><div class="empty">Chưa có đợt mua hàng nào</div></td></tr>`}
+  </table></div>
+  ${viewHtml}`;
+}
+function bindKH(){
+  const d=$("#khDate");if(d)d.onchange=()=>{KHF.date=d.value;render()};
+  $("#khBtn").onclick=()=>{KHF.open=!KHF.open;render()};
+  const go=$("#khGo");if(go)go.onclick=async()=>{
+    const D=KHF.date,parsed=parsePoPaste($("#khBulk").value);
+    if(parsed.error){setMsg("khMsg",parsed.error,"bad");return}
+    const items=parsed.items;
+    const suppliers=new Set(items.map(i=>i.supplier_code||i.supplier_name||"?"));
+    $("#khGo").disabled=true;setMsg("khMsg","Đang lưu "+fmt(items.length)+" dòng…");
+    try{
+      const{data:bi,error:e0}=await SB.from("purchase_batches").insert({order_date:D,total_items:items.length,total_suppliers:suppliers.size,source:"paste",created_by:ME.id}).select().single();
+      if(e0)throw e0;
+      const rows=items.map(i=>({batch_id:bi.id,stt:i.stt,supplier_code:i.supplier_code,supplier_name:i.supplier_name,item_code:i.item_code,item_name:i.item_name,unit:i.unit,qty:i.qty}));
+      for(let j=0;j<rows.length;j+=500){const{error:e1}=await SB.from("purchase_items").insert(rows.slice(j,j+500));if(e1)throw e1}
+      KHF.open=false;toast("Đã lưu đợt mua hàng "+fmt(items.length)+" dòng — "+dmyS(D));render();
+    }catch(err){setMsg("khMsg",sbErr(err),"bad");$("#khGo").disabled=false}
+  };
+  document.querySelectorAll("[data-khview]").forEach(b=>b.onclick=()=>{const id=+b.dataset.khview;KHF.view=KHF.view===id?null:id;KHF.viewRows=null;render()});
+  const cv=$("#khCloseView");if(cv)cv.onclick=()=>{KHF.view=null;KHF.viewRows=null;render()};
+  document.querySelectorAll("[data-khdel]").forEach(b=>b.onclick=async()=>{
+    if(!confirm("Xóa đợt mua hàng này? Không thể hoàn tác."))return;
+    const id=+b.dataset.khdel;b.disabled=true;
+    try{await SB.from("purchase_batches").delete().eq("id",id);if(KHF.view===id){KHF.view=null;KHF.viewRows=null}toast("Đã xóa đợt mua hàng");render()}
+    catch(err){alert(sbErr(err));b.disabled=false}
+  });
+}
+
 /* ---------- FORM E – HCNS ---------- */
 async function viewHr(){
   if(RUN!=="LIVE")return liveOnly("Nhân sự – HCNS");
@@ -2368,7 +2444,7 @@ function bindDashLive(){
 }
 const MODS=[["dash","Tổng quan nhà máy",2],["sum","Tổng hợp báo cáo ngày",4],["mydept","Bộ phận của tôi",3],["task","Giao việc",4],["mine","Công việc của tôi",3],["daily","Báo cáo hằng ngày",4],["sx","Sản xuất",5],["qc","Chất lượng",5],["kho","Kho",5],["kh","Kế hoạch",5],["kt","Kỹ thuật",5],["bt","Bảo trì",5],["gt","Giá thành",5],["bh","Bảo hành",5],["ns","Nhân sự",5],["kpi","KPI",6],["5s","3S",5],["vd","Vấn đề và cải tiến",6],["lich","Lịch điều hành",6],["acc","Quản lý tài khoản",3],["cfg","Cấu hình hệ thống",3]];
 const DEPT_MOD={SX:"sx",QAC:"qc",KHO:"kho",KHSX:"kh",KT:"kt",CD:"bt",KTGT:"gt",BHM:"bh",BHN:"bh",HCNS:"ns"};
-const BUILT=["dash","sum","mydept","task","mine","daily","sx","qc","bt","kho","ns","bh","5s","acc","cfg"];
+const BUILT=["dash","sum","mydept","task","mine","daily","sx","qc","bt","kho","ns","bh","kh","5s","acc","cfg"];
 function allowedMods(){
   if(!ME)return[];if(ME.role==="admin")return MODS.map(m=>m[0]).filter(k=>k!=="mydept");
   const a=[];const approver=ME.role==="head"||(ME.approves_depts||[]).length;
@@ -2412,6 +2488,7 @@ async function render(){
     else if(ST.screen==="kho"){const h=await viewWh();if(seq!==renderSeq)return;main.innerHTML=h;bindWh()}
     else if(ST.screen==="ns"){const h=await viewHr();if(seq!==renderSeq)return;main.innerHTML=h;bindHr()}
     else if(ST.screen==="bh"){const h=await viewBH();if(seq!==renderSeq)return;main.innerHTML=h;bindBH()}
+    else if(ST.screen==="kh"){const h=await viewKH();if(seq!==renderSeq)return;main.innerHTML=h;bindKH()}
     else if(ST.screen==="5s"){const h=await view5s();if(seq!==renderSeq)return;main.innerHTML=h;bind5s()}
     else if(ST.screen==="sum"){const h=await viewSummary();if(seq!==renderSeq)return;main.innerHTML=h;bindSummary()}
     else main.innerHTML=`<h2 class="sec" style="margin-top:0">${mod[1]}</h2><div class="ph-card"><b>Xây ở Giai đoạn ${mod[2]}.</b><p class="small" style="margin:6px 0 0">Nội dung và phân quyền đã chốt ở Giai đoạn 1. Bạn thấy mục này vì vai trò của bạn được phép dùng nó.</p></div>`;
