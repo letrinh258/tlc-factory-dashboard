@@ -2773,6 +2773,119 @@ function bindKT(){
       toast(act==="approve"?"Đã duyệt ECR":"Đã từ chối ECR");render()}catch(err){setMsg("ktm_"+id,sbErr(err),"bad")}});
 }
 /* ============================================================
+   LỊCH ĐIỀU HÀNH – cơ chế họp (Giao ban ngày/Tuần/Tháng/Đột xuất)
+   ============================================================ */
+const LH={tab:"session",typeOpen:false,editType:null,sessOpen:false,sessType:"",sessDate:null,sessIssue:"",openId:null,decOpen:false};
+const MT_FREQ=[["daily","Hàng ngày"],["weekly","Hàng tuần"],["monthly","Hàng tháng"],["adhoc","Đột xuất"]];
+async function viewLH(){
+  if(RUN!=="LIVE")return liveOnly("Lịch điều hành");
+  const head=`<h2 class="sec" style="margin-top:0">Lịch điều hành <small>Cơ chế họp – nội dung kéo sẵn từ hệ thống, quyết định tự thành việc theo dõi</small></h2>
+  <div class="fbar" style="position:static"><div class="seg">${[["session","Phiên họp"],["type","Cơ chế họp"]].map(([k,n])=>`<button type="button" data-lhtab="${k}" aria-pressed="${LH.tab===k}">${n}</button>`).join("")}</div></div>`;
+  return head+(LH.tab==="type"?await lhTypesHTML():await lhSessionsHTML());
+}
+async function lhTypesHTML(){
+  const isAdmin=ME.role==="admin";
+  const rows=await q(SB.from("meeting_types").select("*").order("frequency").order("name"));
+  const ed=LH.editType||{};
+  return`${isAdmin?`<div class="tools" style="margin-top:10px"><button class="btn" type="button" id="lhTypeNew">${LH.typeOpen?"Đóng form":(ed.id?"Đang sửa":"+ Loại họp mới")}</button></div>`:""}
+  ${LH.typeOpen?`<form class="card" id="fLhType" novalidate style="margin:10px 0"><h3>${ed.id?"Sửa loại họp":"Loại họp mới"}</h3>
+   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">
+    <div class="fld" style="grid-column:span 2"><label for="lt_name">Tên loại họp *</label><input id="lt_name" value="${esc(ed.name||"")}" placeholder="vd: Giao ban ngày"></div>
+    <div class="fld"><label for="lt_freq">Tần suất *</label><select id="lt_freq">${opt(MT_FREQ,ed.frequency||"daily")}</select></div>
+    <div class="fld"><label for="lt_dept">Phòng ban (để trống = toàn nhà máy)</label><select id="lt_dept">${opt([["","— Toàn nhà máy —"]].concat(REF.depts.map(d=>[d.id,d.name])),ed.dept_id)}</select></div>
+    <div class="fld" style="grid-column:1/-1"><label for="lt_att">Thành phần tham dự</label><input id="lt_att" value="${esc(ed.attendees||"")}" placeholder="vd: TBP các phòng + GĐNM"></div>
+    <div class="fld"><label><input type="checkbox" id="lt_active" ${ed.active===false?"":"checked"}> Đang dùng</label></div>
+   </div><div style="margin-top:10px;display:flex;gap:8px;align-items:center"><button class="btn" type="submit">Lưu</button><button class="btn ghost" type="button" id="lt_cancel">Hủy</button><span class="msg" id="ltMsg"></span></div></form>`:""}
+  <div class="tbl"><table><tr><th>Tên loại họp</th><th>Tần suất</th><th>Phạm vi</th><th>Thành phần</th>${isAdmin?"<th></th>":""}</tr>
+  ${rows.map(t=>`<tr><td><b>${esc(t.name)}</b>${t.active?"":' <span class="pill p-none">Ngừng</span>'}</td><td>${ttName(MT_FREQ,t.frequency)}</td><td>${t.dept_id?esc((REF.depts.find(d=>d.id===t.dept_id)||{}).name||""):"Toàn nhà máy"}</td><td class="small">${esc(t.attendees||"—")}</td>
+   ${isAdmin?`<td><button class="btn ghost" type="button" data-lte="${t.id}" style="padding:3px 9px">Sửa</button></td>`:""}</tr>`).join("")||`<tr><td colspan="5"><div class="empty">Chưa có loại họp nào</div></td></tr>`}</table></div>`;
+}
+async function lhSessionsHTML(){
+  const today=ME.today||todayISO();
+  const types=await q(SB.from("meeting_types").select("*").eq("active",true).order("name"));
+  const sessions=await q(SB.from("meeting_sessions").select("*,meeting_types(name,frequency)").order("session_date",{ascending:false}).limit(60));
+  const openSess=sessions.find(s=>s.id===LH.openId);
+  const openDetail=openSess?await lhSessionDetail(openSess):"";
+  const bar=`<div class="tools" style="margin-top:10px"><button class="btn" type="button" id="lhSessNew">${LH.sessOpen?"Đóng form":"+ Tạo buổi họp"}</button></div>
+  ${LH.sessOpen?await lhNewSessForm(types,today):""}
+  <div class="tbl" style="margin-top:10px"><table><tr><th>Ngày</th><th>Loại họp</th><th>Trạng thái</th><th></th></tr>
+  ${sessions.map(s=>`<tr><td>${dmyS(s.session_date)}</td><td>${esc((s.meeting_types||{}).name||"")}</td><td><span class="pill p-${s.status==="done"?"ok":"none"}">${s.status==="done"?"Đã họp":"Dự kiến"}</span></td>
+   <td><button class="btn ghost" type="button" data-lho="${s.id}" style="padding:3px 9px">${LH.openId===s.id?"Đang xem":"Mở"}</button></td></tr>
+   ${LH.openId===s.id?`<tr><td colspan="4">${openDetail}</td></tr>`:""}`).join("")||`<tr><td colspan="4"><div class="empty">Chưa có buổi họp nào</div></td></tr>`}</table></div>`;
+  return bar;
+}
+async function lhNewSessForm(types,today){
+  const reds=await q(SB.from("issues").select("id,code,description").eq("severity","red").not("status","in","(resolved,closed)").order("open_date",{ascending:false}).limit(50));
+  return`<form class="card" id="fLhSess" novalidate style="margin:10px 0"><h3>Tạo buổi họp</h3>
+   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">
+    <div class="fld"><label for="ls_type">Loại họp *</label><select id="ls_type">${opt([["","— Chọn —"]].concat(types.map(t=>[t.id,t.name+" ("+ttName(MT_FREQ,t.frequency)+")"])),LH.sessType)}</select></div>
+    <div class="fld"><label for="ls_date">Ngày họp *</label><input id="ls_date" type="date" value="${today}"></div>
+    <div class="fld" style="grid-column:1/-1"><label for="ls_issue">Gắn với vấn đề Đỏ (nếu họp đột xuất)</label><select id="ls_issue">${opt([["","— Không —"]].concat(reds.map(r=>[r.id,r.code+" – "+r.description])),"")}</select></div>
+   </div><div style="margin-top:10px;display:flex;gap:8px;align-items:center"><button class="btn" type="submit">Tạo buổi họp</button><span class="msg" id="lsMsg"></span></div></form>`;
+}
+async function lhSessionDetail(s){
+  const d=s.session_date;
+  const[issues,tasksOver,decisions,linkedIssue]=await Promise.all([
+    q(SB.from("issues").select("code,description,severity,status,owner_name,due_date").in("severity",["red","yellow"]).not("status","in","(resolved,closed)").lte("open_date",d).limit(50)),
+    q(SB.from("tasks").select("code,title,owner_id,due_date,status").lt("due_date",d).not("status","in","(done,cancelled)").limit(50)),
+    q(SB.from("tasks").select("*").eq("meeting_session_id",s.id).order("created_at",{ascending:false})),
+    s.issue_id?q(SB.from("issues").select("code,description").eq("id",s.issue_id).maybeSingle()):null
+  ]);
+  const ps=await api.profiles();const nm=id=>(ps.find(p=>p.id===id)||{}).full_name||"—";
+  const canWrite=ME.role==="admin"||(ME.approves_depts||[]).length;
+  return`<div class="card" style="margin:6px 0">
+   ${linkedIssue?`<div class="small"><b>Gắn với vấn đề:</b> ${esc(linkedIssue.code)} – ${esc(linkedIssue.description)}</div>`:""}
+   <h4>Vấn đề Đỏ/Vàng đang mở</h4>${issues.length?`<div class="tbl"><table><tr><th>Mã</th><th>Mô tả</th><th>Mức</th><th>Phụ trách</th><th>Hạn</th></tr>
+    ${issues.map(i=>`<tr><td class="mono">${esc(i.code)}</td><td class="small">${esc(i.description)}</td><td><span class="pill p-${VD_SEV[i.severity][1]}">${VD_SEV[i.severity][0]}</span></td><td>${esc(i.owner_name||"—")}</td><td>${i.due_date?dmyS(i.due_date):"—"}</td></tr>`).join("")}</table></div>`:`<div class="empty">Không có vấn đề Đỏ/Vàng đang mở</div>`}
+   <h4>Việc/chỉ đạo quá hạn</h4>${tasksOver.length?`<div class="tbl"><table><tr><th>Mã</th><th>Nội dung</th><th>Người phụ trách</th><th>Hạn</th></tr>
+    ${tasksOver.map(t=>`<tr><td class="mono">${esc(t.code)}</td><td class="small">${esc(t.title)}</td><td>${esc(nm(t.owner_id))}</td><td>${dmyS(t.due_date)}</td></tr>`).join("")}</table></div>`:`<div class="empty">Không có việc quá hạn</div>`}
+   <h4>Ghi chú / ý kiến buổi họp</h4><textarea id="lhNotes_${s.id}" rows="3" style="width:100%;box-sizing:border-box">${esc(s.notes||"")}</textarea>
+   <div style="margin-top:6px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">${canWrite?`<button class="btn ghost" type="button" data-lhsave="${s.id}">Lưu ghi chú</button>${s.status!=="done"?`<button class="btn ghost" type="button" data-lhdone="${s.id}">Đánh dấu đã họp</button>`:""}`:""}<span class="msg" id="lhdm_${s.id}"></span></div>
+   <h4>Quyết định → việc theo dõi</h4>${decisions.length?`<div class="tbl"><table><tr><th>Mã việc</th><th>Nội dung</th><th>Người phụ trách</th><th>Hạn</th><th>Trạng thái</th></tr>
+    ${decisions.map(t=>`<tr><td class="mono">${esc(t.code)}</td><td class="small">${esc(t.title)}</td><td>${esc(nm(t.owner_id))}</td><td>${dmyS(t.due_date)}</td><td>${ttName(L4.taskTT,t.status)}</td></tr>`).join("")}</table></div>`:`<div class="empty">Chưa có quyết định nào</div>`}
+   ${canWrite?`<div style="margin-top:8px"><button class="btn ghost" type="button" id="lhDecOpen_${s.id}">${LH.decOpen===s.id?"Đóng form":"+ Thêm quyết định (tạo việc)"}</button>
+    ${LH.decOpen===s.id?`<form id="fLhDec" data-sess="${s.id}" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-top:8px;align-items:end">
+     <div class="fld" style="grid-column:1/-1"><label for="ld_title">Nội dung quyết định *</label><input id="ld_title"></div>
+     <div class="fld"><label for="ld_dept">Phòng ban phụ trách *</label><select id="ld_dept">${opt(REF.depts.map(d=>[d.id,d.name]),ME.dept_id)}</select></div>
+     <div class="fld"><label for="ld_owner">Người phụ trách</label><select id="ld_owner">${opt([["","— Chưa chỉ định —"]].concat(ps.map(p=>[p.id,p.full_name])),"")}</select></div>
+     <div class="fld"><label for="ld_due">Hạn hoàn thành *</label><input id="ld_due" type="date" value="${addDays(d,7)}"></div>
+     <div><button class="btn" type="submit">Tạo việc</button></div></form><span class="msg" id="ldMsg"></span>`:""}</div>`:""}
+  </div>`;
+}
+function bindLH(){
+  document.querySelectorAll("[data-lhtab]").forEach(b=>b.onclick=()=>{LH.tab=b.dataset.lhtab;render()});
+  if(LH.tab==="type"){
+    const nb=$("#lhTypeNew");if(nb)nb.onclick=()=>{LH.typeOpen=!LH.typeOpen;if(!LH.typeOpen)LH.editType=null;render()};
+    const cb=$("#lt_cancel");if(cb)cb.onclick=()=>{LH.typeOpen=false;LH.editType=null;render()};
+    document.querySelectorAll("[data-lte]").forEach(b=>b.onclick=()=>{q(SB.from("meeting_types").select("*").eq("id",+b.dataset.lte).single()).then(r=>{LH.editType=r;LH.typeOpen=true;render()})});
+    const f=$("#fLhType");if(f)f.addEventListener("submit",async e=>{e.preventDefault();
+      const name=$("#lt_name").value.trim();if(!name)return setMsg("ltMsg","Nhập tên loại họp.","bad");
+      const row={name,frequency:$("#lt_freq").value,dept_id:$("#lt_dept").value?+$("#lt_dept").value:null,attendees:$("#lt_att").value.trim()||null,active:$("#lt_active").checked};
+      try{if(LH.editType&&LH.editType.id)await q(SB.from("meeting_types").update(row).eq("id",LH.editType.id).select("id"));
+        else await q(SB.from("meeting_types").insert(row).select("id"));
+        LH.typeOpen=false;LH.editType=null;toast("Đã lưu loại họp");render()}catch(err){setMsg("ltMsg",sbErr(err),"bad")}});
+    return;
+  }
+  const nb=$("#lhSessNew");if(nb)nb.onclick=()=>{LH.sessOpen=!LH.sessOpen;render()};
+  const fs=$("#fLhSess");if(fs)fs.addEventListener("submit",async e=>{e.preventDefault();
+    const tid=$("#ls_type").value,d=$("#ls_date").value;if(!tid||!d)return setMsg("lsMsg","Chọn loại họp và ngày.","bad");
+    const issue=$("#ls_issue").value;
+    try{await q(SB.from("meeting_sessions").insert({meeting_type_id:+tid,session_date:d,issue_id:issue?+issue:null}).select("id"));
+      LH.sessOpen=false;toast("Đã tạo buổi họp");render()}catch(err){setMsg("lsMsg",sbErr(err),"bad")}});
+  document.querySelectorAll("[data-lho]").forEach(b=>b.onclick=()=>{LH.openId=LH.openId===+b.dataset.lho?null:+b.dataset.lho;LH.decOpen=null;render()});
+  document.querySelectorAll("[data-lhsave]").forEach(b=>b.onclick=async()=>{const id=+b.dataset.lhsave;const notes=$("#lhNotes_"+id).value;
+    try{await q(SB.from("meeting_sessions").update({notes}).eq("id",id).select("id"));toast("Đã lưu ghi chú")}catch(err){setMsg("lhdm_"+id,sbErr(err),"bad")}});
+  document.querySelectorAll("[data-lhdone]").forEach(b=>b.onclick=async()=>{const id=+b.dataset.lhdone;
+    try{await q(SB.from("meeting_sessions").update({status:"done"}).eq("id",id).select("id"));toast("Đã đánh dấu đã họp");render()}catch(err){setMsg("lhdm_"+id,sbErr(err),"bad")}});
+  document.querySelectorAll("[id^=lhDecOpen_]").forEach(b=>b.onclick=()=>{const id=+b.id.replace("lhDecOpen_","");LH.decOpen=LH.decOpen===id?null:id;render()});
+  const fd=$("#fLhDec");if(fd)fd.addEventListener("submit",async e=>{e.preventDefault();
+    const sess=+fd.dataset.sess;const title=$("#ld_title").value.trim();if(!title)return setMsg("ldMsg","Nhập nội dung quyết định.","bad");
+    const dept_id=+$("#ld_dept").value;const owner_id=$("#ld_owner").value||null;const due=$("#ld_due").value;if(!due)return setMsg("ldMsg","Chọn hạn hoàn thành.","bad");
+    try{const code=await rpc("next_code",{p_prefix:"GV"+ddmm(ME.today||todayISO())+"-"});
+      await q(SB.from("tasks").insert({code,title,scope:owner_id?"person":"dept",dept_id,owner_id,due_date:due,meeting_session_id:sess}).select("id"));
+      LH.decOpen=null;toast("Đã tạo việc theo dõi");render()}catch(err){setMsg("ldMsg",sbErr(err),"bad")}});
+}
+/* ============================================================
    TỔNG QUAN NHÀ MÁY – SỐ LIỆU THẬT (từ Form A–E, 3S, giao việc, báo cáo ngày)
    ============================================================ */
 const LD={period:"day",date:null,scope:"all",demo:false,dept:null};
@@ -2874,7 +2987,7 @@ function bindDashLive(){
 }
 const MODS=[["dash","Tổng quan nhà máy",2],["sum","Tổng hợp báo cáo ngày",4],["mydept","Bộ phận của tôi",3],["task","Giao việc",4],["mine","Công việc của tôi",3],["daily","Báo cáo hằng ngày",4],["sx","Sản xuất",5],["qc","Chất lượng",5],["kho","Kho",5],["kh","Kế hoạch",5],["kt","Kỹ thuật",5],["bt","Bảo trì",5],["gt","Giá thành",5],["bh","Bảo hành",5],["ns","Nhân sự",5],["kpi","KPI riêng",6],["5s","3S",5],["vd","Vấn đề và cải tiến",6],["lich","Lịch điều hành",6],["acc","Quản lý tài khoản",3],["cfg","Cấu hình hệ thống",3]];
 const DEPT_MOD={SX:"sx",QAC:"qc",KHO:"kho",KHSX:"kh",KT:"kt",CD:"bt",KTGT:"gt",BHM:"bh",BHN:"bh",HCNS:"ns"};
-const BUILT=["dash","sum","mydept","task","mine","daily","sx","qc","bt","kho","ns","bh","kh","5s","vd","kpi","kt","acc","cfg"];
+const BUILT=["dash","sum","mydept","task","mine","daily","sx","qc","bt","kho","ns","bh","kh","5s","vd","kpi","kt","lich","acc","cfg"];
 function allowedMods(){
   if(!ME)return[];if(ME.role==="admin")return MODS.map(m=>m[0]).filter(k=>k!=="mydept");
   const a=[];const approver=ME.role==="head"||(ME.approves_depts||[]).length;
@@ -2923,6 +3036,7 @@ async function render(){
     else if(ST.screen==="vd"){const h=await viewVD();if(seq!==renderSeq)return;main.innerHTML=h;bindVD()}
     else if(ST.screen==="kpi"){const h=await viewKP();if(seq!==renderSeq)return;main.innerHTML=h;bindKP()}
     else if(ST.screen==="kt"){const h=await viewKT();if(seq!==renderSeq)return;main.innerHTML=h;bindKT()}
+    else if(ST.screen==="lich"){const h=await viewLH();if(seq!==renderSeq)return;main.innerHTML=h;bindLH()}
     else if(ST.screen==="sum"){const h=await viewSummary();if(seq!==renderSeq)return;main.innerHTML=h;bindSummary()}
     else main.innerHTML=`<h2 class="sec" style="margin-top:0">${mod[1]}</h2><div class="ph-card"><b>Xây ở Giai đoạn ${mod[2]}.</b><p class="small" style="margin:6px 0 0">Nội dung và phân quyền đã chốt ở Giai đoạn 1. Bạn thấy mục này vì vai trò của bạn được phép dùng nó.</p></div>`;
   }catch(err){main.innerHTML=`<div class="alert bad"><span class="sv"></span><div class="b"><div class="t">Không tải được dữ liệu</div><div class="d">${esc(sbErr(err))}</div></div></div>`}
@@ -2933,7 +3047,7 @@ function startApp(){
   $("#user").innerHTML=`${esc(ME.full_name)}<small>${esc(ME.username)} · ${esc(ME.position_name)}</small>`;
   const c=$("#conn");c.classList.toggle("live",RUN==="LIVE");
   c.textContent=RUN==="LIVE"?"Đã kết nối máy chủ · số liệu thật":"DEMO · dùng thử, không lưu máy chủ";
-  ST.screen=homeMod();cfgTab="tbp";RP.code=null;RP.date=null;RP.editIssue=RP.editPlan=RP.editSr=null;SM.date=null;SXF.date=null;SXF.line=null;SXF.edit=null;SXF.assignOpen=false;SXF.unlockOpen=false;SX_CACHE=null;Object.keys(FM).forEach(k=>delete FM[k]);NM.q="";NM.f="all";NM.page=0;NM.dirty={};NM.bulkOpen=false;FS.date=null;FS.per="week";FS.tab="stat";FS.fstat="open";FS.fs="";FS.newOpen=false;FS.newS="";FS_CRIT=null;VD.tab="issue";VD.fSev="";VD.fSt="open";VD.fDept="";VD.q="";VD.projOpen=false;VD.editProj=null;KP.tab="dash";KP.defOpen=false;KP.editDef=null;KP.tgtOpenFor=null;KP.resKpi="";KP.resPs=null;KP.resPe=null;KT.tab="list";KT.fStatus="pending";KT.newOpen=false;KT.ctype="norm";KT.histCode="";LD.period="day";LD.date=null;LD.scope="all";LD.demo=false;GV.f="open";GV.pos="";GV.q="";accQ="";accDept="";ACC_SECRET=null;accConfirm=null;render();
+  ST.screen=homeMod();cfgTab="tbp";RP.code=null;RP.date=null;RP.editIssue=RP.editPlan=RP.editSr=null;SM.date=null;SXF.date=null;SXF.line=null;SXF.edit=null;SXF.assignOpen=false;SXF.unlockOpen=false;SX_CACHE=null;Object.keys(FM).forEach(k=>delete FM[k]);NM.q="";NM.f="all";NM.page=0;NM.dirty={};NM.bulkOpen=false;FS.date=null;FS.per="week";FS.tab="stat";FS.fstat="open";FS.fs="";FS.newOpen=false;FS.newS="";FS_CRIT=null;VD.tab="issue";VD.fSev="";VD.fSt="open";VD.fDept="";VD.q="";VD.projOpen=false;VD.editProj=null;KP.tab="dash";KP.defOpen=false;KP.editDef=null;KP.tgtOpenFor=null;KP.resKpi="";KP.resPs=null;KP.resPe=null;KT.tab="list";KT.fStatus="pending";KT.newOpen=false;KT.ctype="norm";KT.histCode="";LH.tab="session";LH.typeOpen=false;LH.editType=null;LH.sessOpen=false;LH.openId=null;LH.decOpen=null;LD.period="day";LD.date=null;LD.scope="all";LD.demo=false;GV.f="open";GV.pos="";GV.q="";accQ="";accDept="";ACC_SECRET=null;accConfirm=null;render();
 }
 $("#logout").onclick=()=>logout();
 $("#bell").onclick=e=>{e.stopPropagation();const p=$("#notif");p.hidden=!p.hidden;$("#bell").setAttribute("aria-expanded",String(!p.hidden))};
