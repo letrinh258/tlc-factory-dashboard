@@ -1743,12 +1743,12 @@ async function viewSx(){
 
 async function sxAssignHTML(){
   const[ul,ps]=await Promise.all([q(SB.from("user_lines").select("profile_id,line_id")),api.profiles()]);
-  const tt=REF.positions.find(p=>p.code==="TT-SX");const leaders=ps.filter(p=>p.status==="active"&&tt&&p.position_id===tt.id);
+  const ttIds=new Set(REF.positions.filter(p=>p.code==="TT-SX"||p.code.startsWith("TT-SX")).map(p=>p.id));const leaders=ps.filter(p=>p.status==="active"&&ttIds.has(p.position_id));
   const lines=(CFG.lines||[]).map((n,i)=>[i+1,n]);
   return `<div class="card" style="margin-bottom:10px"><h3>Phân line cho tổ trưởng <small>Mỗi line 1 tổ trưởng; 1 tổ trưởng giữ được nhiều line</small></h3>
   ${leaders.length?`<div class="tbl"><table><tr><th>Tổ trưởng</th>${lines.map(([i,n])=>`<th class="num">${esc(n)}</th>`).join("")}</tr>
   ${leaders.map(p=>`<tr><td>${esc(p.full_name)} <span class="small mono">${esc(p.username)}</span></td>${lines.map(([i])=>`<td class="num"><input type="checkbox" data-ul="${p.id}|${i}" ${ul.some(u=>u.profile_id===p.id&&u.line_id===i)?"checked":""} aria-label="${esc(p.full_name)} line ${i}"></td>`).join("")}</tr>`).join("")}</table></div>`
-  :`<p class="small" style="margin:0">Chưa có tài khoản vị trí "Tổ trưởng sản xuất". Tạo ở Quản lý tài khoản rồi quay lại đây.</p>`}</div>`;
+  :`<p class="small" style="margin:0">Chưa có tài khoản vị trí "Tổ trưởng Dãy A/B". Tạo ở Quản lý tài khoản rồi quay lại đây.</p>`}</div>`;
 }
 
 function bindSx(){
