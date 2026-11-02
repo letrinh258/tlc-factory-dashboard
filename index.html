@@ -2688,6 +2688,91 @@ function bindKP(){
   }
 }
 /* ============================================================
+   KỸ THUẬT – ECR (Engineering Change Request): duyệt thay đổi BOM/định mức/mã mới
+   ============================================================ */
+const KT={tab:"list",fStatus:"pending",newOpen:false,ctype:"norm",histCode:""};
+const KT_TYPE=[["bom","BOM"],["norm","Định mức NS"],["spec","Quy cách"],["new_product","Mã mới"],["other","Khác"]];
+const KT_ST=[["pending","Chờ duyệt"],["approved","Đã duyệt"],["rejected","Từ chối"]];
+async function viewKT(){
+  if(RUN!=="LIVE")return liveOnly("Kỹ thuật");
+  const head=`<h2 class="sec" style="margin-top:0">Kỹ thuật <small>ECR – đề xuất & duyệt thay đổi kỹ thuật/BOM/định mức</small></h2>
+  <div class="fbar" style="position:static"><div class="seg">${[["list","Phiếu ECR"],["hist","Lịch sử định mức theo mã"]].map(([k,n])=>`<button type="button" data-kttab="${k}" aria-pressed="${KT.tab===k}">${n}</button>`).join("")}</div></div>`;
+  return head+(KT.tab==="hist"?await ktHistHTML():await ktListHTML());
+}
+async function ktListHTML(){
+  let qf=SB.from("ecr").select("*").order("created_at",{ascending:false}).limit(200);
+  if(KT.fStatus)qf=qf.eq("status",KT.fStatus);
+  const rows=await q(qf);
+  const ps=await api.profiles();const nm=id=>(ps.find(p=>p.id===id)||{}).full_name||"—";
+  const prods=await q(SB.from("products").select("code,name").eq("active",true).order("code").limit(3000));
+  const today=ME.today||todayISO();
+  const bar=`<div class="tools" style="margin-top:10px"><div class="seg">${[["pending","Chờ duyệt"],["approved","Đã duyệt"],["rejected","Từ chối"],["","Tất cả"]].map(([k,n])=>`<button type="button" data-ktf="${k}" aria-pressed="${KT.fStatus===k}">${n}</button>`).join("")}</div>
+   <button class="btn" type="button" id="ktNew" style="margin-left:auto">${KT.newOpen?"Đóng form":"+ Phiếu ECR mới"}</button></div>`;
+  return bar+(KT.newOpen?ktNewForm(prods,today):"")
+   +rows.map(r=>{const approver=ME.role==="admin";
+    return`<div class="card" style="margin:10px 0"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap">
+     <div><span class="mono">${esc(r.code)}</span> · ${ttName(KT_TYPE,r.change_type)} · ${r.product_code?esc(r.product_code):r.change_type==="new_product"?esc(r.new_code||"")+" (mã mới)":"—"}</div>
+     <div><span class="pill p-${r.status==="approved"?"ok":r.status==="rejected"?"bad":"warn"}">${ttName(KT_ST,r.status)}</span></div></div>
+    <div style="margin:6px 0"><b>Nội dung:</b> ${esc(r.content)}</div>
+    ${r.reason?`<div class="small"><b>Lý do:</b> ${esc(r.reason)}</div>`:""}
+    ${r.change_type==="norm"&&r.new_norm!=null?`<div class="small"><b>Định mức mới đề xuất:</b> ${fmt(r.new_norm,1)} sp/người/giờ</div>`:""}
+    ${r.change_type==="new_product"?`<div class="small"><b>Mã mới:</b> ${esc(r.new_code||"")} – ${esc(r.new_name||"")}${r.new_norm!=null?" · ĐM "+fmt(r.new_norm,1):""}</div>`:""}
+    <div class="small">Đề xuất bởi ${esc(nm(r.proposed_by))} ngày ${dmyS(r.proposed_at)}</div>
+    ${r.status!=="pending"?`<div class="small">${r.status==="approved"?"Duyệt":"Từ chối"} bởi ${esc(nm(r.decided_by))} lúc ${new Date(r.decided_at).toLocaleString("vi-VN")}${r.decide_note?" – "+esc(r.decide_note):""}${r.effective_date?" · Áp dụng từ "+dmyS(r.effective_date):""}</div>`:""}
+    ${approver&&r.status==="pending"?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center">
+     <input id="ktn_${r.id}" placeholder="Ghi chú / lý do" style="flex:1;min-width:160px"><input id="ktd_${r.id}" type="date" value="${today}" title="Ngày áp dụng" style="width:150px">
+     <button class="btn" type="button" data-kta="approve:${r.id}" style="padding:3px 9px">Duyệt</button><button class="btn ghost" type="button" data-kta="reject:${r.id}" style="padding:3px 9px;color:var(--bad)">Từ chối</button></div>`:""}
+    <span class="msg" id="ktm_${r.id}"></span></div>`}).join("")||`<div class="empty">Không có phiếu ECR nào</div>`;
+}
+function ktNewForm(prods,today){
+  return`<form class="card" id="fKtNew" novalidate style="margin:10px 0"><h3>Phiếu đề xuất thay đổi kỹ thuật (ECR)</h3>
+   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">
+    <div class="fld"><label for="kt_type">Loại thay đổi *</label><select id="kt_type">${opt(KT_TYPE,KT.ctype)}</select></div>
+    ${KT.ctype!=="new_product"?`<div class="fld" style="grid-column:span 2"><label for="kt_code">Mã sản phẩm liên quan *</label><input id="kt_code" list="ktProdList" autocomplete="off"></div>`
+     :`<div class="fld"><label for="kt_ncode">Mã sản phẩm mới *</label><input id="kt_ncode" placeholder="vd: TLC-NEW-01"></div>
+       <div class="fld" style="grid-column:span 2"><label for="kt_nname">Tên sản phẩm mới *</label><input id="kt_nname"></div>`}
+    ${KT.ctype==="norm"||KT.ctype==="new_product"?`<div class="fld"><label for="kt_norm">Định mức ${KT.ctype==="norm"?"mới ":""}(sp/người/giờ)</label><input id="kt_norm" inputmode="decimal"></div>`:""}
+    <div class="fld" style="grid-column:1/-1"><label for="kt_content">Nội dung đề xuất (từ → đến) *</label><input id="kt_content" placeholder="vd: Định mức 32 → 35 sp/người/giờ do cải tiến khuôn"></div>
+    <div class="fld" style="grid-column:1/-1"><label for="kt_reason">Lý do</label><input id="kt_reason"></div>
+   </div><div style="margin-top:10px;display:flex;gap:8px;align-items:center"><button class="btn" type="submit">Gửi đề xuất</button><button class="btn ghost" type="button" id="kt_cancel">Hủy</button><span class="msg" id="ktNewMsg"></span></div>
+  </form><datalist id="ktProdList">${prods.map(p=>`<option value="${esc(p.code)}">${esc(p.name)}</option>`).join("")}</datalist>`;
+}
+async function ktHistHTML(){
+  const rows=KT.histCode?await q(SB.from("norm_changes").select("*").eq("product_code",KT.histCode).order("changed_at",{ascending:false}).limit(200)):[];
+  const ps=await api.profiles();const nm=id=>(ps.find(p=>p.id===id)||{}).full_name||"—";
+  return`<div class="tools" style="margin-top:10px"><input id="ktHistQ" value="${esc(KT.histCode)}" placeholder="Nhập mã sản phẩm để xem lịch sử định mức" style="flex:1;min-width:200px"><button class="btn" type="button" id="ktHistGo">Xem</button></div>
+  ${KT.histCode?`<div class="tbl" style="margin-top:10px"><table><tr><th>Lúc đổi</th><th class="num">Từ</th><th class="num">Đến</th><th>Ghi chú</th><th>Người đổi</th></tr>
+   ${rows.map(r=>`<tr><td class="small">${new Date(r.changed_at).toLocaleString("vi-VN")}</td><td class="num">${r.old_norm!=null?fmt(r.old_norm,1):"—"}</td><td class="num">${r.new_norm!=null?fmt(r.new_norm,1):"—"}</td><td class="small">${esc(r.note||"")}</td><td>${esc(nm(r.changed_by))}</td></tr>`).join("")||`<tr><td colspan="5"><div class="empty">Mã này chưa có lần đổi định mức nào</div></td></tr>`}</table></div>`:""}`;
+}
+function bindKT(){
+  document.querySelectorAll("[data-kttab]").forEach(b=>b.onclick=()=>{KT.tab=b.dataset.kttab;render()});
+  if(KT.tab==="hist"){
+    const go=()=>{KT.histCode=$("#ktHistQ").value.trim();render()};
+    const b=$("#ktHistGo");if(b)b.onclick=go;const i=$("#ktHistQ");if(i)i.onkeydown=e=>{if(e.key==="Enter"){e.preventDefault();go()}};
+    return;
+  }
+  document.querySelectorAll("[data-ktf]").forEach(b=>b.onclick=()=>{KT.fStatus=b.dataset.ktf;render()});
+  const nb=$("#ktNew");if(nb)nb.onclick=()=>{KT.newOpen=!KT.newOpen;render()};
+  const cb=$("#kt_cancel");if(cb)cb.onclick=()=>{KT.newOpen=false;render()};
+  const tt=$("#kt_type");if(tt)tt.onchange=()=>{KT.ctype=tt.value;render()};
+  const f=$("#fKtNew");if(f)f.addEventListener("submit",async e=>{e.preventDefault();
+    const content=$("#kt_content").value.trim();if(!content)return setMsg("ktNewMsg","Nhập nội dung đề xuất.","bad");
+    const row={change_type:KT.ctype,content,reason:$("#kt_reason").value.trim()||null};
+    if(KT.ctype==="new_product"){const nc=$("#kt_ncode").value.trim(),nn=$("#kt_nname").value.trim();
+      if(!nc||!nn)return setMsg("ktNewMsg","Nhập mã và tên sản phẩm mới.","bad");row.new_code=nc;row.new_name=nn;
+      const nrm=$("#kt_norm").value;if(nrm!=="")row.new_norm=+nrm}
+    else{const pc=$("#kt_code").value.trim();if(!pc)return setMsg("ktNewMsg","Nhập mã sản phẩm liên quan.","bad");row.product_code=pc;
+      if(KT.ctype==="norm"){const nrm=$("#kt_norm").value;if(nrm==="")return setMsg("ktNewMsg","Nhập định mức mới.","bad");row.new_norm=+nrm}}
+    try{const code=await rpc("next_code",{p_prefix:"KT"+ddmm(ME.today||todayISO())+"-"});
+      await q(SB.from("ecr").insert({...row,code,proposed_by:ME.id}).select("id"));
+      KT.newOpen=false;toast("Đã gửi phiếu ECR");render()}catch(err){setMsg("ktNewMsg",sbErr(err),"bad")}});
+  document.querySelectorAll("[data-kta]").forEach(b=>b.onclick=async()=>{const[act,id]=b.dataset.kta.split(":");
+    const note=$("#ktn_"+id).value.trim(),eff=$("#ktd_"+id).value||null;
+    if(act==="reject"&&!note)return setMsg("ktm_"+id,"Ghi lý do từ chối.","bad");
+    try{await rpc("ecr_decide",{p_id:+id,p_action:act,p_note:note||null,p_effective:act==="approve"?eff:null});
+      toast(act==="approve"?"Đã duyệt ECR":"Đã từ chối ECR");render()}catch(err){setMsg("ktm_"+id,sbErr(err),"bad")}});
+}
+/* ============================================================
    TỔNG QUAN NHÀ MÁY – SỐ LIỆU THẬT (từ Form A–E, 3S, giao việc, báo cáo ngày)
    ============================================================ */
 const LD={period:"day",date:null,scope:"all",demo:false,dept:null};
@@ -2789,7 +2874,7 @@ function bindDashLive(){
 }
 const MODS=[["dash","Tổng quan nhà máy",2],["sum","Tổng hợp báo cáo ngày",4],["mydept","Bộ phận của tôi",3],["task","Giao việc",4],["mine","Công việc của tôi",3],["daily","Báo cáo hằng ngày",4],["sx","Sản xuất",5],["qc","Chất lượng",5],["kho","Kho",5],["kh","Kế hoạch",5],["kt","Kỹ thuật",5],["bt","Bảo trì",5],["gt","Giá thành",5],["bh","Bảo hành",5],["ns","Nhân sự",5],["kpi","KPI riêng",6],["5s","3S",5],["vd","Vấn đề và cải tiến",6],["lich","Lịch điều hành",6],["acc","Quản lý tài khoản",3],["cfg","Cấu hình hệ thống",3]];
 const DEPT_MOD={SX:"sx",QAC:"qc",KHO:"kho",KHSX:"kh",KT:"kt",CD:"bt",KTGT:"gt",BHM:"bh",BHN:"bh",HCNS:"ns"};
-const BUILT=["dash","sum","mydept","task","mine","daily","sx","qc","bt","kho","ns","bh","kh","5s","vd","kpi","acc","cfg"];
+const BUILT=["dash","sum","mydept","task","mine","daily","sx","qc","bt","kho","ns","bh","kh","5s","vd","kpi","kt","acc","cfg"];
 function allowedMods(){
   if(!ME)return[];if(ME.role==="admin")return MODS.map(m=>m[0]).filter(k=>k!=="mydept");
   const a=[];const approver=ME.role==="head"||(ME.approves_depts||[]).length;
@@ -2837,6 +2922,7 @@ async function render(){
     else if(ST.screen==="5s"){const h=await view5s();if(seq!==renderSeq)return;main.innerHTML=h;bind5s()}
     else if(ST.screen==="vd"){const h=await viewVD();if(seq!==renderSeq)return;main.innerHTML=h;bindVD()}
     else if(ST.screen==="kpi"){const h=await viewKP();if(seq!==renderSeq)return;main.innerHTML=h;bindKP()}
+    else if(ST.screen==="kt"){const h=await viewKT();if(seq!==renderSeq)return;main.innerHTML=h;bindKT()}
     else if(ST.screen==="sum"){const h=await viewSummary();if(seq!==renderSeq)return;main.innerHTML=h;bindSummary()}
     else main.innerHTML=`<h2 class="sec" style="margin-top:0">${mod[1]}</h2><div class="ph-card"><b>Xây ở Giai đoạn ${mod[2]}.</b><p class="small" style="margin:6px 0 0">Nội dung và phân quyền đã chốt ở Giai đoạn 1. Bạn thấy mục này vì vai trò của bạn được phép dùng nó.</p></div>`;
   }catch(err){main.innerHTML=`<div class="alert bad"><span class="sv"></span><div class="b"><div class="t">Không tải được dữ liệu</div><div class="d">${esc(sbErr(err))}</div></div></div>`}
@@ -2847,7 +2933,7 @@ function startApp(){
   $("#user").innerHTML=`${esc(ME.full_name)}<small>${esc(ME.username)} · ${esc(ME.position_name)}</small>`;
   const c=$("#conn");c.classList.toggle("live",RUN==="LIVE");
   c.textContent=RUN==="LIVE"?"Đã kết nối máy chủ · số liệu thật":"DEMO · dùng thử, không lưu máy chủ";
-  ST.screen=homeMod();cfgTab="tbp";RP.code=null;RP.date=null;RP.editIssue=RP.editPlan=RP.editSr=null;SM.date=null;SXF.date=null;SXF.line=null;SXF.edit=null;SXF.assignOpen=false;SXF.unlockOpen=false;SX_CACHE=null;Object.keys(FM).forEach(k=>delete FM[k]);NM.q="";NM.f="all";NM.page=0;NM.dirty={};NM.bulkOpen=false;FS.date=null;FS.per="week";FS.tab="stat";FS.fstat="open";FS.fs="";FS.newOpen=false;FS.newS="";FS_CRIT=null;VD.tab="issue";VD.fSev="";VD.fSt="open";VD.fDept="";VD.q="";VD.projOpen=false;VD.editProj=null;KP.tab="dash";KP.defOpen=false;KP.editDef=null;KP.tgtOpenFor=null;KP.resKpi="";KP.resPs=null;KP.resPe=null;LD.period="day";LD.date=null;LD.scope="all";LD.demo=false;GV.f="open";GV.pos="";GV.q="";accQ="";accDept="";ACC_SECRET=null;accConfirm=null;render();
+  ST.screen=homeMod();cfgTab="tbp";RP.code=null;RP.date=null;RP.editIssue=RP.editPlan=RP.editSr=null;SM.date=null;SXF.date=null;SXF.line=null;SXF.edit=null;SXF.assignOpen=false;SXF.unlockOpen=false;SX_CACHE=null;Object.keys(FM).forEach(k=>delete FM[k]);NM.q="";NM.f="all";NM.page=0;NM.dirty={};NM.bulkOpen=false;FS.date=null;FS.per="week";FS.tab="stat";FS.fstat="open";FS.fs="";FS.newOpen=false;FS.newS="";FS_CRIT=null;VD.tab="issue";VD.fSev="";VD.fSt="open";VD.fDept="";VD.q="";VD.projOpen=false;VD.editProj=null;KP.tab="dash";KP.defOpen=false;KP.editDef=null;KP.tgtOpenFor=null;KP.resKpi="";KP.resPs=null;KP.resPe=null;KT.tab="list";KT.fStatus="pending";KT.newOpen=false;KT.ctype="norm";KT.histCode="";LD.period="day";LD.date=null;LD.scope="all";LD.demo=false;GV.f="open";GV.pos="";GV.q="";accQ="";accDept="";ACC_SECRET=null;accConfirm=null;render();
 }
 $("#logout").onclick=()=>logout();
 $("#bell").onclick=e=>{e.stopPropagation();const p=$("#notif");p.hidden=!p.hidden;$("#bell").setAttribute("aria-expanded",String(!p.hidden))};
