@@ -2545,6 +2545,149 @@ function bindVD(){
     try{await rpc("close_item",{p_entity:"issue",p_id:id,p_note:v});toast("Đã đóng vấn đề");render()}catch(err){setMsg("vdm_"+id,sbErr(err),"bad")}});
 }
 /* ============================================================
+   KPI RIÊNG – cây KPI 3 cấp (Nhà máy/Phòng ban/Vị trí), giao mục tiêu, nhập kết quả
+   ============================================================ */
+const KP={tab:"dash",defOpen:false,editDef:null,tgtOpenFor:null,resKpi:"",resDept:"",resProf:"",resVal:"",resPs:null,resPe:null};
+const KP_LVL=[["factory","Nhà máy"],["dept","Phòng ban"],["position","Vị trí"]];
+const KP_FREQ=[["daily","Ngày"],["weekly","Tuần"],["monthly","Tháng"],["quarterly","Quý"]];
+const KP_STC={green:"ok",yellow:"warn",red:"bad",nodata:"none"};
+const KP_STN={green:"Đạt",yellow:"Cảnh báo",red:"Chưa đạt",nodata:"Chưa có số liệu"};
+function kpScore(value,target,direction){
+  if(value==null||target==null||!isFinite(value)||!target)return null;
+  if(direction===1)return value/target*100;
+  return value?target/value*100:(target===0?100:null);
+}
+function kpStatus(score,greenPct,yellowPct){
+  if(score==null)return"nodata";if(score>=greenPct)return"green";if(score>=yellowPct)return"yellow";return"red";
+}
+function kpPosDept(pid){return(REF.positions.find(p=>p.id===pid)||{}).dept_id}
+function kpCanSee(d){if(ME.role==="admin"||ME.overview)return true;
+  if(d.level==="factory")return false;
+  if(d.level==="dept")return(ME.approves_depts||[]).includes(d.dept_id);
+  if(d.level==="position")return d.position_id===ME.position_id||(ME.approves_depts||[]).includes(kpPosDept(d.position_id));
+  return false}
+async function kpAll(){const[defs,tgts]=await Promise.all([q(SB.from("kpi_definitions").select("*").order("level").order("code")),q(SB.from("kpi_targets").select("*").order("period_start",{ascending:false}))]);return{defs,tgts}}
+function kpCurTarget(tgts,code,today){const rows=tgts.filter(t=>t.kpi_code===code);return rows.find(t=>t.period_start<=today&&today<=t.period_end)||rows[0]||null}
+async function viewKP(){
+  if(RUN!=="LIVE")return liveOnly("KPI riêng");
+  const head=`<h2 class="sec" style="margin-top:0">KPI riêng <small>Quản trị mục tiêu – AOP → KPI công ty → phân rã phòng ban/vị trí</small></h2>
+  <div class="fbar" style="position:static"><div class="seg">${[["dash","Cây KPI"],["def","Định nghĩa & Mục tiêu"],["result","Nhập kết quả"]].map(([k,n])=>`<button type="button" data-kptab="${k}" aria-pressed="${KP.tab===k}">${n}</button>`).join("")}</div></div>`;
+  if(KP.tab==="def")return head+await kpDefHTML();
+  if(KP.tab==="result")return head+await kpResultHTML();
+  return head+await kpDashHTML();
+}
+async function kpDashHTML(){
+  const{defs,tgts}=await kpAll();const today=ME.today||todayISO();
+  const visible=defs.filter(d=>d.active&&kpCanSee(d));
+  if(!visible.length)return`<div class="empty" style="margin-top:10px">Chưa có KPI nào được giao cho bạn xem, hoặc GĐNM chưa định nghĩa KPI.</div>`;
+  const ids=visible.map(d=>d.code);
+  const results=ids.length?await q(SB.from("kpi_results").select("*").in("kpi_code",ids).order("computed_at",{ascending:false})):[];
+  const row=d=>{const tg=kpCurTarget(tgts,d.code,today);
+    const res=tg?results.find(r=>r.kpi_code===d.code&&r.period_start===tg.period_start&&r.period_end===tg.period_end):null;
+    const score=res?kpScore(res.value,tg?.target,d.direction):null;const st=tg&&res?kpStatus(score,tg.green_pct,tg.yellow_pct):"nodata";
+    return`<tr><td><b>${esc(d.name)}</b><div class="small mono">${esc(d.code)}</div></td><td>${esc(d.unit||"—")}</td>
+     <td class="small">${tg?dmyS(tg.period_start)+" – "+dmyS(tg.period_end):"Chưa giao mục tiêu"}</td>
+     <td class="num">${tg?fmt(tg.target,1):"—"}</td><td class="num">${res?fmt(res.value,1):"—"}</td>
+     <td class="num">${score!=null?fmt(score,0)+"%":"—"}</td><td><span class="pill p-${KP_STC[st]}">${KP_STN[st]}</span></td></tr>`};
+  const sec=(title,list)=>list.length?`<h3 class="sec">${title}</h3><div class="tbl"><table><tr><th>KPI</th><th>Đơn vị</th><th>Kỳ</th><th class="num">Mục tiêu</th><th class="num">Kết quả</th><th class="num">% đạt</th><th>Trạng thái</th></tr>${list.map(row).join("")}</table></div>`:"";
+  const byDept=REF.depts.map(dp=>({dp,list:visible.filter(d=>d.level==="dept"&&d.dept_id===dp.id)})).filter(x=>x.list.length);
+  const byPos=REF.depts.map(dp=>({dp,list:visible.filter(d=>d.level==="position"&&kpPosDept(d.position_id)===dp.id)})).filter(x=>x.list.length);
+  return sec("Toàn nhà máy",visible.filter(d=>d.level==="factory"))
+   +byDept.map(x=>sec("Phòng ban · "+x.dp.name,x.list)).join("")
+   +byPos.map(x=>sec("Vị trí · "+x.dp.name,x.list)).join("")
+   +`<p class="small">% đạt = kết quả so với mục tiêu theo hướng tốt của KPI (tăng hoặc giảm). Xanh ≥ ngưỡng xanh, Vàng ≥ ngưỡng vàng, còn lại là Đỏ.</p>`;
+}
+async function kpDefHTML(){
+  const{defs,tgts}=await kpAll();const isAdmin=ME.role==="admin";const ed=KP.editDef||{};
+  const posOpts=REF.positions.filter(p=>!ed.dept_id||p.dept_id===+ed.dept_id);
+  return`${isAdmin?`<div class="tools" style="margin-top:10px"><button class="btn" type="button" id="kpDefNew">${KP.defOpen?"Đóng form":(ed.code?"Đang sửa "+esc(ed.code):"+ KPI mới")}</button></div>`:""}
+  ${KP.defOpen?`<form class="card" id="fKpDef" novalidate style="margin:10px 0"><h3>${ed.code?"Sửa KPI "+esc(ed.code):"KPI mới"}</h3>
+   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">
+    <div class="fld"><label for="kd_code">Mã KPI *</label><input id="kd_code" value="${esc(ed.code||"")}" ${ed.code?"readonly":""} placeholder="vd: NS-TOAN-NM"></div>
+    <div class="fld" style="grid-column:span 2"><label for="kd_name">Tên KPI *</label><input id="kd_name" value="${esc(ed.name||"")}" placeholder="vd: Năng suất lao động"></div>
+    <div class="fld"><label for="kd_lvl">Cấp *</label><select id="kd_lvl">${opt(KP_LVL,ed.level||"factory")}</select></div>
+    <div class="fld"><label for="kd_dept">Phòng ban</label><select id="kd_dept">${opt([["","— Không —"]].concat(REF.depts.map(d=>[d.id,d.name])),ed.dept_id)}</select></div>
+    <div class="fld"><label for="kd_pos">Vị trí</label><select id="kd_pos">${opt([["","— Không —"]].concat(posOpts.map(p=>[p.id,p.name])),ed.position_id)}</select></div>
+    <div class="fld"><label for="kd_unit">Đơn vị</label><input id="kd_unit" value="${esc(ed.unit||"")}" placeholder="vd: %, sp/người/giờ"></div>
+    <div class="fld"><label for="kd_freq">Chu kỳ</label><select id="kd_freq">${opt(KP_FREQ,ed.frequency||"monthly")}</select></div>
+    <div class="fld"><label for="kd_dir">Hướng tốt</label><select id="kd_dir">${opt([[1,"Càng cao càng tốt"],[-1,"Càng thấp càng tốt"]],ed.direction??1)}</select></div>
+    <div class="fld"><label for="kd_w">Trọng số</label><input id="kd_w" inputmode="decimal" value="${ed.weight??""}"></div>
+    <div class="fld" style="grid-column:1/-1"><label for="kd_src">Nguồn số liệu</label><input id="kd_src" value="${esc(ed.source||"")}" placeholder="vd: Form A sản xuất / nhập tay"></div>
+    <div class="fld" style="grid-column:1/-1"><label for="kd_formula">Công thức (mô tả)</label><input id="kd_formula" value="${esc(ed.formula||"")}" placeholder="vd: Sản lượng / (số NV × giờ công)"></div>
+    <div class="fld"><label><input type="checkbox" id="kd_active" ${ed.active===false?"":"checked"}> Đang dùng</label></div>
+   </div><div style="margin-top:10px;display:flex;gap:8px;align-items:center"><button class="btn" type="submit">Lưu</button><button class="btn ghost" type="button" id="kd_cancel">Hủy</button><span class="msg" id="kdMsg"></span></div></form>`:""}
+  <div class="tbl"><table><tr><th>Mã</th><th>Tên KPI</th><th>Cấp</th><th>Phạm vi</th><th>Đơn vị</th><th>Chu kỳ</th>${isAdmin?"<th></th>":""}</tr>
+  ${defs.map(d=>{const scope=d.level==="factory"?"Toàn nhà máy":d.level==="dept"?(REF.depts.find(x=>x.id===d.dept_id)||{}).name||"—":(REF.positions.find(x=>x.id===d.position_id)||{}).name||"—";
+    const myTgts=tgts.filter(t=>t.kpi_code===d.code);
+    return`<tr><td class="mono">${esc(d.code)}</td><td>${esc(d.name)}${d.active?"":' <span class="pill p-none">Ngừng</span>'}</td><td>${ttName(KP_LVL,d.level)}</td><td>${esc(scope)}</td><td>${esc(d.unit||"—")}</td><td>${ttName(KP_FREQ,d.frequency)}</td>
+     ${isAdmin?`<td style="white-space:nowrap"><button class="btn ghost" type="button" data-kde="${esc(d.code)}" style="padding:3px 9px">Sửa</button> <button class="btn ghost" type="button" data-kdt="${esc(d.code)}" style="padding:3px 9px">Giao mục tiêu${myTgts.length?" ("+myTgts.length+")":""}</button></td>`:""}</tr>
+    ${isAdmin&&KP.tgtOpenFor===d.code?`<tr><td colspan="7"><div class="card" style="margin:6px 0">
+      <table style="width:100%"><tr><th>Kỳ</th><th class="num">Mục tiêu</th><th class="num">Ngưỡng xanh %</th><th class="num">Ngưỡng vàng %</th></tr>
+      ${myTgts.map(t=>`<tr><td class="small">${dmyS(t.period_start)} – ${dmyS(t.period_end)}</td><td class="num">${fmt(t.target,1)}</td><td class="num">${fmt(t.green_pct)}</td><td class="num">${fmt(t.yellow_pct)}</td></tr>`).join("")||`<tr><td colspan="4" class="small">Chưa có mục tiêu kỳ nào</td></tr>`}</table>
+      <form id="fKpTgt" data-code="${esc(d.code)}" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin-top:8px;align-items:end">
+       <div class="fld"><label for="kt_ps">Từ ngày</label><input id="kt_ps" type="date"></div>
+       <div class="fld"><label for="kt_pe">Đến ngày</label><input id="kt_pe" type="date"></div>
+       <div class="fld"><label for="kt_target">Mục tiêu</label><input id="kt_target" inputmode="decimal"></div>
+       <div class="fld"><label for="kt_g">Ngưỡng xanh %</label><input id="kt_g" inputmode="decimal" value="100"></div>
+       <div class="fld"><label for="kt_y">Ngưỡng vàng %</label><input id="kt_y" inputmode="decimal" value="95"></div>
+       <div><button class="btn" type="submit">+ Thêm kỳ</button></div></form><span class="msg" id="ktMsg"></span></div></td></tr>`:""}`}).join("")||`<tr><td colspan="7"><div class="empty">Chưa có KPI nào</div></td></tr>`}</table></div>`;
+}
+async function kpResultHTML(){
+  if(ME.role!=="admin")return`<div class="empty" style="margin-top:10px">Chỉ GĐNM nhập kết quả KPI ở màn này hiện tại.</div>`;
+  const{defs,tgts}=await kpAll();const d=defs.find(x=>x.code===KP.resKpi);
+  const myTgts=d?tgts.filter(t=>t.kpi_code===d.code):[];
+  const results=d?await q(SB.from("kpi_results").select("*").eq("kpi_code",d.code).order("computed_at",{ascending:false}).limit(30)):[];
+  const ps=d&&d.level==="position"?await api.profiles():[];
+  return`<div class="card" style="margin-top:10px"><h3>Nhập kết quả KPI</h3>
+   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">
+    <div class="fld"><label for="kr_kpi">KPI</label><select id="kr_kpi">${opt([["","— Chọn KPI —"]].concat(defs.map(x=>[x.code,x.code+" – "+x.name])),KP.resKpi)}</select></div>
+    ${d?`<div class="fld"><label for="kr_period">Kỳ</label><select id="kr_period">${opt(myTgts.map(t=>[t.period_start+"|"+t.period_end,dmyS(t.period_start)+" – "+dmyS(t.period_end)]),(KP.resPs&&KP.resPe)?KP.resPs+"|"+KP.resPe:"")}</select></div>
+     ${d.level==="dept"?`<div class="fld"><label for="kr_dept">Phòng ban</label><select id="kr_dept">${opt(REF.depts.map(x=>[x.id,x.name]),d.dept_id)}</select></div>`:""}
+     ${d.level==="position"?`<div class="fld"><label for="kr_prof">Người (nếu theo cá nhân)</label><select id="kr_prof">${opt([["","— Không, theo vị trí —"]].concat(ps.filter(p=>p.position_id===d.position_id).map(p=>[p.id,p.full_name])),"")}</select></div>`:""}
+     <div class="fld"><label for="kr_val">Giá trị thực tế *</label><input id="kr_val" inputmode="decimal"></div>`:""}
+   </div>${d?`<div style="margin-top:10px"><button class="btn" type="button" id="kr_save">Lưu kết quả</button> <span class="msg" id="krMsg"></span></div>`:""}</div>
+  ${d?`<div class="tbl" style="margin-top:10px"><table><tr><th>Kỳ</th><th class="num">Giá trị</th><th>Trạng thái</th><th>Lúc nhập</th></tr>
+   ${results.map(r=>{const tg=myTgts.find(t=>t.period_start===r.period_start&&t.period_end===r.period_end);const sc=tg?kpScore(r.value,tg.target,d.direction):null;const st=tg?kpStatus(sc,tg.green_pct,tg.yellow_pct):"nodata";
+     return`<tr><td class="small">${dmyS(r.period_start)} – ${dmyS(r.period_end)}</td><td class="num">${fmt(r.value,1)}</td><td><span class="pill p-${KP_STC[st]}">${KP_STN[st]}</span></td><td class="small">${new Date(r.computed_at).toLocaleString("vi-VN")}</td></tr>`}).join("")||`<tr><td colspan="4"><div class="empty">Chưa có kết quả</div></td></tr>`}</table></div>`:""}`;
+}
+function bindKP(){
+  document.querySelectorAll("[data-kptab]").forEach(b=>b.onclick=()=>{KP.tab=b.dataset.kptab;KP.defOpen=false;KP.editDef=null;render()});
+  if(KP.tab==="def"){
+    const nb=$("#kpDefNew");if(nb)nb.onclick=()=>{KP.defOpen=!KP.defOpen;if(!KP.defOpen)KP.editDef=null;render()};
+    const cb=$("#kd_cancel");if(cb)cb.onclick=()=>{KP.defOpen=false;KP.editDef=null;render()};
+    const kdd=$("#kd_dept");if(kdd)kdd.onchange=()=>{KP.editDef={...(KP.editDef||{}),dept_id:kdd.value?+kdd.value:null};render()};
+    document.querySelectorAll("[data-kde]").forEach(b=>b.onclick=()=>{q(SB.from("kpi_definitions").select("*").eq("code",b.dataset.kde).single()).then(r=>{KP.editDef=r;KP.defOpen=true;render()})});
+    document.querySelectorAll("[data-kdt]").forEach(b=>b.onclick=()=>{KP.tgtOpenFor=KP.tgtOpenFor===b.dataset.kdt?null:b.dataset.kdt;render()});
+    const f=$("#fKpDef");if(f)f.addEventListener("submit",async e=>{e.preventDefault();
+      const code=$("#kd_code").value.trim();const name=$("#kd_name").value.trim();
+      if(!code)return setMsg("kdMsg","Nhập mã KPI.","bad");if(!name)return setMsg("kdMsg","Nhập tên KPI.","bad");
+      const row={code,name,level:$("#kd_lvl").value,dept_id:$("#kd_dept").value?+$("#kd_dept").value:null,position_id:$("#kd_pos").value?+$("#kd_pos").value:null,
+        unit:$("#kd_unit").value.trim()||null,frequency:$("#kd_freq").value,direction:+$("#kd_dir").value,weight:$("#kd_w").value?+$("#kd_w").value:0,
+        source:$("#kd_src").value.trim()||null,formula:$("#kd_formula").value.trim()||null,active:$("#kd_active").checked};
+      try{await q(SB.from("kpi_definitions").upsert(row).select("code"));KP.defOpen=false;KP.editDef=null;toast("Đã lưu KPI");render()}catch(err){setMsg("kdMsg",sbErr(err),"bad")}});
+    const ft=$("#fKpTgt");if(ft)ft.addEventListener("submit",async e=>{e.preventDefault();
+      const ps=$("#kt_ps").value,pe=$("#kt_pe").value,tgt=$("#kt_target").value;
+      if(!ps||!pe)return setMsg("ktMsg","Chọn từ ngày – đến ngày.","bad");if(pe<ps)return setMsg("ktMsg","Đến ngày phải sau từ ngày.","bad");if(tgt==="")return setMsg("ktMsg","Nhập mục tiêu.","bad");
+      try{await q(SB.from("kpi_targets").insert({kpi_code:ft.dataset.code,period_start:ps,period_end:pe,target:+tgt,green_pct:+($("#kt_g").value||100),yellow_pct:+($("#kt_y").value||95)}).select("id"));
+        toast("Đã giao mục tiêu kỳ mới");render()}catch(err){setMsg("ktMsg",sbErr(err),"bad")}});
+    return;
+  }
+  if(KP.tab==="result"){
+    const kk=$("#kr_kpi");if(kk)kk.onchange=()=>{KP.resKpi=kk.value;KP.resPs=KP.resPe=null;render()};
+    const kp=$("#kr_period");if(kp)kp.onchange=()=>{const[a,b]=kp.value.split("|");KP.resPs=a;KP.resPe=b};
+    const sv=$("#kr_save");if(sv)sv.onclick=async()=>{
+      const pv=$("#kr_period")?.value;if(!pv)return setMsg("krMsg","Chọn kỳ (giao mục tiêu trước ở tab Định nghĩa & Mục tiêu).","bad");
+      const[ps,pe]=pv.split("|");const val=$("#kr_val").value;if(val==="")return setMsg("krMsg","Nhập giá trị thực tế.","bad");
+      const deptEl=$("#kr_dept"),profEl=$("#kr_prof");
+      const dept_id=deptEl?+deptEl.value:null,profile_id=profEl&&profEl.value?profEl.value:null;
+      try{let del=SB.from("kpi_results").delete().eq("kpi_code",KP.resKpi).eq("period_start",ps).eq("period_end",pe);
+        del=profile_id?del.eq("profile_id",profile_id):del.is("profile_id",null);
+        del=dept_id?del.eq("dept_id",dept_id):del.is("dept_id",null);await del;
+        await q(SB.from("kpi_results").insert({kpi_code:KP.resKpi,period_start:ps,period_end:pe,dept_id,profile_id,value:+val,status:"nodata"}).select("id"));
+        toast("Đã lưu kết quả KPI");render()}catch(err){setMsg("krMsg",sbErr(err),"bad")}};
+  }
+}
+/* ============================================================
    TỔNG QUAN NHÀ MÁY – SỐ LIỆU THẬT (từ Form A–E, 3S, giao việc, báo cáo ngày)
    ============================================================ */
 const LD={period:"day",date:null,scope:"all",demo:false,dept:null};
@@ -2644,9 +2787,9 @@ function bindDashLive(){
   const dd=$("#ldDept");if(dd)dd.onchange=e=>{LD.dept=+e.target.value;render()};
   document.querySelectorAll("[data-goto]").forEach(b=>b.onclick=()=>{const m=b.dataset.goto;if(allowedMods().includes(m)){ST.screen=m;render();window.scrollTo(0,0)}});
 }
-const MODS=[["dash","Tổng quan nhà máy",2],["sum","Tổng hợp báo cáo ngày",4],["mydept","Bộ phận của tôi",3],["task","Giao việc",4],["mine","Công việc của tôi",3],["daily","Báo cáo hằng ngày",4],["sx","Sản xuất",5],["qc","Chất lượng",5],["kho","Kho",5],["kh","Kế hoạch",5],["kt","Kỹ thuật",5],["bt","Bảo trì",5],["gt","Giá thành",5],["bh","Bảo hành",5],["ns","Nhân sự",5],["kpi","KPI",6],["5s","3S",5],["vd","Vấn đề và cải tiến",6],["lich","Lịch điều hành",6],["acc","Quản lý tài khoản",3],["cfg","Cấu hình hệ thống",3]];
+const MODS=[["dash","Tổng quan nhà máy",2],["sum","Tổng hợp báo cáo ngày",4],["mydept","Bộ phận của tôi",3],["task","Giao việc",4],["mine","Công việc của tôi",3],["daily","Báo cáo hằng ngày",4],["sx","Sản xuất",5],["qc","Chất lượng",5],["kho","Kho",5],["kh","Kế hoạch",5],["kt","Kỹ thuật",5],["bt","Bảo trì",5],["gt","Giá thành",5],["bh","Bảo hành",5],["ns","Nhân sự",5],["kpi","KPI riêng",6],["5s","3S",5],["vd","Vấn đề và cải tiến",6],["lich","Lịch điều hành",6],["acc","Quản lý tài khoản",3],["cfg","Cấu hình hệ thống",3]];
 const DEPT_MOD={SX:"sx",QAC:"qc",KHO:"kho",KHSX:"kh",KT:"kt",CD:"bt",KTGT:"gt",BHM:"bh",BHN:"bh",HCNS:"ns"};
-const BUILT=["dash","sum","mydept","task","mine","daily","sx","qc","bt","kho","ns","bh","kh","5s","vd","acc","cfg"];
+const BUILT=["dash","sum","mydept","task","mine","daily","sx","qc","bt","kho","ns","bh","kh","5s","vd","kpi","acc","cfg"];
 function allowedMods(){
   if(!ME)return[];if(ME.role==="admin")return MODS.map(m=>m[0]).filter(k=>k!=="mydept");
   const a=[];const approver=ME.role==="head"||(ME.approves_depts||[]).length;
@@ -2693,6 +2836,7 @@ async function render(){
     else if(ST.screen==="kh"){const h=await viewKH();if(seq!==renderSeq)return;main.innerHTML=h;bindKH()}
     else if(ST.screen==="5s"){const h=await view5s();if(seq!==renderSeq)return;main.innerHTML=h;bind5s()}
     else if(ST.screen==="vd"){const h=await viewVD();if(seq!==renderSeq)return;main.innerHTML=h;bindVD()}
+    else if(ST.screen==="kpi"){const h=await viewKP();if(seq!==renderSeq)return;main.innerHTML=h;bindKP()}
     else if(ST.screen==="sum"){const h=await viewSummary();if(seq!==renderSeq)return;main.innerHTML=h;bindSummary()}
     else main.innerHTML=`<h2 class="sec" style="margin-top:0">${mod[1]}</h2><div class="ph-card"><b>Xây ở Giai đoạn ${mod[2]}.</b><p class="small" style="margin:6px 0 0">Nội dung và phân quyền đã chốt ở Giai đoạn 1. Bạn thấy mục này vì vai trò của bạn được phép dùng nó.</p></div>`;
   }catch(err){main.innerHTML=`<div class="alert bad"><span class="sv"></span><div class="b"><div class="t">Không tải được dữ liệu</div><div class="d">${esc(sbErr(err))}</div></div></div>`}
@@ -2703,7 +2847,7 @@ function startApp(){
   $("#user").innerHTML=`${esc(ME.full_name)}<small>${esc(ME.username)} · ${esc(ME.position_name)}</small>`;
   const c=$("#conn");c.classList.toggle("live",RUN==="LIVE");
   c.textContent=RUN==="LIVE"?"Đã kết nối máy chủ · số liệu thật":"DEMO · dùng thử, không lưu máy chủ";
-  ST.screen=homeMod();cfgTab="tbp";RP.code=null;RP.date=null;RP.editIssue=RP.editPlan=RP.editSr=null;SM.date=null;SXF.date=null;SXF.line=null;SXF.edit=null;SXF.assignOpen=false;SXF.unlockOpen=false;SX_CACHE=null;Object.keys(FM).forEach(k=>delete FM[k]);NM.q="";NM.f="all";NM.page=0;NM.dirty={};NM.bulkOpen=false;FS.date=null;FS.per="week";FS.tab="stat";FS.fstat="open";FS.fs="";FS.newOpen=false;FS.newS="";FS_CRIT=null;VD.tab="issue";VD.fSev="";VD.fSt="open";VD.fDept="";VD.q="";VD.projOpen=false;VD.editProj=null;LD.period="day";LD.date=null;LD.scope="all";LD.demo=false;GV.f="open";GV.pos="";GV.q="";accQ="";accDept="";ACC_SECRET=null;accConfirm=null;render();
+  ST.screen=homeMod();cfgTab="tbp";RP.code=null;RP.date=null;RP.editIssue=RP.editPlan=RP.editSr=null;SM.date=null;SXF.date=null;SXF.line=null;SXF.edit=null;SXF.assignOpen=false;SXF.unlockOpen=false;SX_CACHE=null;Object.keys(FM).forEach(k=>delete FM[k]);NM.q="";NM.f="all";NM.page=0;NM.dirty={};NM.bulkOpen=false;FS.date=null;FS.per="week";FS.tab="stat";FS.fstat="open";FS.fs="";FS.newOpen=false;FS.newS="";FS_CRIT=null;VD.tab="issue";VD.fSev="";VD.fSt="open";VD.fDept="";VD.q="";VD.projOpen=false;VD.editProj=null;KP.tab="dash";KP.defOpen=false;KP.editDef=null;KP.tgtOpenFor=null;KP.resKpi="";KP.resPs=null;KP.resPe=null;LD.period="day";LD.date=null;LD.scope="all";LD.demo=false;GV.f="open";GV.pos="";GV.q="";accQ="";accDept="";ACC_SECRET=null;accConfirm=null;render();
 }
 $("#logout").onclick=()=>logout();
 $("#bell").onclick=e=>{e.stopPropagation();const p=$("#notif");p.hidden=!p.hidden;$("#bell").setAttribute("aria-expanded",String(!p.hidden))};
