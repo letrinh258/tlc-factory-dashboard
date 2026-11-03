@@ -1,4 +1,4 @@
-<meta charset="utf-8">
+<!doctype html><html lang="vi">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>TLC Factory Dashboard</title>
 <meta name="claude:viewport-fit-sides" content="cover">
@@ -1712,10 +1712,10 @@ async function viewSx(){
   const lsxBatch=lsxBatches.length===1?lsxBatches[0]:lsxBatches.length>1?lsxBatches.find(b=>b.id===SXF.lsxPick)||null:null;
   SXF.curBatchId=lsxBatch?lsxBatch.id:null; // nhớ lệnh đang chọn để bindSx() biết gắn p_order_batch_id khi lưu
   const ordRows=lsxBatch?(lsxBatch.production_orders||[]).slice().sort((a,b)=>a.item_code<b.item_code?-1:a.item_code>b.item_code?1:0):[];
-  // 1 mã có thể ở nhiều lệnh khác nhau cùng ngày (GĐ16) — chỉ loại mã đã có dòng
-  // báo cáo THUỘC ĐÚNG lệnh đang chọn, không loại mã đã báo cáo ở lệnh khác.
-  const usedCodes=new Set(lineRows.filter(r=>r.order_batch_id===(lsxBatch?lsxBatch.id:null)).map(r=>r.product_code));
-  const availOrders=ordRows.filter(o=>!usedCodes.has(o.item_code));
+  // GĐ17 (theo yêu cầu 03/11): 1 mã có thể sản xuất nhiều lần trong cùng
+  // line/ngày (kể cả cùng 1 lệnh) — không ẩn mã đã nhập khỏi danh sách chọn,
+  // tổ trưởng tự quyết định nhập thêm dòng mới hay bấm Sửa dòng cũ.
+  const availOrders=ordRows;
   const lineBatchIds=[...new Set(lineRows.map(r=>r.order_batch_id).filter(Boolean))];
   const lineBatchCodes=lineBatchIds.length?Object.fromEntries((await q(SB.from("production_order_batches").select("id,code").in("id",lineBatchIds))).map(b=>[b.id,b.code])):{};
   const dupCodes=new Set(lineRows.map(r=>r.product_code).filter((c,i,a)=>a.indexOf(c)!==i));
@@ -1843,20 +1843,17 @@ function bindSx(){
     if(nums.f_op>0&&!$("#f_dop").value)return bad("f_dop","Chọn loại lỗi thao tác.");
     if(nums.f_sup>0&&!$("#f_dsup").value)return bad("f_dsup","Chọn loại lỗi nhà cung cấp.");
     if(nums.f_dt>0&&!$("#f_dtr").value)return bad("f_dtr","Chọn nguyên nhân dừng máy.");
-    // 1 mã có thể ở nhiều lệnh (GĐ16): chỉ chặn trùng khi đã có dòng CÙNG mã VÀ
-    // cùng lệnh (hoặc cùng "ngoài lệnh") — không chặn mã đã báo cáo ở lệnh khác.
+    // GĐ17 (theo yêu cầu 03/11): KHÔNG còn cảnh báo hay chặn nhập trùng mã —
+    // 1 mã được phép có nhiều dòng báo cáo riêng biệt trong cùng line/ngày
+    // (ví dụ sản xuất 2 lần). Tổ trưởng bấm "+ Thêm mã sản phẩm" để tạo dòng
+    // mới dù mã đó đã có dòng khác, hoặc bấm "Sửa" ở dòng cũ nếu muốn gộp.
     const newObid=SXF.manualProd?null:SXF.curBatchId??null;
-    if(SXF.edit==="new"){
-      let dupQ=SB.from("production_reports").select("id").eq("report_date",SXF.date).eq("line_id",SXF.line).eq("product_code",code);
-      dupQ=newObid==null?dupQ.is("order_batch_id",null):dupQ.eq("order_batch_id",newObid);
-      if((await q(dupQ)).length)return bad("f_prod",newObid==null?"Mã này đã có trong ngày (ngoài lệnh) – bấm Sửa ở dòng đó.":"Mã này đã có trong lệnh này rồi – bấm Sửa ở dòng đó.");
-    }
     $("#f_save").disabled=true;setMsg(m,"Đang lưu…");
     const obidVal=$("#f_obid").value;
     try{await rpc("save_prod_row",{d:SXF.date,p_line:SXF.line,p_product:code,p_plan:nums.f_plan,p_good:nums.f_good,p_ng_op:nums.f_op||0,p_ng_sup:nums.f_sup||0,
         p_defect_op:$("#f_dop").value?+$("#f_dop").value:null,p_defect_sup:$("#f_dsup").value?+$("#f_dsup").value:null,p_headcount:nums.f_hc||0,p_hours:nums.f_h??8,p_ot:nums.f_ot||0,
         p_downtime:nums.f_dt||0,p_dt_reason:$("#f_dtr").value||null,p_note:$("#f_note").value.trim()||null,
-        p_order_batch_id:SXF.edit==="new"?newObid:(obidVal?+obidVal:null)});
+        p_order_batch_id:SXF.edit==="new"?newObid:(obidVal?+obidVal:null),p_row_id:SXF.edit==="new"?null:SXF.edit});
       SXF.edit=null;toast("Đã lưu "+code);render()}
     catch(err){setMsg(m,sbErr(err),"bad");$("#f_save").disabled=false}});
 }
@@ -3291,3 +3288,5 @@ setInterval(()=>{if(RUN==="LIVE"&&ME)loadAlertsLive()},120000);
 (async()=>{if(SB){try{const{data}=await SB.auth.getSession();if(data&&data.session){RUN="LIVE";await afterLogin();return}}catch(e){}}showLogin()})();
 
 </script>
+</html>
+</html>
