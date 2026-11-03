@@ -1068,8 +1068,9 @@ async function viewAccounts(){
   <div class="card" style="margin-bottom:12px"><h3>Tạo tài khoản</h3>
    <form id="accForm" novalidate style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;align-items:end">
     <div class="fld"><label for="aName">Họ và tên</label><input id="aName" placeholder="Nguyễn Thị Sáng" autocomplete="off"><span class="small" id="aUser"></span></div>
-    <div class="fld"><label for="aPos">Vị trí</label><select id="aPos"><option value="">— Chọn vị trí —</option>${posOpts}</select></div>
     <div class="fld"><label for="aRole">Vai trò</label><select id="aRole"><option value="staff">Nhân viên</option><option value="head">Trưởng bộ phận</option><option value="admin">GĐNM (Admin)</option><option value="guest">Khách (chỉ xem Tổng quan nếu được tích quyền)</option></select></div>
+    <div class="fld" id="aPosWrap"><label for="aPos">Vị trí</label><select id="aPos"><option value="">— Chọn vị trí —</option>${posOpts}</select></div>
+    <div class="fld" id="aGuestWrap" hidden><label for="aGuestPos">Tên vị trí khách <span class="small">(vd: Khách – Công ty ABC)</span></label><input id="aGuestPos" placeholder="Khách – ..." autocomplete="off"></div>
     <div class="fld"><label for="aMgr">Quản lý trực tiếp</label><select id="aMgr"><option value="">—</option>${ps.filter(p=>p.status==="active"&&(p.role==="admin"||p.role==="head")).map(p=>`<option value="${p.id}">${esc(p.full_name)} – ${esc(posOf(p.position_id).name||"")}</option>`).join("")}</select></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn" type="submit" id="aBtn">Tạo tài khoản</button><span class="msg" id="aMsg" role="status"></span></div>
    </form></div>
@@ -1103,20 +1104,34 @@ async function viewAccounts(){
   <p class="small">Khóa tài khoản khi người dùng nghỉ việc: mất quyền ngay, lịch sử báo cáo giữ nguyên. Nếu đó là Trưởng bộ phận, vào Cấu hình → Trưởng bộ phận & kiêm nhiệm để chọn người kiêm nhiệm.</p>`;
 }
 function bindAccounts(){
-  const name=$("#aName"),pos=$("#aPos"),role=$("#aRole");
+  const name=$("#aName"),pos=$("#aPos"),role=$("#aRole"),guestName=$("#aGuestPos");
   name.oninput=()=>{const u=makeUsername(name.value);$("#aUser").textContent=u?"Tên đăng nhập dự kiến: "+u+" (trùng sẽ thêm số)":""};
-  pos.onchange=()=>{const p=REF.positions.find(x=>x.id===+pos.value);if(!p)return;
-    const dc=(REF.depts.find(d=>d.id===p.dept_id)||{}).code;
-    role.value=dc==="KHACH"?"guest":p.kind==="head"?"head":p.kind==="director"?"admin":"staff"};
-  $("#accForm").addEventListener("submit",async e=>{e.preventDefault();const m=$("#aMsg");[name,pos].forEach(x=>x.classList.remove("err"));
+  const toggleGuest=()=>{const g=role.value==="guest";$("#aPosWrap").hidden=g;$("#aGuestWrap").hidden=!g};
+  role.onchange=toggleGuest;toggleGuest();
+  pos.onchange=()=>{const p=REF.positions.find(x=>x.id===+pos.value);if(p&&role.value!=="guest")role.value=p.kind==="head"?"head":p.kind==="director"?"admin":"staff"};
+  $("#accForm").addEventListener("submit",async e=>{e.preventDefault();const m=$("#aMsg");[name,pos,guestName].forEach(x=>x.classList.remove("err"));
     if(name.value.trim().split(/\s+/).length<2){name.classList.add("err");m.className="msg bad";m.textContent="Nhập đủ họ và tên.";return}
-    if(!pos.value){pos.classList.add("err");m.className="msg bad";m.textContent="Chọn vị trí.";return}
-    const p=REF.positions.find(x=>x.id===+pos.value);if(role.value==="head"&&p.kind!=="head"){role.classList.add("err");m.className="msg bad";m.textContent="Vai trò Trưởng bộ phận phải chọn vị trí Trưởng bộ phận.";return}
-    const pDeptCode=(REF.depts.find(d=>d.id===p.dept_id)||{}).code;
-    if(role.value==="guest"&&pDeptCode!=="KHACH"){role.classList.add("err");m.className="msg bad";m.textContent="Vai trò Khách phải chọn vị trí \"Khách\" (phòng Khách / Đối tác).";return}
-    if(role.value!=="guest"&&pDeptCode==="KHACH"){role.classList.add("err");m.className="msg bad";m.textContent="Vị trí \"Khách\" chỉ dùng cho vai trò Khách.";return}
+    let positionId;
+    if(role.value==="guest"){
+      const gname=guestName.value.trim();
+      if(!gname){guestName.classList.add("err");m.className="msg bad";m.textContent="Nhập tên vị trí khách.";return}
+      const khDept=REF.depts.find(d=>d.code==="KHACH");
+      if(!khDept){m.className="msg bad";m.textContent="Chưa có phòng \"Khách / Đối tác\" — cần chạy supabase/24_tai_khoan_khach.sql trước.";return}
+      const existing=REF.positions.find(p=>p.dept_id===khDept.id&&p.name.trim().toLowerCase()===gname.toLowerCase());
+      if(existing)positionId=existing.id;
+      else{
+        $("#aBtn").disabled=true;m.className="msg";m.textContent="Đang tạo vị trí khách…";
+        try{const{data,error}=await SB.from("positions").insert({code:posCode(gname,"KHACH"),name:gname,dept_id:khDept.id,kind:"staff",report_code:null}).select("id").single();
+          if(error)throw error;positionId=data.id;REF=await api.ref()}
+        catch(err){m.className="msg bad";m.textContent=sbErr(err);$("#aBtn").disabled=false;return}
+      }
+    }else{
+      if(!pos.value){pos.classList.add("err");m.className="msg bad";m.textContent="Chọn vị trí.";return}
+      const p=REF.positions.find(x=>x.id===+pos.value);if(role.value==="head"&&p.kind!=="head"){role.classList.add("err");m.className="msg bad";m.textContent="Vai trò Trưởng bộ phận phải chọn vị trí Trưởng bộ phận.";return}
+      positionId=+pos.value;
+    }
     $("#aBtn").disabled=true;m.className="msg";m.textContent="Đang tạo…";
-    try{const r=await api.admin("create",{full_name:name.value.trim(),position_id:+pos.value,role:role.value,manager_id:$("#aMgr").value||null});
+    try{const r=await api.admin("create",{full_name:name.value.trim(),position_id:positionId,role:role.value,manager_id:$("#aMgr").value||null});
       ACC_SECRET={title:"Đã tạo tài khoản "+name.value.trim(),username:r.username,password:r.password};toast("Đã tạo tài khoản");render()}
     catch(err){m.className="msg bad";m.textContent=sbErr(err);$("#aBtn").disabled=false}});
   const bb=$("#bulkBtn");
@@ -3185,7 +3200,10 @@ const DEPT_MOD={SX:"sx",QAC:"qc",KHO:"kho",KHSX:"kh",KT:"kt",CD:"bt",KTGT:"gt",B
 const BUILT=["dash","sum","mydept","task","mine","daily","sx","qc","bt","kho","ns","bh","kh","5s","vd","kpi","kt","lich","acc","cfg"];
 function allowedMods(){
   if(!ME)return[];if(ME.role==="admin")return MODS.map(m=>m[0]).filter(k=>k!=="mydept");
-  if(ME.role==="guest")return ME.overview?["dash"]:[];
+  // "mydept" cố ý không cho Khách xem: màn này liệt kê DANH SÁCH TÀI KHOẢN cùng
+  // phòng ban — vì mọi tài khoản Khách đều dùng chung 1 phòng "Khách / Đối tác",
+  // cho xem sẽ lộ các khách khác (vd 2 đối tác khác nhau thấy tên/tài khoản nhau).
+  if(ME.role==="guest")return ME.overview?["dash","sum","task","mine","daily"]:[];
   const a=[];const approver=ME.role==="head"||(ME.approves_depts||[]).length;
   if(ME.overview||approver)a.push("dash");if(approver)a.push("sum","mydept","task");a.push("mine","daily");
   const dm=DEPT_MOD[ME.dept_code];if(dm)a.push(dm);
