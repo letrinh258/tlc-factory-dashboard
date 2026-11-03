@@ -1670,15 +1670,16 @@ async function loadAlertsLive(){
    GIAI ĐOẠN 5A – FORM A: BÁO CÁO SẢN XUẤT THEO LINE × MÃ SP × NGÀY
    Tổ trưởng nhập line mình · TBP SX / GĐNM nhập mọi line · khóa sau 23:59
    ============================================================ */
-const SXF={date:null,line:null,edit:null,assignOpen:false,unlockOpen:false,prodQ:"",manualProd:false,lsxPick:null};
+const SXF={date:null,line:null,edit:null,assignOpen:false,unlockOpen:false,prodQ:"",manualProd:false,lsxPick:null,offOpen:false};
 let SX_CACHE=null; // danh mục SP, loại lỗi, nguyên nhân dừng máy – tải 1 lần mỗi phiên
 async function sxCache(){
   if(SX_CACHE)return SX_CACHE;
   const page=(a,b)=>q(SB.from("products").select("code,name,norm_per_hour,is_semi,norm_manual,norm_updated_at").eq("active",true).order("code").range(a,b));
   const parts=[];for(let i=0;i<10;i++){const p=await page(i*1000,i*1000+999);parts.push(...p);if(p.length<1000)break}
-  const[def,dt]=await Promise.all([q(SB.from("defect_types").select("id,name,stage,source").eq("active",true).order("id")),
-    q(SB.from("app_settings").select("value").eq("key","downtime_reasons").maybeSingle())]);
-  SX_CACHE={prods:parts,byCode:Object.fromEntries(parts.map(p=>[p.code,p])),defects:def,dtReasons:(dt&&dt.value)||["Khác"]};
+  const[def,dt,lo]=await Promise.all([q(SB.from("defect_types").select("id,name,stage,source").eq("active",true).order("id")),
+    q(SB.from("app_settings").select("value").eq("key","downtime_reasons").maybeSingle()),
+    q(SB.from("app_settings").select("value").eq("key","line_off_reasons").maybeSingle())]);
+  SX_CACHE={prods:parts,byCode:Object.fromEntries(parts.map(p=>[p.code,p])),defects:def,dtReasons:(dt&&dt.value)||["Khác"],offReasons:(lo&&lo.value)||["Khác"]};
   return SX_CACHE;
 }
 const sxStd=()=>Number(CFG.stdProd)||32;
