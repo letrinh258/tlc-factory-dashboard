@@ -1753,7 +1753,7 @@ async function viewSx(){
   ${lineRows.map(r=>{const p=C.byCode[r.product_code]||{};const c=sxCalc(r,p.norm_per_hour);
     return `<tr><td><b class="mono">${esc(r.product_code)}</b><br><span class="small">${esc(p.name||"")}</span>${dupCodes.has(r.product_code)?`<br><span class="pill p-none">${r.order_batch_id?esc(lineBatchCodes[r.order_batch_id]||"lệnh #"+r.order_batch_id):"ngoài lệnh"}</span>`:""}</td><td class="num">${r.plan_qty==null?"—":fmt(r.plan_qty)}</td><td class="num">${fmt(r.good_qty)}${c.kh!=null?"<br>"+sxPill("out",c.kh,1,fmt(c.kh,0)+"%"):""}</td>
       <td class="num">${fmt(r.ng_op)}${r.ng_op?`<br><span class="small">${esc(defName(r.defect_op))}</span>`:""}</td><td class="num">${fmt(r.ng_sup)}${r.ng_sup?`<br><span class="small">${esc(defName(r.defect_sup))}</span>`:""}</td>
-      <td class="num">${fmt(r.headcount)} × ${fmt(+r.hours+ +r.ot_hours,1)}h${+r.ot_hours?`<br><span class="small">TC ${fmt(r.ot_hours,1)}h</span>`:""}</td>
+      <td class="num">${fmt(r.headcount)} × ${fmt(+r.hours+ +r.ot_hours,1)}h${r.start_time&&r.end_time?`<br><span class="small">${esc(r.start_time.slice(0,5))}–${esc(r.end_time.slice(0,5))}${r.break_min?" (nghỉ "+fmt(r.break_min)+"p)":""}</span>`:+r.ot_hours?`<br><span class="small">TC ${fmt(r.ot_hours,1)}h</span>`:""}</td>
       <td class="num">${c.act==null?"—":fmt(c.act,1)+" / "+fmt(p.norm_per_hour||sxStd())}${c.ns!=null?"<br>"+sxPill("prod",c.ns,1,fmt(c.ns,0)+"%"):""}${c.noNorm?' <span class="pill p-warn">thiếu ĐM</span>':""}</td>
       <td class="num">${r.downtime_min?fmt(r.downtime_min)+"'<br><span class='small'>"+esc(r.downtime_reason||"")+"</span>":"—"}</td><td>${esc(r.note||"")}</td>
       ${canEdit?`<td style="white-space:nowrap"><button class="btn ghost" type="button" data-sxedit="${r.id}" style="padding:3px 9px">Sửa</button> <button class="btn ghost" type="button" data-sxdel="${r.id}" style="padding:3px 9px;color:var(--bad)">${SXF.del===r.id?"Xác nhận xóa?":"Xóa"}</button></td>`:""}</tr>`}).join("")||`<tr><td colspan="10"><div class="empty">Chưa có dòng nào cho ${esc(lineName(L))} ngày ${dmyS(D)}</div></td></tr>`}
@@ -1772,8 +1772,9 @@ async function viewSx(){
     <div class="fld"><label for="f_plan">SL kế hoạch</label><input id="f_plan" inputmode="numeric" value="${ed.plan_qty??""}" placeholder="theo KHSX"></div>
     <div class="fld"><label for="f_good">SL đạt</label><input id="f_good" inputmode="numeric" value="${ed.good_qty??""}"></div>
     <div class="fld"><label for="f_hc">Số người</label><input id="f_hc" inputmode="decimal" value="${ed.headcount??""}"></div>
-    <div class="fld"><label for="f_h">Giờ hành chính</label><input id="f_h" inputmode="decimal" value="${ed.hours??8}"></div>
-    <div class="fld"><label for="f_ot">Giờ tăng ca</label><input id="f_ot" inputmode="decimal" value="${ed.ot_hours??0}"></div>
+    <div class="fld"><label for="f_start">Giờ bắt đầu</label><input id="f_start" type="time" value="${esc((ed.start_time||"").slice(0,5))}"></div>
+    <div class="fld"><label for="f_end">Giờ kết thúc</label><input id="f_end" type="time" value="${esc((ed.end_time||"").slice(0,5))}"></div>
+    <div class="fld"><label for="f_break">Giờ nghỉ (phút)</label><input id="f_break" inputmode="numeric" value="${ed.break_min??0}"></div>
     <div class="fld"><label for="f_op">NG thao tác</label><input id="f_op" inputmode="numeric" value="${ed.ng_op??0}"></div>
     <div class="fld"><label for="f_dop">Loại lỗi thao tác</label><select id="f_dop">${defOpt("op",ed.defect_op)}</select></div>
     <div class="fld"><label for="f_sup">NG nhà cung cấp</label><input id="f_sup" inputmode="numeric" value="${ed.ng_sup??0}"></div>
@@ -1823,11 +1824,15 @@ function bindSx(){
   const cc=$("#f_cancel");if(cc)cc.onclick=()=>{SXF.edit=null;render()};
   const f=$("#sxForm");if(!f)return;
   const val=id=>numOrNull($("#"+id).value);
+  const toMin=t=>{if(!t||!/^\d{1,2}:\d{2}/.test(t))return null;const[h,mi]=t.split(":").map(Number);return h*60+mi};
+  const workMin=()=>{const sm=toMin($("#f_start")?.value),em0=toMin($("#f_end")?.value);if(sm==null||em0==null)return null;let em=em0;if(em<=sm)em+=24*60;return em-sm-(val("f_break")||0)};
   const info=()=>{const fpEl=$("#f_prod");if(!fpEl)return;const c=(fpEl.value||"").trim();const p=SX_CACHE.byCode[c];
     $("#f_prodInfo").innerHTML=p?`${esc(p.name)} · định mức <b>${p.norm_per_hour?fmt(p.norm_per_hour)+" sp/người/giờ":"chưa có – tạm dùng "+sxStd()}</b>`:c?'<span style="color:var(--bad)">Không có mã này trong danh mục</span>':"";
-    const r={good_qty:val("f_good")||0,ng_op:val("f_op")||0,ng_sup:val("f_sup")||0,headcount:val("f_hc")||0,hours:val("f_h")||0,ot_hours:val("f_ot")||0,plan_qty:val("f_plan")};
+    const wm=workMin();
+    const r={good_qty:val("f_good")||0,ng_op:val("f_op")||0,ng_sup:val("f_sup")||0,headcount:val("f_hc")||0,hours:wm!=null&&wm>0?wm/60:0,ot_hours:0,plan_qty:val("f_plan")};
     const k=sxCalc(r,p&&p.norm_per_hour);
-    $("#f_calc").innerHTML=k.mh?`Tự tính: năng suất <b>${fmt(k.act,1)}</b> sp/người/giờ = <b>${fmt(k.ns,0)}%</b> định mức${k.kh!=null?` · đạt <b>${fmt(k.kh,0)}%</b> kế hoạch`:""}${k.op!=null?` · NG thao tác <b>${fmt(k.op,2)}%</b> · NG NCC <b>${fmt(k.sup,2)}%</b>`:""}`:"Nhập số người và giờ để tự tính năng suất."};
+    const ghi=wm!=null?(wm>0?` · giờ công <b>${fmt(wm/60,1)}h</b> (kết thúc − bắt đầu − nghỉ)`:wm<=0?' · <span style="color:var(--bad)">Giờ nghỉ ≥ thời gian làm việc</span>':""):"";
+    $("#f_calc").innerHTML=(k.mh?`Tự tính: năng suất <b>${fmt(k.act,1)}</b> sp/người/giờ = <b>${fmt(k.ns,0)}%</b> định mức${k.kh!=null?` · đạt <b>${fmt(k.kh,0)}%</b> kế hoạch`:""}${k.op!=null?` · NG thao tác <b>${fmt(k.op,2)}%</b> · NG NCC <b>${fmt(k.sup,2)}%</b>`:""}`:"Nhập giờ bắt đầu/kết thúc và số người để tự tính năng suất.")+ghi};
   f.querySelectorAll("input").forEach(i=>i.addEventListener("input",info));
   const fpSel=$("#f_prod");
   if(fpSel&&fpSel.tagName==="SELECT")fpSel.addEventListener("change",()=>{const o=fpSel.selectedOptions[0];if(o&&o.dataset.plan!=null)$("#f_plan").value=o.dataset.plan;info()});
@@ -1836,10 +1841,15 @@ function bindSx(){
     const bad=(id,t)=>{const el=$("#"+id);if(el)el.classList.add("err");setMsg(m,t,"bad")};
     const fpEl=$("#f_prod");if(!fpEl)return setMsg(m,"Chọn lệnh sản xuất trước.","bad");
     const code=fpEl.value.trim();if(!SX_CACHE.byCode[code])return bad("f_prod","Chọn mã sản phẩm có trong danh mục.");
-    const nums={f_plan:val("f_plan"),f_good:val("f_good"),f_hc:val("f_hc"),f_h:val("f_h"),f_ot:val("f_ot"),f_op:val("f_op"),f_sup:val("f_sup"),f_dt:val("f_dt")};
+    const nums={f_plan:val("f_plan"),f_good:val("f_good"),f_hc:val("f_hc"),f_break:val("f_break"),f_op:val("f_op"),f_sup:val("f_sup"),f_dt:val("f_dt")};
     for(const[k,v]of Object.entries(nums))if(Number.isNaN(v)||(v!=null&&v<0))return bad(k,"Nhập số không âm.");
     if(nums.f_good==null)return bad("f_good","Nhập SL đạt (không có thì ghi 0).");
     if((nums.f_good+(nums.f_op||0)+(nums.f_sup||0))>0&&!(nums.f_hc>0))return bad("f_hc","Nhập số người làm.");
+    const startV=$("#f_start").value,endV=$("#f_end").value;
+    if(!startV)return bad("f_start","Nhập giờ bắt đầu.");
+    if(!endV)return bad("f_end","Nhập giờ kết thúc.");
+    const wm=workMin();if(wm==null||wm<=0)return bad("f_break","Giờ nghỉ phải nhỏ hơn thời gian làm việc (Kết thúc − Bắt đầu).");
+    if(wm>16*60)return bad("f_end","Thời gian làm việc sau khi trừ giờ nghỉ không quá 16 giờ.");
     if(nums.f_op>0&&!$("#f_dop").value)return bad("f_dop","Chọn loại lỗi thao tác.");
     if(nums.f_sup>0&&!$("#f_dsup").value)return bad("f_dsup","Chọn loại lỗi nhà cung cấp.");
     if(nums.f_dt>0&&!$("#f_dtr").value)return bad("f_dtr","Chọn nguyên nhân dừng máy.");
@@ -1851,7 +1861,8 @@ function bindSx(){
     $("#f_save").disabled=true;setMsg(m,"Đang lưu…");
     const obidVal=$("#f_obid").value;
     try{await rpc("save_prod_row",{d:SXF.date,p_line:SXF.line,p_product:code,p_plan:nums.f_plan,p_good:nums.f_good,p_ng_op:nums.f_op||0,p_ng_sup:nums.f_sup||0,
-        p_defect_op:$("#f_dop").value?+$("#f_dop").value:null,p_defect_sup:$("#f_dsup").value?+$("#f_dsup").value:null,p_headcount:nums.f_hc||0,p_hours:nums.f_h??8,p_ot:nums.f_ot||0,
+        p_defect_op:$("#f_dop").value?+$("#f_dop").value:null,p_defect_sup:$("#f_dsup").value?+$("#f_dsup").value:null,p_headcount:nums.f_hc||0,
+        p_start_time:startV,p_end_time:endV,p_break_min:nums.f_break||0,
         p_downtime:nums.f_dt||0,p_dt_reason:$("#f_dtr").value||null,p_note:$("#f_note").value.trim()||null,
         p_order_batch_id:SXF.edit==="new"?newObid:(obidVal?+obidVal:null),p_row_id:SXF.edit==="new"?null:SXF.edit});
       SXF.edit=null;toast("Đã lưu "+code);render()}
