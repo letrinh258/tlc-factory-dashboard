@@ -59,7 +59,7 @@ Deno.serve(async (req) => {
       case "create": {
         const full_name = String(body.full_name ?? "").trim().replace(/\s+/g, " ");
         const position_id = Number(body.position_id);
-        const role = ["admin", "head", "staff"].includes(body.role) ? body.role : "staff";
+        const role = ["admin", "head", "staff", "guest"].includes(body.role) ? body.role : "staff";
         if (full_name.split(" ").length < 2) return json({ error: "Nhập đủ họ và tên (ít nhất 2 từ)" }, 400);
         const { data: pos } = await admin.from("positions").select("id, dept_id, kind").eq("id", position_id).single();
         if (!pos) return json({ error: "Vị trí không tồn tại" }, 400);
@@ -108,7 +108,7 @@ Deno.serve(async (req) => {
           if (!pos) return json({ error: "Vị trí không tồn tại" }, 400);
           patch.position_id = pos.id; patch.dept_id = pos.dept_id;
         }
-        if (body.role && ["admin", "head", "staff"].includes(body.role)) patch.role = body.role;
+        if (body.role && ["admin", "head", "staff", "guest"].includes(body.role)) patch.role = body.role;
         if ("manager_id" in body) patch.manager_id = body.manager_id || null;
         if (body.id === me.id && patch.role && patch.role !== "admin") return json({ error: "Không tự hạ quyền GĐNM của mình" }, 400);
         const { error } = await admin.from("profiles").update(patch).eq("id", body.id);
