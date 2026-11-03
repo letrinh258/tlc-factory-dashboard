@@ -1650,7 +1650,8 @@ async function loadAlertsLive(){
    GIAI ĐOẠN 5A – FORM A: BÁO CÁO SẢN XUẤT THEO LINE × MÃ SP × NGÀY
    Tổ trưởng nhập line mình · TBP SX / GĐNM nhập mọi line · khóa sau 23:59
    ============================================================ */
-const SXF={date:null,line:null,edit:null,assignOpen:false,unlockOpen:false,prodQ:"",manualProd:false,lsxPick:null};
+const SXF={date:null,line:null,edit:null,assignOpen:false,unlockOpen:false,prodQ:"",manualProd:false,lsxPick:null,defOp:null,defSup:null,_defsByReport:{}};
+const pad4=a=>{const r=(a||[]).slice(0,4).map(x=>({name:x.name||"",qty:x.qty??""}));while(r.length<4)r.push({name:"",qty:""});return r};
 let SX_CACHE=null; // danh mục SP, loại lỗi, nguyên nhân dừng máy – tải 1 lần mỗi phiên
 async function sxCache(){
   if(SX_CACHE)return SX_CACHE;
@@ -1677,6 +1678,9 @@ async function viewSx(){
   const[C,mine,st,rows,unl]=await Promise.all([sxCache(),rpc("my_lines"),rpc("prod_line_status",{d:D}),
     q(SB.from("production_reports").select("*").eq("report_date",D).order("line_id").order("id")),
     q(SB.from("report_unlocks").select("report_code,until_at").like("report_code","LINE-%").eq("report_date",D).gt("until_at",new Date().toISOString()))]);
+  const defRows=rows.length?await q(SB.from("production_defects").select("report_id,source,defect_name,qty").in("report_id",rows.map(r=>r.id))):[];
+  const defsByReport={};defRows.forEach(x=>{(defsByReport[x.report_id]=defsByReport[x.report_id]||{op:[],sup:[]})[x.source].push(x)});
+  SXF._defsByReport=defsByReport;
   const myL=(mine||[]).map(Number);const isAdmin=ME.role==="admin";const manager=isAdmin||ME.dept_code==="SX"&&ME.role==="head"||myL.length>=10;
   if(!SXF.line||!(myL.includes(SXF.line)||manager))SXF.line=myL[0]||(st[0]||{}).line_id||1;
   const L=SXF.line;const canEdit=myL.includes(L)&&(D===today||unl.some(u=>u.report_code==="LINE-"+L));
@@ -1692,8 +1696,9 @@ async function viewSx(){
   const ordRows=lsxBatch?(lsxBatch.production_orders||[]).slice().sort((a,b)=>a.item_code<b.item_code?-1:a.item_code>b.item_code?1:0):[];
   const usedCodes=new Set(lineRows.map(r=>r.product_code));
   const availOrders=ordRows.filter(o=>!usedCodes.has(o.item_code));
-  const defOpt=(src,v)=>`<option value="">— Chọn loại lỗi —</option>`+C.defects.filter(d=>d.source===src).map(d=>`<option value="${d.id}" ${+v===d.id?"selected":""}>${esc(d.name)} · ${esc(d.stage)}</option>`).join("");
-  const defName=id=>(C.defects.find(d=>d.id===id)||{}).name||"";
+  const defTxt=(id,src)=>{const d=(defsByReport[id]||{op:[],sup:[]})[src];return d.length?d.map(x=>esc(x.defect_name)+": "+x.qty).join("; "):""};
+  if(SXF.edit==="new"&&!SXF.defOp){SXF.defOp=pad4([]);SXF.defSup=pad4([])}
+  if(typeof SXF.edit==="number"&&!SXF.defOp){const d=defsByReport[SXF.edit]||{op:[],sup:[]};SXF.defOp=pad4(d.op.map(x=>({name:x.defect_name,qty:x.qty})));SXF.defSup=pad4(d.sup.map(x=>({name:x.defect_name,qty:x.qty})))}
   const NS=s=>s.man_hours?s.std_hours/s.man_hours*100:null;
   return `<h2 class="sec" style="margin-top:0">Sản xuất – Báo cáo theo line <small>Form A · line × mã sản phẩm × ngày · tổ trưởng nhập cuối ca, trước ${esc(CFG.cutoff||"17:30")}</small></h2>
   <div class="fbar" style="position:static">
@@ -1725,7 +1730,7 @@ async function viewSx(){
   <div class="tbl"><table><tr><th>Mã SP</th><th class="num">KH</th><th class="num">Đạt</th><th class="num">NG thao tác</th><th class="num">NG NCC</th><th class="num">Người × giờ</th><th class="num">NS thực / ĐM</th><th class="num">Dừng máy</th><th>Ghi chú</th>${canEdit?"<th></th>":""}</tr>
   ${lineRows.map(r=>{const p=C.byCode[r.product_code]||{};const c=sxCalc(r,p.norm_per_hour);
     return `<tr><td><b class="mono">${esc(r.product_code)}</b><br><span class="small">${esc(p.name||"")}</span></td><td class="num">${r.plan_qty==null?"—":fmt(r.plan_qty)}</td><td class="num">${fmt(r.good_qty)}${c.kh!=null?"<br>"+sxPill("out",c.kh,1,fmt(c.kh,0)+"%"):""}</td>
-      <td class="num">${fmt(r.ng_op)}${r.ng_op?`<br><span class="small">${esc(defName(r.defect_op))}</span>`:""}</td><td class="num">${fmt(r.ng_sup)}${r.ng_sup?`<br><span class="small">${esc(defName(r.defect_sup))}</span>`:""}</td>
+      <td class="num">${fmt(r.ng_op)}${r.ng_op?`<br><span class="small">${defTxt(r.id,"op")}</span>`:""}</td><td class="num">${fmt(r.ng_sup)}${r.ng_sup?`<br><span class="small">${defTxt(r.id,"sup")}</span>`:""}</td>
       <td class="num">${fmt(r.headcount)} × ${fmt(+r.hours+ +r.ot_hours,1)}h${+r.ot_hours?`<br><span class="small">TC ${fmt(r.ot_hours,1)}h</span>`:""}</td>
       <td class="num">${c.act==null?"—":fmt(c.act,1)+" / "+fmt(p.norm_per_hour||sxStd())}${c.ns!=null?"<br>"+sxPill("prod",c.ns,1,fmt(c.ns,0)+"%"):""}${c.noNorm?' <span class="pill p-warn">thiếu ĐM</span>':""}</td>
       <td class="num">${r.downtime_min?fmt(r.downtime_min)+"'<br><span class='small'>"+esc(r.downtime_reason||"")+"</span>":"—"}</td><td>${esc(r.note||"")}</td>
@@ -1747,10 +1752,14 @@ async function viewSx(){
     <div class="fld"><label for="f_hc">Số người</label><input id="f_hc" inputmode="decimal" value="${ed.headcount??""}"></div>
     <div class="fld"><label for="f_h">Giờ hành chính</label><input id="f_h" inputmode="decimal" value="${ed.hours??8}"></div>
     <div class="fld"><label for="f_ot">Giờ tăng ca</label><input id="f_ot" inputmode="decimal" value="${ed.ot_hours??0}"></div>
-    <div class="fld"><label for="f_op">NG thao tác</label><input id="f_op" inputmode="numeric" value="${ed.ng_op??0}"></div>
-    <div class="fld"><label for="f_dop">Loại lỗi thao tác</label><select id="f_dop">${defOpt("op",ed.defect_op)}</select></div>
-    <div class="fld"><label for="f_sup">NG nhà cung cấp</label><input id="f_sup" inputmode="numeric" value="${ed.ng_sup??0}"></div>
-    <div class="fld"><label for="f_dsup">Loại lỗi NCC</label><select id="f_dsup">${defOpt("sup",ed.defect_sup)}</select></div>
+    <div class="fld" style="grid-column:1/-1"><label>NG thao tác <span class="small" id="f_opTotal">(tổng ${fmt(SXF.defOp.reduce((a,x)=>a+(+x.qty||0),0))})</span></label>
+     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px">
+     ${[0,1,2,3].map(i=>`<div style="display:flex;gap:6px"><input id="f_opn${i}" placeholder="Tên lỗi thao tác" value="${esc(SXF.defOp[i].name)}" style="flex:1"><input id="f_opq${i}" inputmode="numeric" placeholder="SL" value="${esc(SXF.defOp[i].qty)}" style="width:70px"></div>`).join("")}
+     </div></div>
+    <div class="fld" style="grid-column:1/-1"><label>NG nhà cung cấp <span class="small" id="f_supTotal">(tổng ${fmt(SXF.defSup.reduce((a,x)=>a+(+x.qty||0),0))})</span></label>
+     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px">
+     ${[0,1,2,3].map(i=>`<div style="display:flex;gap:6px"><input id="f_supn${i}" placeholder="Tên lỗi NCC" value="${esc(SXF.defSup[i].name)}" style="flex:1"><input id="f_supq${i}" inputmode="numeric" placeholder="SL" value="${esc(SXF.defSup[i].qty)}" style="width:70px"></div>`).join("")}
+     </div></div>
     <div class="fld"><label for="f_dt">Dừng máy (phút)</label><input id="f_dt" inputmode="numeric" value="${ed.downtime_min??0}"></div>
     <div class="fld"><label for="f_dtr">Nguyên nhân dừng máy</label><select id="f_dtr"><option value="">—</option>${opt(C.dtReasons,ed.downtime_reason)}</select></div>
     <div class="fld" style="grid-column:1/-1"><label for="f_note">Ghi chú</label><input id="f_note" value="${esc(ed.note||"")}"></div>
@@ -1784,20 +1793,25 @@ function bindSx(){
   const ub=$("#sxUnlockBtn");if(ub)ub.onclick=()=>{SXF.unlockOpen=!SXF.unlockOpen;render()};
   const ug=$("#sxUlGo");if(ug)ug.onclick=async()=>{const h=+$("#sxUlH").value||4,r=$("#sxUlR").value.trim();if(r.length<3){setMsg("sxUlMsg","Ghi lý do mở khóa","bad");return}
     try{await rpc("unlock_report",{p_code:"LINE-"+SXF.line,p_date:SXF.date,p_hours:h,p_reason:r});SXF.unlockOpen=false;toast("Đã mở khóa");render()}catch(e){setMsg("sxUlMsg",sbErr(e),"bad")}};
-  const nb=$("#sxNew");if(nb)nb.onclick=()=>{SXF.edit="new";SXF.manualProd=false;SXF.lsxPick=null;render().then(()=>{const f=$("#f_prod")||$("#f_lsxPick");if(f)f.focus()})};
+  const nb=$("#sxNew");if(nb)nb.onclick=()=>{SXF.edit="new";SXF.defOp=pad4([]);SXF.defSup=pad4([]);SXF.manualProd=false;SXF.lsxPick=null;render().then(()=>{const f=$("#f_prod")||$("#f_lsxPick");if(f)f.focus()})};
   const mb=$("#f_manualBtn");if(mb)mb.onclick=()=>{SXF.manualProd=true;render().then(()=>{const f=$("#f_prod");if(f)f.focus()})};
   const bb=$("#f_backBtn");if(bb)bb.onclick=()=>{SXF.manualProd=false;render()};
   const lp=$("#f_lsxPick");if(lp)lp.onchange=()=>{SXF.lsxPick=lp.value?+lp.value:null;render()};
   const lbb=$("#f_lsxBackBtn");if(lbb)lbb.onclick=()=>{SXF.lsxPick=null;render()};
-  document.querySelectorAll("[data-sxedit]").forEach(b=>b.onclick=()=>{SXF.edit=+b.dataset.sxedit;render()});
+  document.querySelectorAll("[data-sxedit]").forEach(b=>b.onclick=()=>{const id=+b.dataset.sxedit;SXF.edit=id;
+    const d=(SXF._defsByReport||{})[id]||{op:[],sup:[]};SXF.defOp=pad4(d.op.map(x=>({name:x.defect_name,qty:x.qty})));SXF.defSup=pad4(d.sup.map(x=>({name:x.defect_name,qty:x.qty})));render()});
   document.querySelectorAll("[data-sxdel]").forEach(b=>b.onclick=async()=>{const id=+b.dataset.sxdel;if(SXF.del!==id){SXF.del=id;render();return}
     try{await rpc("delete_prod_row",{p_id:id});SXF.del=null;toast("Đã xóa dòng");render()}catch(e){toast(sbErr(e))}});
-  const cc=$("#f_cancel");if(cc)cc.onclick=()=>{SXF.edit=null;render()};
+  const cc=$("#f_cancel");if(cc)cc.onclick=()=>{SXF.edit=null;SXF.defOp=null;SXF.defSup=null;render()};
   const f=$("#sxForm");if(!f)return;
   const val=id=>numOrNull($("#"+id).value);
+  const readDefs=prefix=>{const out=[];for(let i=0;i<4;i++){const nEl=$("#"+prefix+"n"+i),qEl=$("#"+prefix+"q"+i);if(!nEl)continue;out.push({name:(nEl.value||"").trim(),qtyRaw:qEl.value})}return out};
+  const defsTotal=prefix=>readDefs(prefix).reduce((a,x)=>a+(x.qtyRaw===""?0:(+x.qtyRaw||0)),0);
   const info=()=>{const fpEl=$("#f_prod");if(!fpEl)return;const c=(fpEl.value||"").trim();const p=SX_CACHE.byCode[c];
     $("#f_prodInfo").innerHTML=p?`${esc(p.name)} · định mức <b>${p.norm_per_hour?fmt(p.norm_per_hour)+" sp/người/giờ":"chưa có – tạm dùng "+sxStd()}</b>`:c?'<span style="color:var(--bad)">Không có mã này trong danh mục</span>':"";
-    const r={good_qty:val("f_good")||0,ng_op:val("f_op")||0,ng_sup:val("f_sup")||0,headcount:val("f_hc")||0,hours:val("f_h")||0,ot_hours:val("f_ot")||0,plan_qty:val("f_plan")};
+    const opT=defsTotal("f_op"),supT=defsTotal("f_sup");
+    const to=$("#f_opTotal");if(to)to.textContent="(tổng "+fmt(opT)+")";const ts=$("#f_supTotal");if(ts)ts.textContent="(tổng "+fmt(supT)+")";
+    const r={good_qty:val("f_good")||0,ng_op:opT,ng_sup:supT,headcount:val("f_hc")||0,hours:val("f_h")||0,ot_hours:val("f_ot")||0,plan_qty:val("f_plan")};
     const k=sxCalc(r,p&&p.norm_per_hour);
     $("#f_calc").innerHTML=k.mh?`Tự tính: năng suất <b>${fmt(k.act,1)}</b> sp/người/giờ = <b>${fmt(k.ns,0)}%</b> định mức${k.kh!=null?` · đạt <b>${fmt(k.kh,0)}%</b> kế hoạch`:""}${k.op!=null?` · NG thao tác <b>${fmt(k.op,2)}%</b> · NG NCC <b>${fmt(k.sup,2)}%</b>`:""}`:"Nhập số người và giờ để tự tính năng suất."};
   f.querySelectorAll("input").forEach(i=>i.addEventListener("input",info));
@@ -1808,19 +1822,25 @@ function bindSx(){
     const bad=(id,t)=>{const el=$("#"+id);if(el)el.classList.add("err");setMsg(m,t,"bad")};
     const fpEl=$("#f_prod");if(!fpEl)return setMsg(m,"Chọn lệnh sản xuất trước.","bad");
     const code=fpEl.value.trim();if(!SX_CACHE.byCode[code])return bad("f_prod","Chọn mã sản phẩm có trong danh mục.");
-    const nums={f_plan:val("f_plan"),f_good:val("f_good"),f_hc:val("f_hc"),f_h:val("f_h"),f_ot:val("f_ot"),f_op:val("f_op"),f_sup:val("f_sup"),f_dt:val("f_dt")};
+    const nums={f_plan:val("f_plan"),f_good:val("f_good"),f_hc:val("f_hc"),f_h:val("f_h"),f_ot:val("f_ot"),f_dt:val("f_dt")};
     for(const[k,v]of Object.entries(nums))if(Number.isNaN(v)||(v!=null&&v<0))return bad(k,"Nhập số không âm.");
     if(nums.f_good==null)return bad("f_good","Nhập SL đạt (không có thì ghi 0).");
-    if((nums.f_good+(nums.f_op||0)+(nums.f_sup||0))>0&&!(nums.f_hc>0))return bad("f_hc","Nhập số người làm.");
-    if(nums.f_op>0&&!$("#f_dop").value)return bad("f_dop","Chọn loại lỗi thao tác.");
-    if(nums.f_sup>0&&!$("#f_dsup").value)return bad("f_dsup","Chọn loại lỗi nhà cung cấp.");
+    const buildDefs=(prefix,label)=>{const out=[];for(let i=0;i<4;i++){const name=($("#"+prefix+"n"+i).value||"").trim();const qRaw=$("#"+prefix+"q"+i).value;const qty=qRaw===""?null:+qRaw;
+      if(!name&&qty==null)continue;
+      if(!name)throw{id:prefix+"n"+i,msg:"Nhập tên lỗi "+label+" dòng "+(i+1)+"."};
+      if(!(qty>0)||!Number.isInteger(qty))throw{id:prefix+"q"+i,msg:"Số lượng lỗi "+label+" dòng "+(i+1)+" phải là số nguyên > 0."};
+      out.push({name,qty})}return out};
+    let defsOp,defsSup;
+    try{defsOp=buildDefs("f_op","thao tác");defsSup=buildDefs("f_sup","NCC")}catch(err){return bad(err.id,err.msg)}
+    const ngOp=defsOp.reduce((a,x)=>a+x.qty,0),ngSup=defsSup.reduce((a,x)=>a+x.qty,0);
+    if((nums.f_good+ngOp+ngSup)>0&&!(nums.f_hc>0))return bad("f_hc","Nhập số người làm.");
     if(nums.f_dt>0&&!$("#f_dtr").value)return bad("f_dtr","Chọn nguyên nhân dừng máy.");
     if(SXF.edit==="new"&&(await q(SB.from("production_reports").select("id").eq("report_date",SXF.date).eq("line_id",SXF.line).eq("product_code",code))).length)return bad("f_prod","Mã này đã có trong ngày – bấm Sửa ở dòng đó.");
     $("#f_save").disabled=true;setMsg(m,"Đang lưu…");
-    try{await rpc("save_prod_row",{d:SXF.date,p_line:SXF.line,p_product:code,p_plan:nums.f_plan,p_good:nums.f_good,p_ng_op:nums.f_op||0,p_ng_sup:nums.f_sup||0,
-        p_defect_op:$("#f_dop").value?+$("#f_dop").value:null,p_defect_sup:$("#f_dsup").value?+$("#f_dsup").value:null,p_headcount:nums.f_hc||0,p_hours:nums.f_h??8,p_ot:nums.f_ot||0,
+    try{await rpc("save_prod_row",{d:SXF.date,p_line:SXF.line,p_product:code,p_plan:nums.f_plan,p_good:nums.f_good,
+        p_defects_op:defsOp,p_defects_sup:defsSup,p_headcount:nums.f_hc||0,p_hours:nums.f_h??8,p_ot:nums.f_ot||0,
         p_downtime:nums.f_dt||0,p_dt_reason:$("#f_dtr").value||null,p_note:$("#f_note").value.trim()||null});
-      SXF.edit=null;toast("Đã lưu "+code);render()}
+      SXF.edit=null;SXF.defOp=null;SXF.defSup=null;toast("Đã lưu "+code);render()}
     catch(err){setMsg(m,sbErr(err),"bad");$("#f_save").disabled=false}});
 }
 /* ============================================================
