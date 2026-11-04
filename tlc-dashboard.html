@@ -1,4 +1,4 @@
-<!doctype html><html lang="vi">
+<!doctype html><html lang="vi"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>TLC Factory Dashboard</title>
 <meta name="claude:viewport-fit-sides" content="cover">
@@ -1973,7 +1973,7 @@ function bindSx(){
    GIAI ĐOẠN 5B – ĐỊNH MỨC TRONG CẤU HÌNH · FORM QAC / CƠ ĐIỆN / KHO / HCNS · ĐỐI CHIẾU
    ============================================================ */
 /* ---------- Cấu hình → Định mức năng suất ---------- */
-const NM={q:"",f:"all",page:0,dirty:{},bulkOpen:false,note:""};
+const NM={q:"",f:"all",page:0,dirty:{},bulkOpen:false,note:"",addOpen:false};
 async function viewNorms(){
   if(RUN!=="LIVE")return `<div class="ph-card">Định mức lưu trên máy chủ. Dùng bản chạy thật để thiết lập.</div>`;
   const C=await sxCache();const hist=await q(SB.from("norm_changes").select("product_code,old_norm,new_norm,note,changed_at").order("changed_at",{ascending:false}).limit(15));
@@ -1986,10 +1986,19 @@ async function viewNorms(){
   return `<p class="small" style="margin:0 0 10px">Định mức năng suất (sp/người/giờ) dùng để tính năng suất theo từng mã ở Form A và Dashboard. Số anh sửa ở đây được giữ nguyên khi nạp lại dữ liệu Bravo. Để trống = dùng định mức mặc định <b>${fmt(sxStd())}</b> (sửa ở tab Line & quy tắc).</p>
   <div class="tools"><input id="nmQ" type="search" placeholder="Tìm mã hoặc tên sản phẩm" value="${esc(NM.q)}" style="flex:1;min-width:180px" aria-label="Tìm sản phẩm">
    <div class="seg" role="tablist">${[["all","Tất cả"],["missing","Thiếu định mức"],["odd","Định mức bất thường"],["manual","Đã sửa tay"]].map(([k,n])=>`<button type="button" data-nmf="${k}" aria-pressed="${NM.f===k}">${n} (${fmt(cnt[k])})</button>`).join("")}</div>
-   <button class="btn ghost" type="button" id="nmBulkBtn">Dán nhiều dòng</button></div>
+   <button class="btn ghost" type="button" id="nmBulkBtn">Dán nhiều dòng</button>
+   <button class="btn ghost" type="button" id="nmAddBtn">+ Thêm mã mới</button></div>
   ${NM.bulkOpen?`<div class="card" style="margin-bottom:10px"><h3>Dán định mức từ Excel <small>2 cột: Mã sản phẩm · Định mức. Mỗi dòng 1 mã</small></h3>
     <textarea id="nmBulk" rows="6" style="width:100%;box-sizing:border-box;font-family:var(--mono,monospace)" placeholder="TLC-AMC-VV-07W-04	150&#10;TLACB/12W04	40"></textarea>
     <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap"><input id="nmBulkNote" placeholder="Lý do thay đổi (bắt buộc)" style="flex:1;min-width:200px"><button class="btn" type="button" id="nmBulkGo">Lưu các dòng đã dán</button><span class="msg" id="nmBulkMsg"></span></div></div>`:""}
+  ${NM.addOpen?`<div class="card" style="margin-bottom:10px"><h3>Thêm mã sản phẩm mới <small>Gõ tay toàn bộ — không có gợi ý tự điền sẵn</small></h3>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <input id="naCode" placeholder="Mã sản phẩm (bắt buộc)" style="flex:1;min-width:160px" autocomplete="off">
+      <input id="naName" placeholder="Tên sản phẩm (bắt buộc)" style="flex:2;min-width:220px" autocomplete="off">
+      <input id="naNorm" placeholder="Định mức (bỏ trống nếu chưa rõ)" inputmode="decimal" style="width:160px" autocomplete="off">
+      <label class="small" style="display:flex;align-items:center;gap:4px"><input type="checkbox" id="naSemi"> Bán thành phẩm</label>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap"><button class="btn" type="button" id="naGo">Thêm mã</button><span class="msg" id="naMsg"></span></div></div>`:""}
   <div class="tbl"><table><tr><th>Mã sản phẩm</th><th>Tên</th><th class="num">Định mức (sp/người/giờ)</th><th>Ghi chú</th></tr>
   ${rows.map(p=>{const v=p.code in NM.dirty?NM.dirty[p.code]:(p.norm_per_hour??"");return `<tr><td class="mono">${esc(p.code)}</td><td>${esc(p.name)}</td>
     <td class="num"><input data-nm="${esc(p.code)}" value="${esc(String(v))}" inputmode="decimal" style="width:90px;text-align:right" placeholder="${fmt(sxStd())}" aria-label="Định mức ${esc(p.code)}"></td>
@@ -2005,6 +2014,7 @@ function bindNorms(){
   document.querySelectorAll("[data-nmf]").forEach(b=>b.onclick=()=>{NM.f=b.dataset.nmf;NM.page=0;render()});
   $("#nmPrev").onclick=()=>{NM.page--;render()};$("#nmNext").onclick=()=>{NM.page++;render()};
   $("#nmBulkBtn").onclick=()=>{NM.bulkOpen=!NM.bulkOpen;render()};
+  const naBtn=$("#nmAddBtn");if(naBtn)naBtn.onclick=()=>{NM.addOpen=!NM.addOpen;render()};
   $("#nmNote").oninput=e=>{NM.note=e.target.value};
   document.querySelectorAll("[data-nm]").forEach(i=>i.oninput=()=>{const c=i.dataset.nm,p=SX_CACHE.byCode[c];const v=i.value.trim().replace(",",".");
     if(String(p.norm_per_hour??"")===v)delete NM.dirty[c];else NM.dirty[c]=v;const n=Object.keys(NM.dirty).length;const s=$("#nmSave");s.disabled=!n;s.textContent="Lưu"+(n?" "+n+" thay đổi":"")});
@@ -2023,6 +2033,16 @@ function bindNorms(){
     if(bad.length){setMsg("nmBulkMsg","Dòng sai định dạng: "+bad.slice(0,10).join(", "),"bad");return}
     if(!items.length){setMsg("nmBulkMsg","Chưa dán dòng nào","bad");return}
     send(items,$("#nmBulkNote").value,"nmBulkMsg")};
+  const nag=$("#naGo");if(nag)nag.onclick=async()=>{
+    const code=$("#naCode").value.trim(),name=$("#naName").value.trim(),normS=$("#naNorm").value.trim().replace(",",".");
+    const isSemi=$("#naSemi").checked;
+    if(!code){setMsg("naMsg","Chưa nhập mã sản phẩm","bad");return}
+    if(!name){setMsg("naMsg","Chưa nhập tên sản phẩm","bad");return}
+    if(normS&&!(Number(normS)>0)){setMsg("naMsg","Định mức phải là số > 0","bad");return}
+    setMsg("naMsg","Đang lưu…");
+    try{await rpc("add_product",{p_code:code,p_name:name,p_norm:normS?Number(normS):null,p_is_semi:isSemi});
+      NM.addOpen=false;SX_CACHE=null;toast(`Đã thêm mã ${code}`);await render()}
+    catch(e){setMsg("naMsg",sbErr(e),"bad")}};
 }
 
 /* ---------- khung chung cho form bộ phận ---------- */
@@ -3410,5 +3430,4 @@ setInterval(()=>{if(RUN==="LIVE"&&ME)loadAlertsLive()},120000);
 (async()=>{if(SB){try{const{data}=await SB.auth.getSession();if(data&&data.session){RUN="LIVE";await afterLogin();return}}catch(e){}}showLogin()})();
 
 </script>
-</html>
 </html>
