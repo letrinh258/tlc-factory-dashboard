@@ -1239,6 +1239,47 @@ async function loadRP(){
 function canEditRP(){return RP.editable}
 
 /* ============================================================
+   MỤC 1 KHSX – Đơn có nguy cơ trễ / Đơn đến hạn giao 3 ngày /
+   Mã vật tư thiếu (3 ngày tới), mỗi dòng 1 bản ghi riêng, lưu riêng
+   từng dòng (không còn 6 ô số đơn lẻ như các vị trí khác).
+   ============================================================ */
+function khsxMuc1HTML(risk,due,missing,prodC,matC,ed){
+  const prodOpts=`<datalist id="k1ProdList">${prodC.prods.map(p=>`<option value="${esc(p.code)}">${esc(p.name)}</option>`).join("")}</datalist>`;
+  const matOpts=`<datalist id="k1MatList">${matC.mats.map(m=>`<option value="${esc(m.code)}">${esc(m.name)}</option>`).join("")}</datalist>`;
+  const riskRows=risk.map(r=>`<tr><td class="mono">${esc(r.product_code)}</td><td>${esc((r.products||{}).name||"")}</td><td class="num">${fmt(r.qty)}</td>${ed?`<td><button type="button" class="btn ghost" data-delrisk="${r.id}" style="padding:2px 8px">Xóa</button></td>`:""}</tr>`).join("");
+  const dueRows=due.map(r=>`<tr><td class="mono">${esc(r.product_code)}</td><td>${esc((r.products||{}).name||"")}</td><td class="num">${fmt(r.qty)}</td><td>${dmyS(r.due_date)}</td>${ed?`<td><button type="button" class="btn ghost" data-deldue="${r.id}" style="padding:2px 8px">Xóa</button></td>`:""}</tr>`).join("");
+  const missRows=missing.map(r=>`<tr><td class="mono">${esc(r.material_code)}</td><td>${esc((r.materials||{}).name||"")}</td><td class="num">${r.qty!=null?fmt(r.qty):""}</td><td>${esc(r.status_note||"")}</td>${ed?`<td><button type="button" class="btn ghost" data-delmiss="${r.id}" style="padding:2px 8px">Xóa</button></td>`:""}</tr>`).join("");
+  return `
+  <div class="card">
+   <h3 style="margin-top:0">Đơn có nguy cơ trễ</h3>
+   ${risk.length?`<div class="tbl"><table><tr><th>Mã SP</th><th>Tên SP</th><th class="num">SL (pcs)</th>${ed?"<th></th>":""}</tr>${riskRows}</table></div>`:`<p class="small" style="margin:0">Chưa có đơn nào.</p>`}
+   ${ed?`<div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin-top:10px">
+     <div class="fld"><label for="k1_code">Mã sản phẩm</label><input id="k1_code" list="k1ProdList" autocomplete="off"></div>
+     <div class="fld" style="width:140px"><label for="k1_qty">SL (pcs)</label><input id="k1_qty" inputmode="numeric"></div>
+     <button class="btn" type="button" id="k1_add">+ Thêm</button><span class="msg" id="k1_msg" role="status"></span></div>`:""}
+  </div>
+  <div class="card" style="margin-top:10px">
+   <h3 style="margin-top:0">Đơn đến hạn giao trong 3 ngày</h3>
+   ${due.length?`<div class="tbl"><table><tr><th>Mã SP</th><th>Tên SP</th><th class="num">SL</th><th>Ngày cần giao</th>${ed?"<th></th>":""}</tr>${dueRows}</table></div>`:`<p class="small" style="margin:0">Chưa có đơn nào.</p>`}
+   ${ed?`<div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin-top:10px">
+     <div class="fld"><label for="k2_code">Mã sản phẩm</label><input id="k2_code" list="k1ProdList" autocomplete="off"></div>
+     <div class="fld" style="width:120px"><label for="k2_qty">SL</label><input id="k2_qty" inputmode="numeric"></div>
+     <div class="fld" style="width:160px"><label for="k2_due">Ngày cần giao</label><input id="k2_due" type="date"></div>
+     <button class="btn" type="button" id="k2_add">+ Thêm</button><span class="msg" id="k2_msg" role="status"></span></div>`:""}
+  </div>
+  <div class="card" style="margin-top:10px">
+   <h3 style="margin-top:0">Mã vật tư thiếu (3 ngày tới)</h3>
+   ${missing.length?`<div class="tbl"><table><tr><th>Mã vật tư</th><th>Tên vật tư</th><th class="num">SL</th><th>Tình trạng / đã triển khai</th>${ed?"<th></th>":""}</tr>${missRows}</table></div>`:`<p class="small" style="margin:0">Chưa có vật tư thiếu nào.</p>`}
+   ${ed?`<div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin-top:10px">
+     <div class="fld"><label for="k3_code">Mã vật tư</label><input id="k3_code" list="k1MatList" autocomplete="off"></div>
+     <div class="fld" style="width:120px"><label for="k3_qty">SL</label><input id="k3_qty" inputmode="numeric"></div>
+     <div class="fld" style="flex:1;min-width:200px"><label for="k3_status">Tình trạng / đã triển khai gì</label><input id="k3_status"></div>
+     <button class="btn" type="button" id="k3_add">+ Thêm</button><span class="msg" id="k3_msg" role="status"></span></div>`:""}
+   <p class="small" style="margin:8px 0 0">Bảng chuyên môn đầy đủ (theo line, đơn hàng…) và tự đối chiếu với bộ phận khác: Giai đoạn 5.</p>
+  </div>
+  ${prodOpts}${matOpts}`;
+}
+/* ============================================================
    MÀN BÁO CÁO HẰNG NGÀY
    ============================================================ */
 async function viewDaily(){
@@ -1257,6 +1298,15 @@ async function viewDaily(){
     q(SB.from("report_unlocks").select("until_at,reason").eq("report_code",C).eq("report_date",D).order("until_at",{ascending:false}).limit(1))
   ]);
   RP.data={rep,iss,s3,plans,srs};
+  const khsxData=C==="KHSX"?await(async()=>{
+    const[risk,due,missing,prodC,matC]=await Promise.all([
+      q(SB.from("khsx_risk_orders").select("*,products(name)").eq("report_date",D).order("id")),
+      q(SB.from("khsx_due_orders").select("*,products(name)").eq("report_date",D).order("due_date")),
+      q(SB.from("khsx_missing_materials").select("*,materials(name)").eq("report_date",D).order("id")),
+      sxCache(),matCache()
+    ]);
+    return{risk,due,missing,prodC,matC};
+  })():null;
   const pos=RP.codes.find(c=>c.code===C)||{};
   const metrics=((metricsCfg||{}).value||{})[C]||[];
   const mv=(rep&&rep.metrics)||{};
@@ -1281,10 +1331,11 @@ async function viewDaily(){
   <div class="alert" style="margin-bottom:12px"><span class="sv" style="background:var(--accent)"></span><div class="b"><div class="t">Tóm tắt (tự động)</div><div class="d">Vấn đề ĐỎ đang mở: <b>${summary.red}</b> · Liên phòng ban: <b>${summary.cross}</b> · Việc tồn đang mở: <b>${summary.open}</b> · Chỉ đạo / việc giao: <b>${summary.cd}</b> · <span style="color:var(--bad)">Quá hạn: <b>${summary.over}</b></span> · Chờ hỗ trợ / quyết định: <b>${summary.wait}</b></div></div></div>
 
   <h2 class="sec">1. Kế hoạch & kết quả hôm nay <small>Số liệu chốt cuối ngày · người báo cáo chịu trách nhiệm</small></h2>
-  <div class="card">${metrics.length?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px">${metrics.map(([k,n,u])=>`<div class="fld"><label for="m_${k}">${esc(n)} <span class="small">(${esc(u)})</span></label><input id="m_${k}" data-m="${k}" value="${mv[k]??""}" inputmode="decimal" ${ro}></div>`).join("")}</div>
+  ${C==="KHSX"?khsxMuc1HTML(khsxData.risk,khsxData.due,khsxData.missing,khsxData.prodC,khsxData.matC,ed):
+  `<div class="card">${metrics.length?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px">${metrics.map(([k,n,u])=>`<div class="fld"><label for="m_${k}">${esc(n)} <span class="small">(${esc(u)})</span></label><input id="m_${k}" data-m="${k}" value="${mv[k]??""}" inputmode="decimal" ${ro}></div>`).join("")}</div>
    <div class="fld" style="margin-top:10px"><label for="m_note">Ghi chú số liệu / chênh lệch</label><input id="m_note" value="${esc(mv._note||"")}" ${ro}></div>
    ${ed?`<div style="margin-top:10px;display:flex;gap:8px;align-items:center"><button class="btn" type="button" id="m_save">Lưu mục 1</button><span class="msg" id="m_msg" role="status"></span></div>`:""}`:`<p class="small" style="margin:0">Chưa cấu hình chỉ số cho vị trí này.</p>`}
-   <p class="small" style="margin:8px 0 0">Bảng chuyên môn đầy đủ (theo line, đơn hàng, vật tư thiếu…) và tự đối chiếu với bộ phận khác: Giai đoạn 5.</p></div>
+   <p class="small" style="margin:8px 0 0">Bảng chuyên môn đầy đủ (theo line, đơn hàng, vật tư thiếu…) và tự đối chiếu với bộ phận khác: Giai đoạn 5.</p></div>`}
 
   <h2 class="sec">2. Vấn đề phát sinh <small>Đỏ/Vàng phải có người phụ trách – hạn – kết quả cần đạt · Đỏ bắt buộc có phương án B</small></h2>
   ${tblIssues(iss,ed)}
@@ -1423,6 +1474,43 @@ function bindDaily(){
     const note=$("#m_note").value.trim();if(note)vals._note=note;
     ms.disabled=true;setMsg("m_msg","Đang lưu…");
     try{await rpc("touch_report",{p_code:C,p_date:D});await q(SB.from("daily_reports").update({metrics:vals}).eq("report_code",C).eq("report_date",D).select("id"));setMsg("m_msg","Đã lưu "+new Date().toLocaleTimeString("vi-VN"),"ok")}catch(e){setMsg("m_msg",sbErr(e),"bad")}finally{ms.disabled=false}};
+  // mục 1 KHSX – 3 danh sách theo dòng, mỗi dòng 1 bản ghi, lưu riêng từng dòng
+  if(C==="KHSX"){
+    const pC=SX_CACHE||{byCode:{}},mC=MAT_CACHE||{byCode:{}};
+    const k1b=$("#k1_add");if(k1b)k1b.onclick=async()=>{
+      $("#k1_code").classList.remove("err");$("#k1_qty").classList.remove("err");
+      const code=$("#k1_code").value.trim(),qty=numOrNull($("#k1_qty").value);
+      const bad=[];if(!code||!pC.byCode[code])bad.push("k1_code");if(!qty||qty<=0)bad.push("k1_qty");
+      if(bad.length){markErr(bad);return setMsg("k1_msg","Chọn đúng mã sản phẩm trong danh mục, SL > 0","bad")}
+      k1b.disabled=true;setMsg("k1_msg","Đang lưu…");
+      try{await rpc("touch_report",{p_code:C,p_date:D});
+        await q(SB.from("khsx_risk_orders").insert({report_date:D,product_code:code,qty,created_by:ME.id}).select("id"));
+        toast("Đã lưu");render()}
+      catch(e){setMsg("k1_msg",sbErr(e),"bad")}finally{k1b.disabled=false}};
+    const k2b=$("#k2_add");if(k2b)k2b.onclick=async()=>{
+      ["k2_code","k2_qty","k2_due"].forEach(id=>$("#"+id).classList.remove("err"));
+      const code=$("#k2_code").value.trim(),qty=numOrNull($("#k2_qty").value),due=$("#k2_due").value;
+      const bad=[];if(!code||!pC.byCode[code])bad.push("k2_code");if(!qty||qty<=0)bad.push("k2_qty");if(!due)bad.push("k2_due");
+      if(bad.length){markErr(bad);return setMsg("k2_msg","Chọn đúng mã sản phẩm, SL > 0, và Ngày cần giao","bad")}
+      k2b.disabled=true;setMsg("k2_msg","Đang lưu…");
+      try{await rpc("touch_report",{p_code:C,p_date:D});
+        await q(SB.from("khsx_due_orders").insert({report_date:D,product_code:code,qty,due_date:due,created_by:ME.id}).select("id"));
+        toast("Đã lưu");render()}
+      catch(e){setMsg("k2_msg",sbErr(e),"bad")}finally{k2b.disabled=false}};
+    const k3b=$("#k3_add");if(k3b)k3b.onclick=async()=>{
+      ["k3_code","k3_status"].forEach(id=>$("#"+id).classList.remove("err"));
+      const code=$("#k3_code").value.trim(),qty=numOrNull($("#k3_qty").value),status=$("#k3_status").value.trim();
+      const bad=[];if(!code||!mC.byCode[code])bad.push("k3_code");if(!status)bad.push("k3_status");
+      if(bad.length){markErr(bad);return setMsg("k3_msg","Chọn đúng mã vật tư trong danh mục, ghi Tình trạng/đã triển khai","bad")}
+      k3b.disabled=true;setMsg("k3_msg","Đang lưu…");
+      try{await rpc("touch_report",{p_code:C,p_date:D});
+        await q(SB.from("khsx_missing_materials").insert({report_date:D,material_code:code,qty:qty??null,status_note:status,created_by:ME.id}).select("id"));
+        toast("Đã lưu");render()}
+      catch(e){setMsg("k3_msg",sbErr(e),"bad")}finally{k3b.disabled=false}};
+    document.querySelectorAll("[data-delrisk]").forEach(b=>b.onclick=async()=>{if(!confirm("Xóa dòng này? Không thể hoàn tác."))return;try{await q(SB.from("khsx_risk_orders").delete().eq("id",+b.dataset.delrisk));render()}catch(e){toast(sbErr(e))}});
+    document.querySelectorAll("[data-deldue]").forEach(b=>b.onclick=async()=>{if(!confirm("Xóa dòng này? Không thể hoàn tác."))return;try{await q(SB.from("khsx_due_orders").delete().eq("id",+b.dataset.deldue));render()}catch(e){toast(sbErr(e))}});
+    document.querySelectorAll("[data-delmiss]").forEach(b=>b.onclick=async()=>{if(!confirm("Xóa dòng này? Không thể hoàn tác."))return;try{await q(SB.from("khsx_missing_materials").delete().eq("id",+b.dataset.delmiss));render()}catch(e){toast(sbErr(e))}});
+  }
   // mục 2
   const fi=$("#fIssue");if(fi){
     fi.addEventListener("submit",async e=>{e.preventDefault();document.querySelectorAll("#fIssue .err").forEach(x=>x.classList.remove("err"));
@@ -1686,6 +1774,14 @@ async function sxCache(){
     q(SB.from("app_settings").select("value").eq("key","line_off_reasons").maybeSingle())]);
   SX_CACHE={prods:parts,byCode:Object.fromEntries(parts.map(p=>[p.code,p])),defects:def,dtReasons:(dt&&dt.value)||["Khác"],offReasons:(lo&&lo.value)||["Khác"]};
   return SX_CACHE;
+}
+let MAT_CACHE=null; // danh mục vật tư/linh kiện (bảng materials) – dùng cho mục 1 KHSX (Mã vật tư thiếu)
+async function matCache(){
+  if(MAT_CACHE)return MAT_CACHE;
+  const page=(a,b)=>q(SB.from("materials").select("code,name,uom").eq("active",true).order("code").range(a,b));
+  const parts=[];for(let i=0;i<10;i++){const p=await page(i*1000,i*1000+999);parts.push(...p);if(p.length<1000)break}
+  MAT_CACHE={mats:parts,byCode:Object.fromEntries(parts.map(m=>[m.code,m]))};
+  return MAT_CACHE;
 }
 const sxStd=()=>Number(CFG.stdProd)||32;
 function sxCalc(r,norm){ // r: dòng báo cáo
