@@ -1820,8 +1820,6 @@ async function viewSx(){
   const lineBatchIds=[...new Set(lineRows.map(r=>r.order_batch_id).filter(Boolean))];
   const lineBatchCodes=lineBatchIds.length?Object.fromEntries((await q(SB.from("production_order_batches").select("id,code").in("id",lineBatchIds))).map(b=>[b.id,b.code])):{};
   const dupCodes=new Set(lineRows.map(r=>r.product_code).filter((c,i,a)=>a.indexOf(c)!==i));
-  const defOpt=(src,v)=>`<option value="">— Chọn loại lỗi —</option>`+C.defects.filter(d=>d.source===src).map(d=>`<option value="${d.id}" ${+v===d.id?"selected":""}>${esc(d.name)} · ${esc(d.stage)}</option>`).join("");
-  const defName=id=>(C.defects.find(d=>d.id===id)||{}).name||"";
   const NS=s=>s.man_hours?s.std_hours/s.man_hours*100:null;
   return `<h2 class="sec" style="margin-top:0">Sản xuất – Báo cáo theo line <small>Form A · line × mã sản phẩm × ngày · tổ trưởng nhập cuối ca, trước ${esc(CFG.cutoff||"17:30")}</small></h2>
   <div class="fbar" style="position:static">
@@ -1853,7 +1851,7 @@ async function viewSx(){
   <div class="tbl"><table><tr><th>Mã SP</th><th class="num">KH</th><th class="num">Đạt</th><th class="num">NG thao tác</th><th class="num">NG NCC</th><th class="num">Người × giờ</th><th class="num">NS thực / ĐM</th><th class="num">Dừng máy</th><th>Ghi chú</th>${canEdit?"<th></th>":""}</tr>
   ${lineRows.map(r=>{const p=C.byCode[r.product_code]||{};const c=sxCalc(r,p.norm_per_hour);
     return `<tr><td><b class="mono">${esc(r.product_code)}</b><br><span class="small">${esc(p.name||"")}</span>${dupCodes.has(r.product_code)?`<br><span class="pill p-none">${r.order_batch_id?esc(lineBatchCodes[r.order_batch_id]||"lệnh #"+r.order_batch_id):"ngoài lệnh"}</span>`:""}</td><td class="num">${r.plan_qty==null?"—":fmt(r.plan_qty)}</td><td class="num">${fmt(r.good_qty)}${c.kh!=null?"<br>"+sxPill("out",c.kh,1,fmt(c.kh,0)+"%"):""}</td>
-      <td class="num">${fmt(r.ng_op)}${r.ng_op?`<br><span class="small">${esc(defName(r.defect_op))}</span>`:""}</td><td class="num">${fmt(r.ng_sup)}${r.ng_sup?`<br><span class="small">${esc(defName(r.defect_sup))}</span>`:""}</td>
+      <td class="num">${fmt(r.ng_op)}${r.ng_op?`<br><span class="small">${esc(r.defect_op||"")}</span>`:""}</td><td class="num">${fmt(r.ng_sup)}${r.ng_sup?`<br><span class="small">${esc(r.defect_sup||"")}</span>`:""}</td>
       <td class="num">${fmt(r.headcount)} × ${fmt(+r.hours+ +r.ot_hours,1)}h${r.start_time&&r.end_time?`<br><span class="small">${esc(r.start_time.slice(0,5))}–${esc(r.end_time.slice(0,5))}${r.break_min?" (nghỉ "+fmt(r.break_min)+"p)":""}</span>`:+r.ot_hours?`<br><span class="small">TC ${fmt(r.ot_hours,1)}h</span>`:""}</td>
       <td class="num">${c.act==null?"—":fmt(c.act,1)+" / "+fmt(p.norm_per_hour||sxStd())}${c.ns!=null?"<br>"+sxPill("prod",c.ns,1,fmt(c.ns,0)+"%"):""}${c.noNorm?' <span class="pill p-warn">thiếu ĐM</span>':""}</td>
       <td class="num">${r.downtime_min?fmt(r.downtime_min)+"'<br><span class='small'>"+esc(r.downtime_reason||"")+"</span>":"—"}</td><td>${esc(r.note||"")}</td>
@@ -1877,9 +1875,9 @@ async function viewSx(){
     <div class="fld"><label for="f_end">Giờ kết thúc</label><input id="f_end" type="time" value="${esc((ed.end_time||"").slice(0,5))}"></div>
     <div class="fld"><label for="f_break">Giờ nghỉ (phút)</label><input id="f_break" inputmode="numeric" value="${ed.break_min??0}"></div>
     <div class="fld"><label for="f_op">NG thao tác</label><input id="f_op" inputmode="numeric" value="${ed.ng_op??0}"></div>
-    <div class="fld"><label for="f_dop">Loại lỗi thao tác</label><select id="f_dop">${defOpt("op",ed.defect_op)}</select></div>
+    <div class="fld"><label for="f_dop">Loại lỗi thao tác</label><input id="f_dop" value="${esc(ed.defect_op||"")}" placeholder="Gõ loại lỗi" autocomplete="off"></div>
     <div class="fld"><label for="f_sup">NG nhà cung cấp</label><input id="f_sup" inputmode="numeric" value="${ed.ng_sup??0}"></div>
-    <div class="fld"><label for="f_dsup">Loại lỗi NCC</label><select id="f_dsup">${defOpt("sup",ed.defect_sup)}</select></div>
+    <div class="fld"><label for="f_dsup">Loại lỗi NCC</label><input id="f_dsup" value="${esc(ed.defect_sup||"")}" placeholder="Gõ loại lỗi" autocomplete="off"></div>
     <div class="fld"><label for="f_dt">Dừng máy (phút)</label><input id="f_dt" inputmode="numeric" value="${ed.downtime_min??0}"></div>
     <div class="fld"><label for="f_dtr">Nguyên nhân dừng máy</label><select id="f_dtr"><option value="">—</option>${opt(C.dtReasons,ed.downtime_reason)}</select></div>
     <div class="fld" style="grid-column:1/-1"><label for="f_note">Ghi chú</label><input id="f_note" value="${esc(ed.note||"")}"></div>
@@ -1951,8 +1949,8 @@ function bindSx(){
     if(!endV)return bad("f_end","Nhập giờ kết thúc.");
     const wm=workMin();if(wm==null||wm<=0)return bad("f_break","Giờ nghỉ phải nhỏ hơn thời gian làm việc (Kết thúc − Bắt đầu).");
     if(wm>16*60)return bad("f_end","Thời gian làm việc sau khi trừ giờ nghỉ không quá 16 giờ.");
-    if(nums.f_op>0&&!$("#f_dop").value)return bad("f_dop","Chọn loại lỗi thao tác.");
-    if(nums.f_sup>0&&!$("#f_dsup").value)return bad("f_dsup","Chọn loại lỗi nhà cung cấp.");
+    if(nums.f_op>0&&!$("#f_dop").value.trim())return bad("f_dop","Nhập loại lỗi thao tác.");
+    if(nums.f_sup>0&&!$("#f_dsup").value.trim())return bad("f_dsup","Nhập loại lỗi nhà cung cấp.");
     if(nums.f_dt>0&&!$("#f_dtr").value)return bad("f_dtr","Chọn nguyên nhân dừng máy.");
     // GĐ17 (theo yêu cầu 03/11): KHÔNG còn cảnh báo hay chặn nhập trùng mã —
     // 1 mã được phép có nhiều dòng báo cáo riêng biệt trong cùng line/ngày
@@ -1962,7 +1960,7 @@ function bindSx(){
     $("#f_save").disabled=true;setMsg(m,"Đang lưu…");
     const obidVal=$("#f_obid").value;
     try{await rpc("save_prod_row",{d:SXF.date,p_line:SXF.line,p_product:code,p_plan:nums.f_plan,p_good:nums.f_good,p_ng_op:nums.f_op||0,p_ng_sup:nums.f_sup||0,
-        p_defect_op:$("#f_dop").value?+$("#f_dop").value:null,p_defect_sup:$("#f_dsup").value?+$("#f_dsup").value:null,p_headcount:nums.f_hc||0,
+        p_defect_op:$("#f_dop").value.trim()||null,p_defect_sup:$("#f_dsup").value.trim()||null,p_headcount:nums.f_hc||0,
         p_start_time:startV,p_end_time:endV,p_break_min:nums.f_break||0,
         p_downtime:nums.f_dt||0,p_dt_reason:$("#f_dtr").value||null,p_note:$("#f_note").value.trim()||null,
         p_order_batch_id:SXF.edit==="new"?newObid:(obidVal?+obidVal:null),p_row_id:SXF.edit==="new"?null:SXF.edit});
@@ -2096,14 +2094,16 @@ async function viewQc(){
   if(QC_TAB.v==="hotline")return `<h2 class="sec" style="margin-top:0">Chất lượng</h2>${tabs}${await hlHTML()}`;
   const head=await formHead("qc","Chất lượng – Kiểm tra QAC","Form B · PQC/OQC theo line × mã · IQC theo vật tư × NCC · lỗi chia NG thao tác / NG NCC");
   const st=FM.qc,D=st.date,C=await sxCache();
-  const rows=await q(SB.from("quality_reports").select("id,stage,line_id,product_code,material_code,supplier,inspected,rework,note,quality_defects(defect_type_id,qty)").eq("report_date",D).order("stage").order("line_id"));
-  const dn=id=>C.defects.find(d=>d.id===id)||{};const ng=(r,src)=>r.quality_defects.filter(x=>dn(x.defect_type_id).source===src).reduce((a,x)=>a+x.qty,0);
+  const rows=await q(SB.from("quality_reports").select("id,stage,line_id,product_code,material_code,supplier,inspected,rework,note,quality_defects(defect_source,defect_name,qty,defect_type_id)").eq("report_date",D).order("stage").order("line_id"));
+  const dn=id=>C.defects.find(d=>d.id===id)||{};
+  const dSrc=x=>x.defect_source||dn(x.defect_type_id).source;const dNm=x=>x.defect_name||dn(x.defect_type_id).name||"";
+  const ng=(r,src)=>r.quality_defects.filter(x=>dSrc(x)===src).reduce((a,x)=>a+x.qty,0);
   const ed=st.edit==="new"?{stage:"PQC",quality_defects:[]}:rows.find(r=>r.id===st.edit);const defs=(ed&&ed.quality_defects)||[];
   const T={ins:0,op:0,sup:0};rows.forEach(r=>{T.ins+=r.inspected;T.op+=ng(r,"op");T.sup+=ng(r,"sup")});
   return head+tabs+`<div class="mgrid" style="margin-bottom:10px">${[["Số phiếu kiểm",fmt(rows.length)],["Số lượng kiểm",fmt(T.ins)],["NG thao tác",fmt(T.op)+(T.ins?" · "+fmt(T.op/T.ins*100,2)+"%":"")],["NG nhà cung cấp",fmt(T.sup)+(T.ins?" · "+fmt(T.sup/T.ins*100,2)+"%":"")]].map(([l,v])=>`<div class="m"><div class="l">${l}</div><div class="v" style="font-size:16px">${v}</div></div>`).join("")}</div>
   <div class="tbl"><table><tr><th>Công đoạn</th><th>Line</th><th>Mã SP / vật tư</th><th class="num">Kiểm</th><th class="num">NG thao tác</th><th class="num">NG NCC</th><th class="num">Sửa lại</th><th>Chi tiết lỗi</th>${st.editable?"<th></th>":""}</tr>
   ${rows.map(r=>`<tr><td><b>${r.stage}</b></td><td>${esc(lineNm(r.line_id))}</td><td class="mono">${esc(r.product_code||r.material_code||"")}${r.supplier?`<br><span class="small">${esc(r.supplier)}</span>`:""}</td><td class="num">${fmt(r.inspected)}</td><td class="num">${fmt(ng(r,"op"))}</td><td class="num">${fmt(ng(r,"sup"))}</td><td class="num">${fmt(r.rework)}</td>
-   <td class="small">${r.quality_defects.map(x=>esc(dn(x.defect_type_id).name)+": "+x.qty).join("; ")||"—"}${r.note?"<br>"+esc(r.note):""}</td>${st.editable?`<td style="white-space:nowrap">${actBtns("qc",r.id)}</td>`:""}</tr>`).join("")||`<tr><td colspan="9"><div class="empty">Chưa có phiếu kiểm ngày ${dmyS(D)}</div></td></tr>`}</table></div>
+   <td class="small">${r.quality_defects.map(x=>(dSrc(x)==="op"?"[Thao tác] ":"[NCC] ")+esc(dNm(x))+": "+x.qty).join("; ")||"—"}${r.note?"<br>"+esc(r.note):""}</td>${st.editable?`<td style="white-space:nowrap">${actBtns("qc",r.id)}</td>`:""}</tr>`).join("")||`<tr><td colspan="9"><div class="empty">Chưa có phiếu kiểm ngày ${dmyS(D)}</div></td></tr>`}</table></div>
   ${st.editable&&!ed?'<button class="btn" type="button" data-fedit="new" style="margin-top:8px">+ Thêm phiếu kiểm</button>':""}
   ${st.editable&&ed?`<div class="card" style="margin-top:10px"><h3>${st.edit==="new"?"Thêm phiếu kiểm":"Sửa phiếu "+esc(ed.stage)}</h3><form id="fForm" novalidate ${GRID}>
    <div class="fld"><label for="q_stage">Công đoạn</label><select id="q_stage" ${st.edit!=="new"?"disabled":""}>${opt(["PQC","OQC","IQC"],ed.stage)}</select></div>
@@ -2113,8 +2113,10 @@ async function viewQc(){
    <div class="fld" data-iq><label for="q_sup">Nhà cung cấp</label><input id="q_sup" value="${esc(ed.supplier||"")}"></div>
    <div class="fld"><label for="q_ins">SL kiểm</label><input id="q_ins" inputmode="numeric" value="${ed.inspected??""}"></div>
    <div class="fld"><label for="q_rw">SL sửa lại</label><input id="q_rw" inputmode="numeric" value="${ed.rework??0}"></div>
-   ${[0,1,2,3].map(i=>`<div class="fld"><label for="q_t${i}">Loại lỗi ${i+1}</label><select id="q_t${i}"><option value="">—</option>${C.defects.map(d=>`<option value="${d.id}" ${(defs[i]||{}).defect_type_id===d.id?"selected":""}>${d.source==="op"?"[Thao tác]":"[NCC]"} ${esc(d.name)}</option>`).join("")}</select></div>
-     <div class="fld"><label for="q_n${i}">SL lỗi ${i+1}</label><input id="q_n${i}" inputmode="numeric" value="${(defs[i]||{}).qty??""}"></div>`).join("")}
+   ${[0,1,2,3].map(i=>{const dv=defs[i]||{};const src=dv.defect_source||dn(dv.defect_type_id).source||"";const nm=dv.defect_name||dn(dv.defect_type_id).name||"";
+     return `<div class="fld"><label for="q_s${i}">NG lỗi ${i+1}</label><select id="q_s${i}"><option value="">—</option><option value="op" ${src==="op"?"selected":""}>Thao tác</option><option value="sup" ${src==="sup"?"selected":""}>NCC</option></select></div>
+     <div class="fld"><label for="q_t${i}">Loại lỗi ${i+1}</label><input id="q_t${i}" value="${esc(nm)}" placeholder="Gõ loại lỗi" autocomplete="off"></div>
+     <div class="fld"><label for="q_n${i}">SL lỗi ${i+1}</label><input id="q_n${i}" inputmode="numeric" value="${dv.qty??""}"></div>`}).join("")}
    <div class="fld" style="grid-column:1/-1"><label for="q_note">Ghi chú / nguyên nhân / hành động</label><input id="q_note" value="${esc(ed.note||"")}"></div>
    ${formBtns}</form><datalist id="prodList">${C.prods.map(p=>`<option value="${esc(p.code)}">${esc(p.name)}</option>`).join("")}</datalist></div>`:""}
   ${await reconHTML(D,["NG"])}`;
@@ -2130,7 +2132,7 @@ function bindQc(){
     if(!iq&&!SX_CACHE.byCode[$("#q_prod").value.trim()])return fErr("q_prod","Chọn mã sản phẩm có trong danh mục.");
     if(iq&&!$("#q_mat").value.trim())return fErr("q_mat","Nhập mã vật tư.");
     if(!(ins>0))return fErr("q_ins","Nhập số lượng kiểm.");if(Number.isNaN(rw)||rw<0)return fErr("q_rw","Số sửa lại không âm.");
-    const defs=[];for(let i=0;i<4;i++){const t=$("#q_t"+i).value,n=numOrNull($("#q_n"+i).value);if(!t&&n==null)continue;if(!t)return fErr("q_t"+i,"Chọn loại lỗi.");if(!(n>0)||!Number.isInteger(n))return fErr("q_n"+i,"SL lỗi là số nguyên > 0.");defs.push({type:+t,qty:n})}
+    const defs=[];for(let i=0;i<4;i++){const s=$("#q_s"+i).value,t=$("#q_t"+i).value.trim(),n=numOrNull($("#q_n"+i).value);if(!s&&!t&&n==null)continue;if(!s)return fErr("q_s"+i,"Chọn NG thao tác hoặc NCC.");if(!t)return fErr("q_t"+i,"Nhập loại lỗi.");if(!(n>0)||!Number.isInteger(n))return fErr("q_n"+i,"SL lỗi là số nguyên > 0.");defs.push({source:s,name:t,qty:n})}
     if(defs.reduce((a,x)=>a+x.qty,0)>ins)return fErr("q_ins","Tổng lỗi lớn hơn số kiểm.");
     $("#fSave").disabled=true;setMsg("fMsg","Đang lưu…");
     try{await rpc("save_qc",{d:FM.qc.date,p_stage:stg,p_line:iq?null:+$("#q_line").value,p_product:iq?null:$("#q_prod").value.trim(),p_material:iq?$("#q_mat").value.trim():null,p_supplier:iq?$("#q_sup").value.trim():null,p_inspected:ins,p_rework:rw||0,p_defects:defs,p_note:$("#q_note").value.trim()||null});
