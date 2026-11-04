@@ -1344,7 +1344,7 @@ function tblS3(rows,ed,isAdmin){
     <td style="white-space:nowrap">${can&&!(r.entity==="task"&&r.status==="new")?`<button class="btn" type="button" data-s3="${ix}" style="padding:4px 9px">Lưu</button>`:""}
       <button class="btn ghost" type="button" data-ph="${r.entity}:${r.id}:${esc(r.code)}" style="padding:3px 9px">Ảnh (${r.photos||0})</button>
       ${isAdmin&&!closed?adminActs(r):""}<div class="msg" id="u_m_${k}" role="status"></div></td></tr>`}).join("")}</table></div>
-  <p class="small">Việc quá hạn: bắt buộc ghi Hạn mới + Lý do / hành động tiếp theo. Hạn mới của chỉ đạo / việc giao phải được người giao duyệt. Xong việc: ghi Ngày hoàn thành và chọn "Đề nghị đóng"; chỉ người giao / GĐNM được đóng.</p>`;
+  <p class="small">Việc quá hạn vẫn đang xử lý: bắt buộc ghi Hạn mới + Lý do / hành động tiếp theo. Việc quá hạn nhưng đã chọn "Đã xử lý"/"Đề nghị đóng": không cần Hạn mới, chỉ cần ghi Lý do/kết quả và Ngày hoàn thành. Hạn mới của chỉ đạo / việc giao phải được người giao duyệt. Xong việc: ghi Ngày hoàn thành và chọn "Đề nghị đóng"; chỉ người giao / GĐNM được đóng.</p>`;
 }
 function adminActs(r){
   let h="";
@@ -1446,7 +1446,12 @@ function bindDaily(){
     const p=numOrNull($("#u_p_"+k).value),note=$("#u_n_"+k).value.trim(),nd=$("#u_nd_"+k).value||null,nx=$("#u_x_"+k).value.trim(),st=$("#u_s_"+k).value,dd=$("#u_d_"+k).value||null;
     if(Number.isNaN(p)||(p!=null&&(p<0||p>100))){markErr(["u_p_"+k]);return setMsg(mid,"% từ 0–100","bad")}
     if(!note){markErr(["u_n_"+k]);return setMsg(mid,"Ghi tiến độ hôm nay","bad")}
-    if(r.overdue&&st!=="pending_confirm"&&(!nd||!nx)){markErr(["u_nd_"+k,"u_x_"+k]);return setMsg(mid,"Quá hạn: ghi Hạn mới + Lý do","bad")}
+    // Quá hạn mà đã "Đã xử lý"/"Đề nghị đóng" (coi như xong) thì không còn
+    // bắt buộc "Hạn mới" nữa (không có ý nghĩa xin lùi hạn khi đã xong) —
+    // chỉ vẫn bắt buộc ghi Lý do/kết quả xử lý.
+    const doneLike=st==="pending_confirm"||st==="resolved";
+    if(r.overdue&&!doneLike&&(!nd||!nx)){markErr(["u_nd_"+k,"u_x_"+k]);return setMsg(mid,"Quá hạn: ghi Hạn mới + Lý do","bad")}
+    if(r.overdue&&doneLike&&!nx){markErr(["u_x_"+k]);return setMsg(mid,"Ghi Lý do / kết quả xử lý","bad")}
     if(nd&&nd<D){markErr(["u_nd_"+k]);return setMsg(mid,"Hạn mới phải từ hôm nay","bad")}
     if((st==="pending_confirm"||st==="resolved")&&!dd){markErr(["u_d_"+k]);return setMsg(mid,"Ghi Ngày hoàn thành","bad")}
     b.disabled=true;setMsg(mid,"Đang lưu…");
