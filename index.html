@@ -2547,7 +2547,8 @@ function bindLsx(){
     const items=parsed.items;
     $("#lsxGo").disabled=true;setMsg("lsxMsg","Đang lưu "+fmt(items.length)+" dòng…"+(parsed.bad&&parsed.bad.length?" (bỏ qua "+parsed.bad.length+" dòng lỗi)":""));
     try{
-      await rpc("lsx_begin_replace",{p_date:D});
+      const pLines=[...new Set(items.map(i=>i.line_id))];
+      await rpc("lsx_begin_replace",{p_date:D,p_lines:pLines});
       const byCode={};items.forEach(i=>{(byCode[i.lsx_code]=byCode[i.lsx_code]||[]).push(i)});
       const codes=Object.keys(byCode);
       for(const lsxCode of codes){
@@ -2564,11 +2565,37 @@ function bindLsx(){
     }catch(err){setMsg("lsxMsg",sbErr(err),"bad");$("#lsxGo").disabled=false}
   };
 }
-const KHTABS=[["lsx","Lệnh sản xuất"],["po","Theo dõi mua hàng (PO)"]];
+const KHTABS=[["lsx","Lệnh sản xuất"],["hist","Lịch sử lệnh SX"],["po","Theo dõi mua hàng (PO)"]];
+async function lsxHistTabHTML(){
+  const C=await sxCache();
+  const to=KHF.histTo=KHF.histTo||todayISO();
+  const from=KHF.histFrom=KHF.histFrom||addDays(to,-6);
+  const batches=await q(SB.from("production_order_batches").select("*,production_orders(*)").gte("order_date",from).lte("order_date",to).order("order_date",{ascending:false}).order("line_id"));
+  const byDate={};batches.forEach(b=>{(byDate[b.order_date]=byDate[b.order_date]||[]).push(b)});
+  const dates=Object.keys(byDate).sort((a,b)=>b<a?-1:b>a?1:0);
+  const totalItems=batches.reduce((a,b)=>a+(b.production_orders||[]).length,0);
+  return `<p class="small" style="margin:0 0 10px">Xem lại lệnh sản xuất đã dán trong 1 khoảng ngày — gộp tất cả các line.</p>
+  <div class="card" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+   <div class="fld" style="max-width:180px"><label for="histFrom">Từ ngày</label><input id="histFrom" type="date" value="${from}" max="${to}"></div>
+   <div class="fld" style="max-width:180px"><label for="histTo">Đến ngày</label><input id="histTo" type="date" value="${to}" max="${todayISO()}"></div>
+  </div>
+  <h2 class="sec">${fmt(dates.length)} ngày có lệnh · ${fmt(batches.length)} lệnh · ${fmt(totalItems)} mã</h2>
+  ${dates.length?dates.map(d=>`<div style="margin-bottom:14px"><h3 style="margin:0 0 6px">${dmyS(d)} <small>${fmt(byDate[d].length)} lệnh</small></h3>
+    ${byDate[d].map(b=>`<div class="card" style="margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px"><b class="mono">${esc(b.code)}</b><span class="small">${esc(lineOptsName(b.line_id))} · ${fmt((b.production_orders||[]).length)} mã · tổng KH ${fmt(b.qty_total)}</span></div>
+      <div class="tbl" style="margin-top:6px"><table><tr><th>Mã sản phẩm</th><th>Tên</th><th class="num">SL kế hoạch</th></tr>
+      ${(b.production_orders||[]).slice().sort((x,y)=>x.item_code<y.item_code?-1:x.item_code>y.item_code?1:0).map(r=>`<tr><td class="mono">${esc(r.item_code)}</td><td>${esc((C.byCode[r.item_code]||{}).name||"")}</td><td class="num">${fmt(r.qty_planned)}</td></tr>`).join("")}
+      </table></div></div>`).join("")}</div>`).join(""):`<div class="empty">Không có lệnh sản xuất nào trong khoảng ngày này</div>`}`;
+}
+function bindLsxHist(){
+  const f=$("#histFrom");if(f)f.onchange=()=>{KHF.histFrom=f.value;render()};
+  const t=$("#histTo");if(t)t.onchange=()=>{KHF.histTo=t.value;render()};
+}
 async function viewKH(){
   if(RUN!=="LIVE")return liveOnly("Kế hoạch");
   const head=`<h2 class="sec" style="margin-top:0">Kế hoạch</h2><div class="seg" role="tablist" style="margin-bottom:10px">${KHTABS.map(([k,n])=>`<button type="button" data-khtab="${k}" aria-pressed="${KHF.tab===k}">${n}</button>`).join("")}</div>`;
   if(KHF.tab==="lsx")return head+await lsxTabHTML();
+  if(KHF.tab==="hist")return head+await lsxHistTabHTML();
   const D=KHF.date=KHF.date||todayISO();
   const batches=await q(SB.from("purchase_batches").select("*").order("order_date",{ascending:false}).order("created_at",{ascending:false}).limit(30));
   let viewHtml="";
@@ -2599,6 +2626,7 @@ async function viewKH(){
 function bindKH(){
   document.querySelectorAll("[data-khtab]").forEach(b=>b.onclick=()=>{KHF.tab=b.dataset.khtab;render()});
   if(KHF.tab==="lsx")return bindLsx();
+  if(KHF.tab==="hist")return bindLsxHist();
   const d=$("#khDate");if(d)d.onchange=()=>{KHF.date=d.value;render()};
   $("#khBtn").onclick=()=>{KHF.open=!KHF.open;render()};
   const go=$("#khGo");if(go)go.onclick=async()=>{
