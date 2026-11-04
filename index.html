@@ -2438,24 +2438,36 @@ function bindBH(){
 /* ---------- KẾ HOẠCH – LỆNH SẢN XUẤT + THEO DÕI MUA HÀNG (PO) ---------- */
 const KHF={date:null,open:false,view:null,viewRows:null,tab:"lsx"};
 const LSX={date:null,open:false};
-function parseLsxPaste(text,byCode,nLines){
+function parseLsxPaste(text,byCode,cfgLines){
+  // GĐ21: dán THẲNG nguyên form Bravo 6 cột — Tên chuyền · Số lệnh sản
+  // xuất · Vật tư · Tên vật tư · Đvt · Số lượng — không cần dọn lại trước.
+  // Tên chuyền tự dò theo đúng tên line đã đặt ở Cấu hình → Line & quy
+  // tắc (so khớp không phân biệt hoa/thường, bỏ khoảng trắng đầu/cuối).
+  // Dòng tổng phụ của Bravo (Tên chuyền + Số lệnh sản xuất đều trống,
+  // chỉ có Số lượng) tự bị bỏ qua. Tên vật tư/Đvt chỉ để đối chiếu mắt,
+  // hệ thống không lưu — Tên sản phẩm hiển thị sau này lấy từ danh mục.
+  const lineIdx={};(cfgLines||[]).forEach((n,i)=>{lineIdx[(n||"").trim().toLowerCase()]=i+1});
+  const nLines=(cfgLines||[]).length||10;
   const lines=text.split(/\r?\n/).map(l=>l.replace(/\s+$/,"")).filter(l=>l.trim()!=="");
   if(!lines.length)return{error:"Chưa dán dữ liệu."};
   const items=[],bad=[];const lineOfCode={};
   for(const l of lines){
     const c=l.split("\t");
-    const lsxCode=(c[0]||"").trim();
-    if(!lsxCode||/^mã lệnh$/i.test(lsxCode))continue;
-    const lnRaw=(c[1]||"").trim();const ln=parseInt(lnRaw.replace(/\D/g,""),10);
-    const code=(c[2]||"").trim();const qty=parseInvNum(c[3]);
+    const chuyen=(c[0]||"").trim();
+    const lsxCode=(c[1]||"").trim();
+    if(!chuyen&&!lsxCode)continue; // dòng tổng phụ Bravo — bỏ qua
+    if(/^tên chuyền$/i.test(chuyen))continue; // dòng tiêu đề
+    if(!lsxCode)continue;
+    const code=(c[2]||"").trim();const qty=parseInvNum(c[5]);
     if(!code)continue;
-    if(!ln||ln<1||ln>nLines){bad.push(`Lệnh "${lsxCode}": dòng "${lnRaw}" không phải số line hợp lệ (1–${nLines})`);continue}
+    const ln=lineIdx[chuyen.toLowerCase()];
+    if(!ln){bad.push(`Lệnh "${lsxCode}": không nhận ra tên chuyền "${chuyen}" — kiểm tra đúng tên ở Cấu hình → Line & quy tắc (1–${nLines})`);continue}
     if(!byCode[code]){bad.push(`Lệnh "${lsxCode}": mã "${code}" không có trong danh mục sản phẩm`);continue}
-    if(lineOfCode[lsxCode]!=null&&lineOfCode[lsxCode]!==ln)bad.push(`Lệnh "${lsxCode}" có 2 số line khác nhau (${lineOfCode[lsxCode]} và ${ln}) — đã dùng line ${lineOfCode[lsxCode]}`);
+    if(lineOfCode[lsxCode]!=null&&lineOfCode[lsxCode]!==ln)bad.push(`Lệnh "${lsxCode}" có 2 chuyền khác nhau — đã dùng chuyền "${esc(chuyen)}" của dòng đầu`);
     if(lineOfCode[lsxCode]==null)lineOfCode[lsxCode]=ln;
     items.push({lsx_code:lsxCode,line_id:lineOfCode[lsxCode],item_code:code,item_name:byCode[code].name,qty_planned:qty});
   }
-  if(!items.length)return{error:bad.length?bad.slice(0,5).join("; "):"Không đọc được dòng nào — mỗi dòng cần Mã lệnh, Line, Mã sản phẩm, SL kế hoạch."};
+  if(!items.length)return{error:bad.length?bad.slice(0,5).join("; "):"Không đọc được dòng nào — dán nguyên 6 cột Bravo: Tên chuyền, Số lệnh sản xuất, Vật tư, Tên vật tư, Đvt, Số lượng."};
   return{items,bad};
 }
 function parsePoPaste(text){
@@ -2482,13 +2494,11 @@ async function lsxTabHTML(){
   return `<p class="small" style="margin:0 0 10px">Mỗi lần dán là KẾ HOẠCH CHỐT của ngày đó — dán lại cùng ngày sẽ XÓA và NẠP LẠI toàn bộ lệnh SX ngày đó. <b>Mã lệnh do anh tự điền</b> (lấy theo số lệnh thật của Bravo, hoặc tự đặt) — hệ thống KHÔNG tự sinh mã. Nhiều dòng cùng 1 Mã lệnh sẽ gộp vào CÙNG 1 lệnh đó. Tổ trưởng sẽ CHỌN LỆNH này khi nhập Form A (Sản xuất), mã hàng + SL kế hoạch lấy thẳng từ đây.</p>
   <div class="card">
    <div class="fld" style="max-width:220px"><label for="lsxDate">Ngày sản xuất</label><input id="lsxDate" type="date" value="${D}"></div>
-   <p class="small" style="margin:8px 0">Dán theo 4 cột: <b>Mã lệnh</b> (tự điền, vd số lệnh Bravo) · <b>Line</b> (số thứ tự line, 1–${nLines}) · <b>Mã sản phẩm</b> (phải có trong danh mục) · <b>SL kế hoạch</b>.</p>
+   <p class="small" style="margin:8px 0">Dán THẲNG nguyên 6 cột từ file Bravo (kể cả dòng tổng phụ, dòng tiêu đề — hệ thống tự bỏ qua): <b>Tên chuyền</b> (phải đúng tên line ở Cấu hình → Line & quy tắc) · <b>Số lệnh sản xuất</b> · <b>Vật tư</b> (phải có trong danh mục) · Tên vật tư (chỉ để đối chiếu, không lưu) · Đvt (không lưu) · <b>Số lượng</b>.</p>
    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn ghost" type="button" id="lsxBtn">${LSX.open?"Đóng":batches.length?"Dán lại / cập nhật":"Dán lệnh sản xuất"}</button>
    ${batches.length&&ME.role==="admin"?`<button class="btn ghost" type="button" id="lsxDelBtn" style="color:var(--bad)">Xóa lệnh SX ngày này</button>`:""}</div>
-   ${LSX.open?`<div style="margin-top:8px"><textarea id="lsxBulk" rows="8" style="width:100%;box-sizing:border-box;font-family:var(--mono,monospace)" placeholder="Mã lệnh	Line	Mã sản phẩm	SL kế hoạch
-LSX00123	1	TLC-AMC-VV-07W-04	800
-LSX00123	1	TLACB/12W04	300
-LSX00124	2	TLC-AMC-VV-07W-04	600"></textarea>
+   ${LSX.open?`<div style="margin-top:8px"><textarea id="lsxBulk" rows="8" style="width:100%;box-sizing:border-box;font-family:var(--mono,monospace)" placeholder="Tên chuyền	Số lệnh sản xuất	Vật tư	Tên vật tư	Đvt	Số lượng
+Dây chuyền SXHN 01	LSX11/26-018(2026-11-03)	TLC-BML-40W-01	Đèn led búp MaxLight 40W ánh sáng trắng	Cái	600"></textarea>
    <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap"><button class="btn" type="button" id="lsxGo">Lưu lệnh SX ngày ${dmyS(D)}</button><span class="msg" id="lsxMsg"></span></div></div>`:""}
   </div>
   <h2 class="sec">Lệnh sản xuất ngày ${dmyS(D)} <small>${fmt(batches.length)} lệnh · ${fmt(totalItems)} mã</small></h2>
@@ -2509,8 +2519,8 @@ function bindLsx(){
     catch(err){alert(sbErr(err));ld.disabled=false}
   };
   const go=$("#lsxGo");if(go)go.onclick=async()=>{
-    const D=LSX.date,C=await sxCache(),nLines=(CFG.lines||[]).length||10;
-    const parsed=parseLsxPaste($("#lsxBulk").value,C.byCode,nLines);
+    const D=LSX.date,C=await sxCache();
+    const parsed=parseLsxPaste($("#lsxBulk").value,C.byCode,CFG.lines);
     if(parsed.error){setMsg("lsxMsg",parsed.error,"bad");return}
     const items=parsed.items;
     $("#lsxGo").disabled=true;setMsg("lsxMsg","Đang lưu "+fmt(items.length)+" dòng…"+(parsed.bad&&parsed.bad.length?" (bỏ qua "+parsed.bad.length+" dòng lỗi)":""));
