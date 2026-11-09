@@ -3285,7 +3285,8 @@ function bindLH(){
 /* ============================================================
    TỔNG QUAN NHÀ MÁY – SỐ LIỆU THẬT (từ Form A–E, 3S, giao việc, báo cáo ngày)
    ============================================================ */
-const LD={period:"day",date:null,scope:"all",demo:false,dept:null};
+const LD={period:"day",date:null,scope:"all",demo:false,dept:null,customFrom:null,customTo:null};
+const ldLbl=(per,a,b)=>per==="day"?`${dowVN(a)} ${dmy(a)}`:per==="week"?`Tuần ${dm(a)} – ${dm(b)}/${b.slice(0,4)}`:per==="month"?`Tháng ${a.slice(5,7)}/${a.slice(0,4)}`:`${dmy(a)} – ${dmy(b)}`;
 const ldFull=()=>ME&&(ME.role==="admin"||ME.overview);
 const ldDepts=()=>(ME.approves_depts||[]).filter(id=>id!==1);
 function ldTile(label,val,unit,dec,state,sub,mod,stateTxt){
@@ -3296,7 +3297,14 @@ const ldPct=(a,b)=>b?a/b*100:null;
 function ldTrend(cur,prev,dec,dir){if(cur==null||prev==null)return "";const d=cur-prev;if(!d)return "Kỳ trước ■";return `<span class="${(d>0)===(dir>0)?"up":"dn"}">Kỳ trước ${d>0?"▲":"▼"} ${fmt(Math.abs(d),dec)}</span>`}
 async function viewDashLive(){
   const today=ME.today||todayISO();if(!LD.date)LD.date=today;
-  const[d1,d2]=range(LD.period,LD.date);const p1=range(LD.period,addDays(d1,-1));const line=LD.scope==="all"?null:+LD.scope;
+  let d1,d2,p1;
+  if(LD.period==="custom"){
+    d2=LD.customTo||today;d1=LD.customFrom||addDays(d2,-6);
+    if(d1>d2)[d1,d2]=[d2,d1];
+    const span=Math.round((D0(d2)-D0(d1))/86400000)+1;
+    p1=[addDays(d1,-span),addDays(d1,-1)];
+  }else{[d1,d2]=range(LD.period,LD.date);p1=range(LD.period,addDays(d1,-1))}
+  const line=LD.scope==="all"?null:+LD.scope;
   const full=ldFull();const dps=ldDepts();if(!full&&(!LD.dept||!dps.includes(LD.dept)))LD.dept=dps[0]||null;
   if(!full&&!LD.dept)return `<h2 class="sec" style="margin-top:0">Tổng quan</h2><div class="ph-card">Bạn chưa được cấp quyền xem Tổng quan. Liên hệ GĐNM.</div>`;
   const pd=full?null:LD.dept;const dName=pd?((REF.depts.find(d=>d.id===pd)||{}).name||""):"";
@@ -3308,10 +3316,10 @@ async function viewDashLive(){
   S.qc=S.qc||{pqc_insp:0,pqc_op:0,pqc_sup:0,iqc_insp:0};S.cd=S.cd||{stops:0,downtime:0,open:0};S.hr=S.hr||{days:0};S.wh=S.wh||{shortage_items:0,receipt_sx:0};
   const pr=S.prod,pp=P.prod,has=pr.rows>0;const out=x=>x.good+x.ng_op+x.ng_sup;
   const kh=x=>x.plan_rows?ldPct(x.good,x.plan):null,ng=x=>out(x)?(x.ng_op+x.ng_sup)/out(x)*100:null,ns=x=>x.man_hours?x.std_hours/x.man_hours*100:null;
-  const lbl=LD.period==="day"?`${dowVN(d1)} ${dmy(d1)}`:LD.period==="week"?`Tuần ${dm(d1)} – ${dm(d2)}/${d2.slice(0,4)}`:`Tháng ${d1.slice(5,7)}/${d1.slice(0,4)}`;
+  const lbl=ldLbl(LD.period,d1,d2);
   const nLines=(CFG.lines||[]).length||10;const repLines=S.lines.filter(l=>l.n_rows).length;
   const entered=sum.filter(s=>s.entered).length;const closed=d2<today||(d2===today&&sxDeadlinePassed(today,today));
-  LD._x={S,d1,d2,full,pd,dName,line,sum,entered,lbl:LD.period==="day"?`${dowVN(d1)} ${dmy(d1)}`:LD.period==="week"?`Tuần ${dm(d1)} – ${dm(d2)}/${d2.slice(0,4)}`:`Tháng ${d1.slice(5,7)}/${d1.slice(0,4)}`};
+  LD._x={S,d1,d2,full,pd,dName,line,sum,entered,lbl};
   // cảnh báo tự sinh từ số liệu thật
   const AL=[];const add=(sev,t,d,mod)=>AL.push({sev,t,d,mod});
   if(SEC.lines&&LD.period==="day"&&closed&&repLines<(line?1:nLines))add("bad",`${(line?1:nLines)-repLines} line chưa nhập báo cáo SX ngày ${dm(d2)}`,S.lines.filter(l=>!l.n_rows).map(l=>l.name).join(", "),"sx");
@@ -3328,8 +3336,10 @@ async function viewDashLive(){
   const tr=S.trend;const mx=Math.max(1,...tr.map(t=>Math.max(+t.good||0,+t.plan||0)));
   const lineOpt=`<option value="all">Toàn nhà máy</option>`+(CFG.lines||[]).map((l,i)=>`<option value="${i+1}" ${LD.scope===String(i+1)?"selected":""}>${esc(l)}</option>`).join("");
   return `<div class="fbar" role="region" aria-label="Bộ lọc"><span class="flabel">Kỳ</span>
-   <div class="seg">${[["day","Ngày"],["week","Tuần"],["month","Tháng"]].map(([k,n])=>`<button type="button" data-lper="${k}" aria-pressed="${LD.period===k}">${n}</button>`).join("")}</div>
-   <div class="datebox"><button type="button" id="ldPrev" aria-label="Kỳ trước">‹</button><input type="date" id="ldDate" value="${LD.date}" max="${today}"><button type="button" id="ldNext" aria-label="Kỳ sau">›</button></div>
+   <div class="seg">${[["day","Ngày"],["week","Tuần"],["month","Tháng"],["custom","Tùy chọn"]].map(([k,n])=>`<button type="button" data-lper="${k}" aria-pressed="${LD.period===k}">${n}</button>`).join("")}</div>
+   <div class="datebox">${LD.period==="custom"?
+     `<input type="date" id="ldFrom" value="${LD.customFrom||d1}" max="${today}"><span style="margin:0 4px">–</span><input type="date" id="ldTo" value="${LD.customTo||d2}" max="${today}">`
+     :`<button type="button" id="ldPrev" aria-label="Kỳ trước">‹</button><input type="date" id="ldDate" value="${LD.date}" max="${today}"><button type="button" id="ldNext" aria-label="Kỳ sau">›</button>`}</div>
    <span class="flabel">Phạm vi</span><select id="ldScope">${lineOpt}</select>
    <span class="period">${lbl} <small>· ${pr.days} ngày có số liệu SX · số liệu thật</small></span>
    ${!full&&dps.length>1?`<select id="ldDept">${dps.map(id=>`<option value="${id}" ${id===LD.dept?"selected":""}>${esc((REF.depts.find(d=>d.id===id)||{}).name||"")}</option>`).join("")}</select>`:""}
@@ -3532,9 +3542,12 @@ function bindDashLive(){
   const ex=$("#ldExport");if(ex)ex.onclick=()=>{tqExport();toast("Đã xuất báo cáo Excel")};
   const pf=$("#ldPdf");if(pf)pf.onclick=()=>tqPdfExport();
   document.querySelectorAll("[data-lper]").forEach(b=>b.onclick=()=>{LD.period=b.dataset.lper;render()});
-  $("#ldDate").onchange=e=>{LD.date=e.target.value||today;render()};
+  const ldDateEl=$("#ldDate");if(ldDateEl)ldDateEl.onchange=e=>{LD.date=e.target.value||today;render()};
   const step=dir=>{if(LD.period==="day")return addDays(LD.date,dir);if(LD.period==="week")return addDays(LD.date,7*dir);const d=D0(LD.date.slice(0,8)+"01");d.setUTCMonth(d.getUTCMonth()+dir);return isoOf(d)};
-  $("#ldPrev").onclick=()=>{LD.date=step(-1);render()};$("#ldNext").onclick=()=>{const s=step(1);LD.date=s>today?today:s;render()};
+  const ldPrevEl=$("#ldPrev");if(ldPrevEl)ldPrevEl.onclick=()=>{LD.date=step(-1);render()};
+  const ldNextEl=$("#ldNext");if(ldNextEl)ldNextEl.onclick=()=>{const s=step(1);LD.date=s>today?today:s;render()};
+  const ldFromEl=$("#ldFrom");if(ldFromEl)ldFromEl.onchange=e=>{LD.customFrom=e.target.value||null;if(LD.customTo&&LD.customFrom>LD.customTo)LD.customTo=LD.customFrom;render()};
+  const ldToEl=$("#ldTo");if(ldToEl)ldToEl.onchange=e=>{LD.customTo=e.target.value||today;if(LD.customFrom&&LD.customFrom>LD.customTo)LD.customFrom=LD.customTo;render()};
   $("#ldScope").onchange=e=>{LD.scope=e.target.value;render()};
   const dm_=$("#ldDemo");if(dm_)dm_.onclick=()=>{LD.demo=true;render()};
   const dd=$("#ldDept");if(dd)dd.onchange=e=>{LD.dept=+e.target.value;render()};
@@ -3607,7 +3620,7 @@ function startApp(){
   $("#user").innerHTML=`${esc(ME.full_name)}<small>${esc(ME.username)} · ${esc(ME.position_name)}</small>`;
   const c=$("#conn");c.classList.toggle("live",RUN==="LIVE");
   c.textContent=RUN==="LIVE"?"Đã kết nối máy chủ · số liệu thật":"DEMO · dùng thử, không lưu máy chủ";
-  ST.screen=homeMod();cfgTab="tbp";RP.code=null;RP.date=null;RP.editIssue=RP.editPlan=RP.editSr=null;SM.date=null;SXF.date=null;SXF.line=null;SXF.edit=null;SXF.assignOpen=false;SXF.unlockOpen=false;SX_CACHE=null;Object.keys(FM).forEach(k=>delete FM[k]);NM.q="";NM.f="all";NM.page=0;NM.dirty={};NM.bulkOpen=false;FS.date=null;FS.per="week";FS.tab="stat";FS.fstat="open";FS.fs="";FS.newOpen=false;FS.newS="";FS_CRIT=null;VD.tab="issue";VD.fSev="";VD.fSt="open";VD.fDept="";VD.q="";VD.projOpen=false;VD.editProj=null;KP.tab="dash";KP.defOpen=false;KP.editDef=null;KP.tgtOpenFor=null;KP.resKpi="";KP.resPs=null;KP.resPe=null;KT.tab="list";KT.fStatus="pending";KT.newOpen=false;KT.ctype="norm";KT.histCode="";LH.tab="session";LH.typeOpen=false;LH.editType=null;LH.sessOpen=false;LH.openId=null;LH.decOpen=null;LD.period="day";LD.date=null;LD.scope="all";LD.demo=false;GV.f="open";GV.pos="";GV.q="";accQ="";accDept="";ACC_SECRET=null;accConfirm=null;render();
+  ST.screen=homeMod();cfgTab="tbp";RP.code=null;RP.date=null;RP.editIssue=RP.editPlan=RP.editSr=null;SM.date=null;SXF.date=null;SXF.line=null;SXF.edit=null;SXF.assignOpen=false;SXF.unlockOpen=false;SX_CACHE=null;Object.keys(FM).forEach(k=>delete FM[k]);NM.q="";NM.f="all";NM.page=0;NM.dirty={};NM.bulkOpen=false;FS.date=null;FS.per="week";FS.tab="stat";FS.fstat="open";FS.fs="";FS.newOpen=false;FS.newS="";FS_CRIT=null;VD.tab="issue";VD.fSev="";VD.fSt="open";VD.fDept="";VD.q="";VD.projOpen=false;VD.editProj=null;KP.tab="dash";KP.defOpen=false;KP.editDef=null;KP.tgtOpenFor=null;KP.resKpi="";KP.resPs=null;KP.resPe=null;KT.tab="list";KT.fStatus="pending";KT.newOpen=false;KT.ctype="norm";KT.histCode="";LH.tab="session";LH.typeOpen=false;LH.editType=null;LH.sessOpen=false;LH.openId=null;LH.decOpen=null;LD.period="day";LD.date=null;LD.scope="all";LD.demo=false;LD.customFrom=null;LD.customTo=null;GV.f="open";GV.pos="";GV.q="";accQ="";accDept="";ACC_SECRET=null;accConfirm=null;render();
 }
 $("#logout").onclick=()=>logout();
 $("#bell").onclick=e=>{e.stopPropagation();const p=$("#notif");p.hidden=!p.hidden;$("#bell").setAttribute("aria-expanded",String(!p.hidden))};
