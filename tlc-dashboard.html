@@ -222,6 +222,7 @@ textarea{font:inherit;color:var(--fg);background:var(--surface);border:1px solid
 <div id="drawerHost"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.2/dist/html2pdf.bundle.min.js"></script>
 
 <script>
 "use strict";
@@ -3332,7 +3333,7 @@ async function viewDashLive(){
    <span class="flabel">Phạm vi</span><select id="ldScope">${lineOpt}</select>
    <span class="period">${lbl} <small>· ${pr.days} ngày có số liệu SX · số liệu thật</small></span>
    ${!full&&dps.length>1?`<select id="ldDept">${dps.map(id=>`<option value="${id}" ${id===LD.dept?"selected":""}>${esc((REF.depts.find(d=>d.id===id)||{}).name||"")}</option>`).join("")}</select>`:""}
-   <div style="margin-left:auto;display:flex;gap:8px"><button class="btn ghost" type="button" id="ldExport">Xuất báo cáo Excel</button>${ME.role==="admin"?'<button class="btn ghost" type="button" id="ldDemo">Xem bản mẫu GĐ2</button>':""}</div></div>
+   <div style="margin-left:auto;display:flex;gap:8px"><button class="btn ghost" type="button" id="ldExport">Xuất báo cáo Excel</button><button class="btn ghost" type="button" id="ldPdf">Xuất báo cáo PDF</button>${ME.role==="admin"?'<button class="btn ghost" type="button" id="ldDemo">Xem bản mẫu GĐ2</button>':""}</div></div>
   ${pd?`<div class="alert" style="margin-bottom:10px"><span class="sv" style="background:var(--accent)"></span><div class="b"><div class="t">Tổng quan ${esc(dName)}</div><div class="d">Bạn đang xem số liệu của bộ phận mình. Muốn xem toàn nhà máy, đề nghị GĐNM cấp quyền "Xem Tổng quan".</div></div></div>`:""}
   ${has||!SEC.prod?"":`<div class="empty" style="margin-bottom:12px">Kỳ này chưa có báo cáo sản xuất. Các ô còn số là từ bộ phận khác.</div>`}
   <h2 class="sec">Chỉ số điều hành <small>Bấm thẻ để mở màn hình nhập liệu tương ứng</small></h2>
@@ -3432,9 +3433,98 @@ function tqExport(){
   }
   XLSX.writeFile(wb,`TongQuan_${d1}_${d2}_${yymmdd(todayISO())}.xlsx`);
 }
+/* ---------- Xuất báo cáo PDF (dashboard) — Tổng quan + chi tiết lỗi PQC + Hotline ---------- */
+const PDFC={ok:"#1E8E4F",warn:"#B07A00",bad:"#C62E2E",none:"#16213D"};
+function pdfTile(label,val,unit,sub,state){
+  const c=PDFC[state]||PDFC.none;
+  return `<div style="border:1px solid #D5DCEB;border-radius:10px;padding:12px 14px;background:#fff">
+   <div style="font-size:11px;color:#5A6684;font-weight:600;letter-spacing:.02em">${esc(label)}</div>
+   <div style="font-size:25px;font-weight:800;color:${c};margin-top:3px">${val==null?"—":fmt(val,unit==="%"||unit.includes("định mức")?1:0)}<span style="font-size:12px;font-weight:600;color:#5A6684"> ${esc(unit)}</span></div>
+   ${sub?`<div style="font-size:11px;color:#5A6684;margin-top:4px;line-height:1.5">${sub}</div>`:""}
+  </div>`;
+}
+function pdfSecHead(n,title,sub){
+  return `<div style="display:flex;align-items:center;gap:10px;margin:22px 0 10px">
+   <span style="flex:0 0 26px;height:26px;border-radius:50%;background:#20409A;color:#fff;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center">${n}</span>
+   <div><div style="font-size:16px;font-weight:800;color:#16213D">${esc(title)}</div>${sub?`<div style="font-size:11px;color:#5A6684">${esc(sub)}</div>`:""}</div>
+  </div><div style="height:2px;background:#20409A;margin-bottom:12px"></div>`;
+}
+async function tqPdfExport(){
+  const x=LD._x;if(!x)return;
+  const btn=$("#ldPdf");if(btn){btn.disabled=true;btn.textContent="Đang tạo PDF…"}
+  try{
+    const{S,d1,d2,full,dName,lbl,line}=x;
+    const C=await sxCache();const dn=id=>C.defects.find(d=>d.id===id)||{};
+    let qrQ=SB.from("quality_reports").select("id").eq("stage","PQC").gte("report_date",d1).lte("report_date",d2);
+    if(line)qrQ=qrQ.eq("line_id",line);
+    const qrRows=await q(qrQ);const qrIds=qrRows.map(r=>r.id);
+    let pqcRows=[];
+    if(qrIds.length){
+      const defRows=await q(SB.from("quality_defects").select("report_id,qty,cause,action,defect_name,defect_source,defect_type_id").in("report_id",qrIds));
+      pqcRows=defRows.filter(r=>r.qty>0).map(r=>({name:r.defect_name||dn(r.defect_type_id).name||"",source:(r.defect_source||dn(r.defect_type_id).source)==="op"?"Thao tác":"NCC",qty:r.qty,cause:(r.cause||"").trim(),action:(r.action||"").trim()}))
+        .sort((a,b)=>b.qty-a.qty);
+    }
+    const hlRows=await q(SB.from("hotline_issues").select("code,product_code,issue_desc,cause,countermeasure,short_term_action,long_term_action,status,dept_id,opened_at").gte("opened_at",d1).lte("opened_at",d2+"T23:59:59").order("opened_at",{ascending:false}));
+    const depName=id=>id?((REF.depts.find(d=>d.id===id)||{}).name||""):"";
+    const r2=(n,d)=>n==null||!isFinite(n)?null:+Number(n).toFixed(d);
+    const out=o=>o.good+o.ng_op+o.ng_sup;
+    const pr=S.prod,has=pr&&pr.rows>0;
+    const kh=pr.plan_rows?r2(pr.good/pr.plan*100,1):null;
+    const ngPct=out(pr)?r2((pr.ng_op+pr.ng_sup)/out(pr)*100,2):null;
+    const nsPct=pr.man_hours?r2(pr.std_hours/pr.man_hours*100,1):null;
+    const tiles=[];
+    if(has){
+      tiles.push(pdfTile("Sản lượng đạt",pr.good,"sản phẩm",pr.plan_rows?"KH "+fmt(pr.plan):"",judge("out",kh,1).s));
+      if(pr.plan_rows)tiles.push(pdfTile("Hoàn thành kế hoạch",kh,"%","",judge("out",kh,1).s));
+      if(out(pr))tiles.push(pdfTile("Tỷ lệ NG (SX báo)",ngPct,"%","Thao tác "+fmt(r2(pr.ng_op/out(pr)*100,2),2)+"% · NCC "+fmt(r2(pr.ng_sup/out(pr)*100,2),2)+"%",judge("def",ngPct,-1).s));
+      if(pr.man_hours)tiles.push(pdfTile("Năng suất",nsPct,"% định mức",fmt(pr.std_hours,0)+" giờ chuẩn / "+fmt(pr.man_hours,0)+" giờ công",judge("prod",nsPct,1).s));
+    }
+    if(S.cd&&S.cd.stops)tiles.push(pdfTile("Dừng máy (Cơ điện)",S.cd.downtime,"phút",S.cd.stops+" sự cố",judge("dt",S.cd.downtime,-1,Math.max(1,pr.days||1)*(line?0.1:1)).s));
+    if(S.qc&&S.qc.pqc_insp)tiles.push(pdfTile("Kiểm PQC (QAC)",S.qc.pqc_insp,"sản phẩm","NG "+fmt(r2((S.qc.pqc_op+S.qc.pqc_sup)/S.qc.pqc_insp*100,2),2)+"% · thao tác "+fmt(S.qc.pqc_op)+" · NCC "+fmt(S.qc.pqc_sup),judge("def",r2((S.qc.pqc_op+S.qc.pqc_sup)/S.qc.pqc_insp*100,2),-1).s));
+    if(S.hr&&S.hr.days)tiles.push(pdfTile("Vắng mặt",S.hr.absent_pct,"%","TB "+fmt(S.hr.absent_avg,0)+"/"+fmt(S.hr.total)+" người · nghỉ việc "+(S.hr.quits||0)+" · tuyển mới "+(S.hr.new||0),"none"));
+    if(S.wh&&S.wh.shortage_items)tiles.push(pdfTile("Kho — mã vật tư thiếu",S.wh.shortage_items,"mã","Nhập kho từ SX "+(S.wh.receipt_sx||0)+" sp",S.wh.shortage_items?"warn":"ok"));
+    const fives5=S.fives?S.fives.s1+S.fives.s2+S.fives.s3:0;
+    if(fives5)tiles.push(pdfTile("Lỗi 3S trong kỳ",fives5,"lỗi","Sàng lọc "+S.fives.s1+" · Sắp xếp "+S.fives.s2+" · Sạch sẽ "+S.fives.s3,S.fives_overdue?"bad":(S.fives.open?"warn":"ok")));
+    if(S.tasks&&S.tasks.overdue)tiles.push(pdfTile("Việc / chỉ đạo quá hạn",S.tasks.overdue,"việc",S.tasks.open+" đang mở · "+S.tasks.done_in+" đóng trong kỳ","bad"));
+    if(S.recon_flags)tiles.push(pdfTile("Đối chiếu lệch giữa các bộ phận",S.recon_flags,"điểm","","bad"));
+    const pqcHtml=pqcRows.length?`<table style="width:100%;border-collapse:collapse;font-size:11.5px">
+      <tr style="background:#EAEEF7"><th style="text-align:left;padding:6px 8px;border:1px solid #D5DCEB">Loại lỗi</th><th style="text-align:left;padding:6px 8px;border:1px solid #D5DCEB;width:80px">Nguồn</th><th style="text-align:right;padding:6px 8px;border:1px solid #D5DCEB;width:60px">SL</th><th style="text-align:left;padding:6px 8px;border:1px solid #D5DCEB">Nguyên nhân</th><th style="text-align:left;padding:6px 8px;border:1px solid #D5DCEB">Hướng xử lý</th></tr>
+      ${pqcRows.slice(0,60).map(r=>`<tr><td style="padding:5px 8px;border:1px solid #D5DCEB">${esc(r.name)}</td><td style="padding:5px 8px;border:1px solid #D5DCEB">${esc(r.source)}</td><td style="padding:5px 8px;border:1px solid #D5DCEB;text-align:right;font-weight:700">${fmt(r.qty)}</td><td style="padding:5px 8px;border:1px solid #D5DCEB">${esc(r.cause)||"—"}</td><td style="padding:5px 8px;border:1px solid #D5DCEB">${esc(r.action)||"—"}</td></tr>`).join("")}
+      </table>${pqcRows.length>60?`<div style="font-size:11px;color:#5A6684;margin-top:4px">Còn ${pqcRows.length-60} dòng khác, xem đầy đủ trong "Xuất báo cáo Excel".</div>`:""}`:`<div style="font-size:12px;color:#5A6684">Không có lỗi PQC ghi nhận trong kỳ.</div>`;
+    const hlHtml=hlRows.length?`<table style="width:100%;border-collapse:collapse;font-size:11.5px">
+      <tr style="background:#EAEEF7"><th style="text-align:left;padding:6px 8px;border:1px solid #D5DCEB;width:80px">Mã</th><th style="text-align:left;padding:6px 8px;border:1px solid #D5DCEB">Sản phẩm</th><th style="text-align:left;padding:6px 8px;border:1px solid #D5DCEB">Nội dung vấn đề</th><th style="text-align:left;padding:6px 8px;border:1px solid #D5DCEB;width:90px">Trạng thái</th><th style="text-align:left;padding:6px 8px;border:1px solid #D5DCEB">Hướng xử lý</th><th style="text-align:left;padding:6px 8px;border:1px solid #D5DCEB;width:100px">Bộ phận</th></tr>
+      ${hlRows.map(r=>{const fix=[r.countermeasure,r.short_term_action,r.long_term_action].filter(v=>v&&v.trim()).join(" · ");
+        return `<tr><td style="padding:5px 8px;border:1px solid #D5DCEB;font-family:monospace">${esc(r.code)}</td><td style="padding:5px 8px;border:1px solid #D5DCEB">${esc(r.product_code||"")}</td><td style="padding:5px 8px;border:1px solid #D5DCEB">${esc(r.issue_desc)}</td><td style="padding:5px 8px;border:1px solid #D5DCEB">${esc(ttName(HL_ST,r.status))}</td><td style="padding:5px 8px;border:1px solid #D5DCEB">${esc(fix)||"—"}</td><td style="padding:5px 8px;border:1px solid #D5DCEB">${esc(depName(r.dept_id))}</td></tr>`}).join("")}
+      </table>`:`<div style="font-size:12px;color:#5A6684">Không có vấn đề Hotline mở trong kỳ.</div>`;
+    const now=new Date();
+    const root=document.createElement("div");
+    root.id="tqPdfRoot";
+    root.style.cssText="position:fixed;left:-9999px;top:0;width:1120px;background:#fff;font-family:Arial,Helvetica,sans-serif;color:#16213D";
+    root.innerHTML=`<div style="padding:24px 28px 32px">
+      <div style="background:#20409A;color:#fff;border-radius:10px;padding:16px 20px;display:flex;justify-content:space-between;align-items:flex-start">
+       <div><div style="font-size:11px;letter-spacing:.08em;opacity:.85">NHÀ MÁY TLC LIGHTING</div>
+        <div style="font-size:21px;font-weight:800;margin-top:2px">BÁO CÁO TỔNG QUAN ${full?"TOÀN NHÀ MÁY":esc((dName||"").toUpperCase())}</div>
+        <div style="font-size:12px;margin-top:4px;opacity:.9">${esc(lbl)}</div></div>
+       <div style="text-align:right;font-size:11px;opacity:.9">Số liệu lúc ${now.toLocaleString("vi-VN")}<br>TLC Dashboard</div>
+      </div>
+      ${pdfSecHead(1,"CHỈ SỐ ĐIỀU HÀNH","Chỉ các chỉ số đã có số liệu trong kỳ")}
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">${tiles.join("")||'<div style="font-size:12px;color:#5A6684">Chưa có số liệu trong kỳ.</div>'}</div>
+      ${pdfSecHead(2,"CHI TIẾT LỖI PQC","Theo loại lỗi · kèm nguyên nhân và hướng xử lý đã ghi nhận")}
+      ${pqcHtml}
+      ${pdfSecHead(3,"HOTLINE & HƯỚNG XỬ LÝ","Vấn đề hotline mở trong kỳ")}
+      ${hlHtml}
+     </div>`;
+    document.body.appendChild(root);
+    await html2pdf().set({margin:8,filename:`TongQuan_${d1}_${d2}_${yymmdd(todayISO())}.pdf`,image:{type:"jpeg",quality:0.95},html2canvas:{scale:2,useCORS:true},jsPDF:{unit:"pt",format:"a4",orientation:"landscape"},pagebreak:{mode:["css","avoid-all"]}}).from(root).save();
+    root.remove();
+    toast("Đã xuất báo cáo PDF");
+  }catch(err){alert(sbErr(err))}
+  finally{if(btn){btn.disabled=false;btn.textContent="Xuất báo cáo PDF"}}
+}
 function bindDashLive(){
   const today=ME.today||todayISO();
   const ex=$("#ldExport");if(ex)ex.onclick=()=>{tqExport();toast("Đã xuất báo cáo Excel")};
+  const pf=$("#ldPdf");if(pf)pf.onclick=()=>tqPdfExport();
   document.querySelectorAll("[data-lper]").forEach(b=>b.onclick=()=>{LD.period=b.dataset.lper;render()});
   $("#ldDate").onchange=e=>{LD.date=e.target.value||today;render()};
   const step=dir=>{if(LD.period==="day")return addDays(LD.date,dir);if(LD.period==="week")return addDays(LD.date,7*dir);const d=D0(LD.date.slice(0,8)+"01");d.setUTCMonth(d.getUTCMonth()+dir);return isoOf(d)};
