@@ -3310,6 +3310,7 @@ async function viewDashLive(){
   const lbl=LD.period==="day"?`${dowVN(d1)} ${dmy(d1)}`:LD.period==="week"?`Tuần ${dm(d1)} – ${dm(d2)}/${d2.slice(0,4)}`:`Tháng ${d1.slice(5,7)}/${d1.slice(0,4)}`;
   const nLines=(CFG.lines||[]).length||10;const repLines=S.lines.filter(l=>l.n_rows).length;
   const entered=sum.filter(s=>s.entered).length;const closed=d2<today||(d2===today&&sxDeadlinePassed(today,today));
+  LD._x={S,d1,d2,full,pd,dName,line,sum,entered,lbl:LD.period==="day"?`${dowVN(d1)} ${dmy(d1)}`:LD.period==="week"?`Tuần ${dm(d1)} – ${dm(d2)}/${d2.slice(0,4)}`:`Tháng ${d1.slice(5,7)}/${d1.slice(0,4)}`};
   // cảnh báo tự sinh từ số liệu thật
   const AL=[];const add=(sev,t,d,mod)=>AL.push({sev,t,d,mod});
   if(SEC.lines&&LD.period==="day"&&closed&&repLines<(line?1:nLines))add("bad",`${(line?1:nLines)-repLines} line chưa nhập báo cáo SX ngày ${dm(d2)}`,S.lines.filter(l=>!l.n_rows).map(l=>l.name).join(", "),"sx");
@@ -3331,7 +3332,7 @@ async function viewDashLive(){
    <span class="flabel">Phạm vi</span><select id="ldScope">${lineOpt}</select>
    <span class="period">${lbl} <small>· ${pr.days} ngày có số liệu SX · số liệu thật</small></span>
    ${!full&&dps.length>1?`<select id="ldDept">${dps.map(id=>`<option value="${id}" ${id===LD.dept?"selected":""}>${esc((REF.depts.find(d=>d.id===id)||{}).name||"")}</option>`).join("")}</select>`:""}
-   ${ME.role==="admin"?'<button class="btn ghost" type="button" id="ldDemo" style="margin-left:auto">Xem bản mẫu GĐ2</button>':""}</div>
+   <div style="margin-left:auto;display:flex;gap:8px"><button class="btn ghost" type="button" id="ldExport">Xuất báo cáo Excel</button>${ME.role==="admin"?'<button class="btn ghost" type="button" id="ldDemo">Xem bản mẫu GĐ2</button>':""}</div></div>
   ${pd?`<div class="alert" style="margin-bottom:10px"><span class="sv" style="background:var(--accent)"></span><div class="b"><div class="t">Tổng quan ${esc(dName)}</div><div class="d">Bạn đang xem số liệu của bộ phận mình. Muốn xem toàn nhà máy, đề nghị GĐNM cấp quyền "Xem Tổng quan".</div></div></div>`:""}
   ${has||!SEC.prod?"":`<div class="empty" style="margin-bottom:12px">Kỳ này chưa có báo cáo sản xuất. Các ô còn số là từ bộ phận khác.</div>`}
   <h2 class="sec">Chỉ số điều hành <small>Bấm thẻ để mở màn hình nhập liệu tương ứng</small></h2>
@@ -3370,8 +3371,70 @@ async function viewDashLive(){
    <div>${SEC.prod?`<h2 class="sec">Mã sản lượng lớn nhất</h2>${S.top_codes.length?`<div class="tbl"><table><tr><th>Mã</th><th class="num">Đạt</th><th class="num">NG</th><th class="num">NS / ĐM</th></tr>${S.top_codes.map(c=>`<tr><td class="mono" title="${esc(c.name||"")}">${esc(c.code)}</td><td class="num">${fmt(c.good)}</td><td class="num">${fmt(+c.ng_op + +c.ng_sup)}</td><td class="num">${c.prod_pct==null?"—":`<span class="pill p-${judge("prod",+c.prod_pct,1).s}">${fmt(+c.prod_pct,0)}%</span>`}${c.no_norm?' <span class="pill p-warn">thiếu ĐM</span>':""}</td></tr>`).join("")}</table></div>`:'<div class="empty">Chưa có báo cáo sản xuất</div>'}`:""}</div>
   </div>`:""}`;
 }
+function tqExport(){
+  const x=LD._x;if(!x)return;
+  const{S,d1,d2,full,dName,lbl,sum,entered}=x;
+  const r=(n,d)=>n==null||!isFinite(n)?null:+Number(n).toFixed(d);
+  const wb=XLSX.utils.book_new();
+  const title="BÁO CÁO TỔNG QUAN "+(full?"TOÀN NHÀ MÁY":(dName||"").toUpperCase());
+  const out=o=>o.good+o.ng_op+o.ng_sup;
+  // ---- Sheet 1: Chỉ số điều hành (chỉ đưa số liệu đã có, bỏ qua mục chưa nhập) ----
+  const k=[[title],[lbl],[],["Chỉ số","Giá trị","Đơn vị","Ghi chú"]];
+  const pr=S.prod,has=pr&&pr.rows>0;
+  if(has){
+    k.push(["Sản lượng đạt",pr.good,"sản phẩm",pr.plan_rows?"KH "+pr.plan:""]);
+    if(pr.plan_rows)k.push(["Hoàn thành kế hoạch",r(pr.good/pr.plan*100,1),"%",""]);
+    if(out(pr))k.push(["Tỷ lệ NG",r((pr.ng_op+pr.ng_sup)/out(pr)*100,2),"%","Thao tác "+r(pr.ng_op/out(pr)*100,2)+"% · NCC "+r(pr.ng_sup/out(pr)*100,2)+"%"]);
+    if(pr.man_hours)k.push(["Năng suất",r(pr.std_hours/pr.man_hours*100,1),"% định mức",r(pr.std_hours,0)+" giờ chuẩn / "+r(pr.man_hours,0)+" giờ công"]);
+  }
+  if(S.cd&&S.cd.stops)k.push(["Dừng máy (Cơ điện)",S.cd.downtime,"phút",S.cd.stops+" sự cố"]);
+  if(S.qc&&S.qc.pqc_insp)k.push(["Kiểm PQC (QAC)",S.qc.pqc_insp,"sản phẩm","NG "+r((S.qc.pqc_op+S.qc.pqc_sup)/S.qc.pqc_insp*100,2)+"% · thao tác "+S.qc.pqc_op+" · NCC "+S.qc.pqc_sup]);
+  if(S.hr&&S.hr.days)k.push(["Vắng mặt",r(S.hr.absent_pct,1),"%","TB "+r(S.hr.absent_avg,0)+"/"+S.hr.total+" người · nghỉ việc "+(S.hr.quits||0)+" · tuyển mới "+(S.hr.new||0)]);
+  if(S.wh&&S.wh.shortage_items)k.push(["Kho — mã vật tư thiếu",S.wh.shortage_items,"mã","Nhập kho từ SX "+(S.wh.receipt_sx||0)+" sp"]);
+  const fives5=S.fives?S.fives.s1+S.fives.s2+S.fives.s3:0;
+  if(fives5)k.push(["Lỗi 3S trong kỳ",fives5,"lỗi","Sàng lọc "+S.fives.s1+" · Sắp xếp "+S.fives.s2+" · Sạch sẽ "+S.fives.s3+(S.fives_overdue?" · "+S.fives_overdue+" quá hạn":"")]);
+  if(S.tasks&&S.tasks.overdue)k.push(["Việc / chỉ đạo quá hạn",S.tasks.overdue,"việc",S.tasks.open+" đang mở · "+S.tasks.done_in+" đóng trong kỳ"]);
+  if(S.recon_flags)k.push(["Đối chiếu lệch giữa các bộ phận",S.recon_flags,"điểm","SX ↔ Kho TP · NG ↔ QAC · dừng máy ↔ Cơ điện"]);
+  const ws1=XLSX.utils.aoa_to_sheet(k);ws1["!cols"]=[30,14,14,50].map(w=>({wch:w}));
+  XLSX.utils.book_append_sheet(wb,ws1,"Tổng quan");
+  // ---- Sheet 2: Theo line (chỉ line đã có báo cáo) ----
+  const linesHas=(S.lines||[]).filter(l=>l.n_rows);
+  if(linesHas.length){
+    const kh2=l=>l.plan_rows?r(l.good/l.plan*100,1):null;
+    const rows2=linesHas.map(l=>({"Line":l.name,"KH":l.plan_rows?l.plan:"","Đạt":l.good,"% KH":kh2(l),"NG thao tác %":r(l.ng_op/out(l)*100,2),"NG NCC %":r(l.ng_sup/out(l)*100,2),"Năng suất % ĐM":l.man_hours?r(l.std_hours/l.man_hours*100,1):"","Dừng SX (phút)":l.dt_sx,"Dừng CĐ (phút)":l.dt_cd||""}));
+    const ws2=XLSX.utils.json_to_sheet(rows2);ws2["!cols"]=[16,10,10,10,14,12,14,14,14].map(w=>({wch:w}));
+    XLSX.utils.book_append_sheet(wb,ws2,"Theo line");
+  }
+  // ---- Sheet 3: Diễn biến theo ngày ----
+  if(S.trend&&S.trend.length>1){
+    const rows3=S.trend.map(t=>({"Ngày":dmyS(t.d),"Kế hoạch":t.plan||"","Đạt":t.good||0,"NG":t.ng||0,"Năng suất % ĐM":t.man_hours?r(t.std_hours/t.man_hours*100,1):"","Dừng máy (phút)":t.dt||0}));
+    const ws3=XLSX.utils.json_to_sheet(rows3);ws3["!cols"]=[14,12,10,10,14,14].map(w=>({wch:w}));
+    XLSX.utils.book_append_sheet(wb,ws3,"Diễn biến ngày");
+  }
+  // ---- Sheet 4: Lỗi theo loại (QAC PQC) ----
+  if(S.defects&&S.defects.length){
+    const rows4=S.defects.map(x=>({"Loại lỗi":x.name,"Nguồn":x.source==="op"?"Thao tác":"NCC","Số lượng":x.qty}));
+    const ws4=XLSX.utils.json_to_sheet(rows4);ws4["!cols"]=[34,12,12].map(w=>({wch:w}));
+    XLSX.utils.book_append_sheet(wb,ws4,"Lỗi theo loại");
+  }
+  // ---- Sheet 5: Mã sản lượng lớn nhất ----
+  if(S.top_codes&&S.top_codes.length){
+    const rows5=S.top_codes.map(c=>({"Mã":c.code,"Tên":c.name||"","Đạt":c.good,"NG":(+c.ng_op||0)+(+c.ng_sup||0),"Năng suất % ĐM":c.prod_pct==null?"":r(+c.prod_pct,0)}));
+    const ws5=XLSX.utils.json_to_sheet(rows5);ws5["!cols"]=[18,34,10,10,14].map(w=>({wch:w}));
+    XLSX.utils.book_append_sheet(wb,ws5,"Mã SL lớn nhất");
+  }
+  // ---- Sheet 6: Báo cáo ngày theo vị trí (chỉ vị trí đã nhập) ----
+  const sumHas=(sum||[]).filter(s=>s.entered);
+  if(sumHas.length){
+    const rows6=sumHas.map(s=>({"Vị trí":s.report_code,"Tên":s.position_name,"Giờ nhập":s.last_edit_at?new Date(s.last_edit_at).toLocaleTimeString("vi-VN",{hour:"2-digit",minute:"2-digit"}):""}));
+    const ws6=XLSX.utils.json_to_sheet(rows6);ws6["!cols"]=[12,30,12].map(w=>({wch:w}));
+    XLSX.utils.book_append_sheet(wb,ws6,"BC ngày theo vị trí");
+  }
+  XLSX.writeFile(wb,`TongQuan_${d1}_${d2}_${yymmdd(todayISO())}.xlsx`);
+}
 function bindDashLive(){
   const today=ME.today||todayISO();
+  const ex=$("#ldExport");if(ex)ex.onclick=()=>{tqExport();toast("Đã xuất báo cáo Excel")};
   document.querySelectorAll("[data-lper]").forEach(b=>b.onclick=()=>{LD.period=b.dataset.lper;render()});
   $("#ldDate").onchange=e=>{LD.date=e.target.value||today;render()};
   const step=dir=>{if(LD.period==="day")return addDays(LD.date,dir);if(LD.period==="week")return addDays(LD.date,7*dir);const d=D0(LD.date.slice(0,8)+"01");d.setUTCMonth(d.getUTCMonth()+dir);return isoOf(d)};
