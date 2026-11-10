@@ -222,7 +222,7 @@ textarea{font:inherit;color:var(--fg);background:var(--surface);border:1px solid
 <div id="drawerHost"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/html2pdf.js@0.10.2/dist/html2pdf.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 
 <script>
 "use strict";
@@ -1770,7 +1770,7 @@ async function sxCache(){
   if(SX_CACHE)return SX_CACHE;
   const page=(a,b)=>q(SB.from("products").select("code,name,norm_per_hour,is_semi,norm_manual,norm_updated_at").eq("active",true).order("code").range(a,b));
   const parts=[];for(let i=0;i<10;i++){const p=await page(i*1000,i*1000+999);parts.push(...p);if(p.length<1000)break}
-  const[def,dt,lo]=await Promise.all([q(SB.from("defect_types").select("id,name,stage,source").eq("active",true).order("id")),
+  const[def,dt,lo]=await Promise.all([q(SB.from("defect_types").select("id,name,stage,source,component_group").eq("active",true).order("id")),
     q(SB.from("app_settings").select("value").eq("key","downtime_reasons").maybeSingle()),
     q(SB.from("app_settings").select("value").eq("key","line_off_reasons").maybeSingle())]);
   SX_CACHE={prods:parts,byCode:Object.fromEntries(parts.map(p=>[p.code,p])),defects:def,dtReasons:(dt&&dt.value)||["Khác"],offReasons:(lo&&lo.value)||["Khác"]};
@@ -3444,20 +3444,111 @@ function tqExport(){
   XLSX.writeFile(wb,`TongQuan_${d1}_${d2}_${yymmdd(todayISO())}.xlsx`);
 }
 /* ---------- Xuất báo cáo PDF (dashboard) — Tổng quan + chi tiết lỗi PQC + Hotline ---------- */
-const PDFC={ok:"#1E8E4F",warn:"#B07A00",bad:"#C62E2E",none:"#16213D"};
-function pdfTile(label,val,unit,sub,state){
-  const c=PDFC[state]||PDFC.none;
-  return `<div style="border:1px solid #D5DCEB;border-radius:10px;padding:12px 14px;background:#fff">
-   <div style="font-size:11px;color:#5A6684;font-weight:600;letter-spacing:.02em">${esc(label)}</div>
-   <div style="font-size:25px;font-weight:800;color:${c};margin-top:3px">${val==null?"—":fmt(val,unit==="%"||unit.includes("định mức")?1:0)}<span style="font-size:12px;font-weight:600;color:#5A6684"> ${esc(unit)}</span></div>
-   ${sub?`<div style="font-size:11px;color:#5A6684;margin-top:4px;line-height:1.5">${sub}</div>`:""}
-  </div>`;
+/* Vẽ PDF trực tiếp bằng jsPDF (vector, không qua html2canvas) để tránh lỗi
+   "PDF trống" do render DOM→canvas không ổn định. Nhúng font Roboto (hỗ trợ
+   dấu tiếng Việt đầy đủ) 1 lần/phiên, cache lại base64 để các lần xuất sau
+   không phải tải lại. */
+const PDFC={ok:[30,142,79],warn:[176,122,0],bad:[198,46,46],none:[22,33,61]};
+const PDFCAT=["#20409A","#0E7C86","#B07A00","#8A5CF6","#1E8E4F","#C62E2E","#5A6684","#2D6A4F"];
+const hex2rgb=h=>{const n=parseInt(h.slice(1),16);return[(n>>16)&255,(n>>8)&255,n&255]};
+let ROBOTO_FONT=null;
+async function ensureRobotoFont(doc){
+  if(!ROBOTO_FONT){
+    const buf2b64=buf=>{let bin="";const by=new Uint8Array(buf);const cz=0x8000;
+      for(let i=0;i<by.byteLength;i+=cz)bin+=String.fromCharCode.apply(null,by.subarray(i,i+cz));return btoa(bin)};
+    const[rb,bb]=await Promise.all([
+      fetch("https://cdn.jsdelivr.net/npm/roboto-fontface@0.8.0/fonts/roboto/Roboto-Regular.ttf").then(r=>r.arrayBuffer()),
+      fetch("https://cdn.jsdelivr.net/npm/roboto-fontface@0.8.0/fonts/roboto/Roboto-Bold.ttf").then(r=>r.arrayBuffer())]);
+    ROBOTO_FONT={reg:buf2b64(rb),bold:buf2b64(bb)};
+  }
+  doc.addFileToVFS("Roboto-Regular.ttf",ROBOTO_FONT.reg);doc.addFileToVFS("Roboto-Bold.ttf",ROBOTO_FONT.bold);
+  doc.addFont("Roboto-Regular.ttf","Roboto","normal");doc.addFont("Roboto-Bold.ttf","Roboto","bold");
+  doc.setFont("Roboto","normal");
 }
-function pdfSecHead(n,title,sub){
-  return `<div style="display:flex;align-items:center;gap:10px;margin:22px 0 10px">
-   <span style="flex:0 0 26px;height:26px;border-radius:50%;background:#20409A;color:#fff;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center">${n}</span>
-   <div><div style="font-size:16px;font-weight:800;color:#16213D">${esc(title)}</div>${sub?`<div style="font-size:11px;color:#5A6684">${esc(sub)}</div>`:""}</div>
-  </div><div style="height:2px;background:#20409A;margin-bottom:12px"></div>`;
+const PDF_PW=297,PDF_PH=210,PDF_MX=12,PDF_CW=PDF_PW-2*PDF_MX;
+function pdfHeader(doc,title,sub,now){
+  doc.setFillColor(32,64,154);doc.rect(0,0,PDF_PW,24,"F");doc.setTextColor(255,255,255);
+  doc.setFont("Roboto","normal");doc.setFontSize(8.5);doc.text("NHÀ MÁY TLC LIGHTING",PDF_MX,8);
+  doc.setFont("Roboto","bold");doc.setFontSize(15);doc.text(title,PDF_MX,15.5);
+  doc.setFont("Roboto","normal");doc.setFontSize(9);doc.text(sub,PDF_MX,20.5);
+  doc.setFontSize(8);doc.text("Số liệu lúc "+now,PDF_PW-PDF_MX,8,{align:"right"});doc.text("TLC Dashboard",PDF_PW-PDF_MX,12,{align:"right"});
+  doc.setTextColor(22,33,61);
+}
+function pdfMiniHeader(doc,title){
+  doc.setFillColor(32,64,154);doc.rect(0,0,PDF_PW,10,"F");doc.setTextColor(255,255,255);
+  doc.setFont("Roboto","bold");doc.setFontSize(9);doc.text(title,PDF_MX,6.5);doc.setTextColor(22,33,61);
+}
+function pdfSecHead(doc,y,n,title,sub){
+  doc.setFillColor(32,64,154);doc.circle(PDF_MX+3,y+1,3,"F");doc.setTextColor(255,255,255);
+  doc.setFont("Roboto","bold");doc.setFontSize(9);doc.text(String(n),PDF_MX+3,y+2.1,{align:"center"});
+  doc.setTextColor(22,33,61);doc.setFont("Roboto","bold");doc.setFontSize(12);doc.text(title,PDF_MX+9,y+1.3);
+  if(sub){doc.setFont("Roboto","normal");doc.setFontSize(8);doc.setTextColor(90,102,132);doc.text(sub,PDF_MX+9,y+5);doc.setTextColor(22,33,61)}
+  doc.setDrawColor(32,64,154);doc.setLineWidth(0.6);doc.line(PDF_MX,y+7.5,PDF_PW-PDF_MX,y+7.5);
+  return y+12;
+}
+function pdfTile(doc,x,y,w,h,label,val,unit,sub,state){
+  const c=PDFC[state]||PDFC.none;
+  doc.setDrawColor(213,220,235);doc.setLineWidth(0.25);doc.roundedRect(x,y,w,h,1.2,1.2,"S");
+  doc.setFillColor(c[0],c[1],c[2]);doc.rect(x,y,1.1,h,"F");
+  doc.setTextColor(90,102,132);doc.setFont("Roboto","normal");doc.setFontSize(7);
+  doc.text(doc.splitTextToSize(label,w-6).slice(0,2),x+3.2,y+4.4);
+  const dec=(unit==="%"||unit.includes("định mức"))?1:0;
+  const vtxt=val==null?"—":fmt(val,dec);
+  doc.setTextColor(c[0],c[1],c[2]);doc.setFont("Roboto","bold");doc.setFontSize(13);
+  doc.text(vtxt,x+3.2,y+12.2);
+  const vw=doc.getTextWidth(vtxt);
+  doc.setFont("Roboto","normal");doc.setFontSize(7);doc.setTextColor(90,102,132);
+  doc.text(unit,x+3.2+vw+1.3,y+12.2);
+  if(sub){doc.setFontSize(6.3);doc.text(doc.splitTextToSize(String(sub),w-6.4).slice(0,3),x+3.2,y+16);}
+  doc.setTextColor(22,33,61);
+}
+function pdfBarChart(doc,x,y,w,items){
+  const maxQty=Math.max(1,...items.map(i=>i.qty));const rowH=6.2,labelW=Math.min(48,w*0.4),barW=w-labelW-10;
+  items.forEach((it,i)=>{
+    const ry=y+i*rowH;
+    doc.setFont("Roboto","normal");doc.setFontSize(7.4);doc.setTextColor(22,33,61);
+    doc.text(doc.splitTextToSize(it.label,labelW-2)[0],x,ry+4.1);
+    doc.setFillColor(238,241,247);doc.rect(x+labelW,ry+0.7,barW,3.4,"F");
+    doc.setFillColor(it.color[0],it.color[1],it.color[2]);doc.rect(x+labelW,ry+0.7,Math.max(0.6,barW*it.qty/maxQty),3.4,"F");
+    doc.setFont("Roboto","bold");doc.setFontSize(7.4);doc.text(String(it.qty),x+labelW+barW+2,ry+3.7);
+  });
+  return y+items.length*rowH;
+}
+function pdfWedge(doc,cx,cy,r,a0,a1){
+  let a=a0;const step=3;
+  while(a<a1){const a2=Math.min(a+step,a1);
+    doc.triangle(cx,cy,cx+r*Math.cos(a*Math.PI/180),cy+r*Math.sin(a*Math.PI/180),cx+r*Math.cos(a2*Math.PI/180),cy+r*Math.sin(a2*Math.PI/180),"F");
+    a=a2;}
+}
+function pdfDonut(doc,cx,cy,r,slices){
+  let a=-90;
+  slices.forEach(s=>{const sweep=Math.max(0,s.pct)/100*360;doc.setFillColor(s.color[0],s.color[1],s.color[2]);pdfWedge(doc,cx,cy,r,a,a+sweep);a+=sweep});
+  doc.setFillColor(255,255,255);doc.circle(cx,cy,r*0.55,"F");
+}
+function pdfLegend(doc,x,y,slices){
+  slices.forEach((s,i)=>{const ry=y+i*5.3;
+    doc.setFillColor(s.color[0],s.color[1],s.color[2]);doc.rect(x,ry,2.6,2.6,"F");
+    doc.setFont("Roboto","normal");doc.setFontSize(7.3);doc.setTextColor(22,33,61);
+    doc.text(s.label,x+4,ry+2.2);});
+}
+function pdfTable(doc,startY,cols,rows,contTitle){
+  let y=startY;const lineH=3.5,padX=1.5,headH=5.4;const totalW=cols.reduce((s,c)=>s+c.width,0);
+  const header=()=>{doc.setFillColor(234,238,247);doc.rect(PDF_MX,y,totalW,headH,"F");
+    doc.setDrawColor(213,220,235);doc.setLineWidth(0.15);doc.rect(PDF_MX,y,totalW,headH,"S");
+    doc.setFont("Roboto","bold");doc.setFontSize(7.1);doc.setTextColor(22,33,61);
+    let cx=PDF_MX;cols.forEach(c=>{doc.text(c.header,c.align==="right"?cx+c.width-padX:cx+padX,y+3.7,c.align==="right"?{align:"right"}:undefined);cx+=c.width});
+    y+=headH;};
+  header();doc.setFont("Roboto","normal");doc.setFontSize(6.9);
+  rows.forEach(row=>{
+    const cellLines=cols.map(c=>doc.splitTextToSize(row[c.key]==null?"":String(row[c.key]),c.width-2*padX));
+    const nLines=Math.max(1,...cellLines.map(l=>l.length));const rowH=nLines*lineH+1.4;
+    if(y+rowH>PDF_PH-14){doc.addPage();pdfMiniHeader(doc,contTitle);y=16;doc.setFont("Roboto","bold");doc.setFontSize(7.1);header();doc.setFont("Roboto","normal");doc.setFontSize(6.9);}
+    doc.setDrawColor(224,228,240);doc.setLineWidth(0.12);let cx=PDF_MX;
+    cols.forEach((c,i)=>{doc.rect(cx,y,c.width,rowH,"S");
+      doc.text(cellLines[i],c.align==="right"?cx+c.width-padX:cx+padX,y+lineH-0.5,c.align==="right"?{align:"right"}:undefined);cx+=c.width;});
+    y+=rowH;
+  });
+  return y+4;
 }
 async function tqPdfExport(){
   const x=LD._x;if(!x)return;
@@ -3471,8 +3562,12 @@ async function tqPdfExport(){
     let pqcRows=[];
     if(qrIds.length){
       const defRows=await q(SB.from("quality_defects").select("report_id,qty,cause,action,defect_name,defect_source,defect_type_id").in("report_id",qrIds));
-      pqcRows=defRows.filter(r=>r.qty>0).map(r=>({name:r.defect_name||dn(r.defect_type_id).name||"",source:(r.defect_source||dn(r.defect_type_id).source)==="op"?"Thao tác":"NCC",qty:r.qty,cause:(r.cause||"").trim(),action:(r.action||"").trim()}))
-        .sort((a,b)=>b.qty-a.qty);
+      pqcRows=defRows.filter(r=>r.qty>0).map(r=>{
+        const d=dn(r.defect_type_id);const src=(r.defect_source||d.source)==="op"?"op":"sup";
+        return{name:r.defect_name||d.name||"",source:src==="op"?"Thao tác":"NCC",
+          group:src==="op"?"Thao tác vận hành":(d.component_group||"NCC khác"),
+          qty:r.qty,cause:(r.cause||"").trim(),action:(r.action||"").trim()};
+      }).sort((a,b)=>b.qty-a.qty);
     }
     const hlRows=await q(SB.from("hotline_issues").select("code,product_code,issue_desc,cause,countermeasure,short_term_action,long_term_action,status,dept_id,opened_at").gte("opened_at",d1).lte("opened_at",d2+"T23:59:59").order("opened_at",{ascending:false}));
     const depName=id=>id?((REF.depts.find(d=>d.id===id)||{}).name||""):"";
@@ -3484,58 +3579,82 @@ async function tqPdfExport(){
     const nsPct=pr.man_hours?r2(pr.std_hours/pr.man_hours*100,1):null;
     const tiles=[];
     if(has){
-      tiles.push(pdfTile("Sản lượng đạt",pr.good,"sản phẩm",pr.plan_rows?"KH "+fmt(pr.plan):"",judge("out",kh,1).s));
-      if(pr.plan_rows)tiles.push(pdfTile("Hoàn thành kế hoạch",kh,"%","",judge("out",kh,1).s));
-      if(out(pr))tiles.push(pdfTile("Tỷ lệ NG (SX báo)",ngPct,"%","Thao tác "+fmt(r2(pr.ng_op/out(pr)*100,2),2)+"% · NCC "+fmt(r2(pr.ng_sup/out(pr)*100,2),2)+"%",judge("def",ngPct,-1).s));
-      if(pr.man_hours)tiles.push(pdfTile("Năng suất",nsPct,"% định mức",fmt(pr.std_hours,0)+" giờ chuẩn / "+fmt(pr.man_hours,0)+" giờ công",judge("prod",nsPct,1).s));
+      tiles.push(["Sản lượng đạt",pr.good,"sản phẩm",pr.plan_rows?"KH "+fmt(pr.plan):"",judge("out",kh,1).s]);
+      if(pr.plan_rows)tiles.push(["Hoàn thành kế hoạch",kh,"%","",judge("out",kh,1).s]);
+      if(out(pr))tiles.push(["Tỷ lệ NG (SX báo)",ngPct,"%","Thao tác "+fmt(r2(pr.ng_op/out(pr)*100,2),2)+"% · NCC "+fmt(r2(pr.ng_sup/out(pr)*100,2),2)+"%",judge("def",ngPct,-1).s]);
+      if(pr.man_hours)tiles.push(["Năng suất",nsPct,"% định mức",fmt(pr.std_hours,0)+" giờ chuẩn / "+fmt(pr.man_hours,0)+" giờ công",judge("prod",nsPct,1).s]);
     }
-    if(S.cd&&S.cd.stops)tiles.push(pdfTile("Dừng máy (Cơ điện)",S.cd.downtime,"phút",S.cd.stops+" sự cố",judge("dt",S.cd.downtime,-1,Math.max(1,pr.days||1)*(line?0.1:1)).s));
-    if(S.qc&&S.qc.pqc_insp)tiles.push(pdfTile("Kiểm PQC (QAC)",S.qc.pqc_insp,"sản phẩm","NG "+fmt(r2((S.qc.pqc_op+S.qc.pqc_sup)/S.qc.pqc_insp*100,2),2)+"% · thao tác "+fmt(S.qc.pqc_op)+" · NCC "+fmt(S.qc.pqc_sup),judge("def",r2((S.qc.pqc_op+S.qc.pqc_sup)/S.qc.pqc_insp*100,2),-1).s));
-    if(S.hr&&S.hr.days)tiles.push(pdfTile("Vắng mặt",S.hr.absent_pct,"%","TB "+fmt(S.hr.absent_avg,0)+"/"+fmt(S.hr.total)+" người · nghỉ việc "+(S.hr.quits||0)+" · tuyển mới "+(S.hr.new||0),"none"));
-    if(S.wh&&S.wh.shortage_items)tiles.push(pdfTile("Kho — mã vật tư thiếu",S.wh.shortage_items,"mã","Nhập kho từ SX "+(S.wh.receipt_sx||0)+" sp",S.wh.shortage_items?"warn":"ok"));
+    if(S.cd&&S.cd.stops)tiles.push(["Dừng máy (Cơ điện)",S.cd.downtime,"phút",S.cd.stops+" sự cố",judge("dt",S.cd.downtime,-1,Math.max(1,pr.days||1)*(line?0.1:1)).s]);
+    if(S.qc&&S.qc.pqc_insp)tiles.push(["Kiểm PQC (QAC)",S.qc.pqc_insp,"sản phẩm","NG "+fmt(r2((S.qc.pqc_op+S.qc.pqc_sup)/S.qc.pqc_insp*100,2),2)+"% · thao tác "+fmt(S.qc.pqc_op)+" · NCC "+fmt(S.qc.pqc_sup),judge("def",r2((S.qc.pqc_op+S.qc.pqc_sup)/S.qc.pqc_insp*100,2),-1).s]);
+    if(S.hr&&S.hr.days)tiles.push(["Vắng mặt",S.hr.absent_pct,"%","TB "+fmt(S.hr.absent_avg,0)+"/"+fmt(S.hr.total)+" người · nghỉ việc "+(S.hr.quits||0)+" · tuyển mới "+(S.hr.new||0),"none"]);
+    if(S.wh&&S.wh.shortage_items)tiles.push(["Kho — mã vật tư thiếu",S.wh.shortage_items,"mã","Nhập kho từ SX "+(S.wh.receipt_sx||0)+" sp",S.wh.shortage_items?"warn":"ok"]);
     const fives5=S.fives?S.fives.s1+S.fives.s2+S.fives.s3:0;
-    if(fives5)tiles.push(pdfTile("Lỗi 3S trong kỳ",fives5,"lỗi","Sàng lọc "+S.fives.s1+" · Sắp xếp "+S.fives.s2+" · Sạch sẽ "+S.fives.s3,S.fives_overdue?"bad":(S.fives.open?"warn":"ok")));
-    if(S.tasks&&S.tasks.overdue)tiles.push(pdfTile("Việc / chỉ đạo quá hạn",S.tasks.overdue,"việc",S.tasks.open+" đang mở · "+S.tasks.done_in+" đóng trong kỳ","bad"));
-    if(S.recon_flags)tiles.push(pdfTile("Đối chiếu lệch giữa các bộ phận",S.recon_flags,"điểm","","bad"));
-    const pqcHtml=pqcRows.length?`<table style="width:100%;border-collapse:collapse;font-size:11.5px">
-      <tr style="background:#EAEEF7"><th style="text-align:left;padding:6px 8px;border:1px solid #D5DCEB">Loại lỗi</th><th style="text-align:left;padding:6px 8px;border:1px solid #D5DCEB;width:80px">Nguồn</th><th style="text-align:right;padding:6px 8px;border:1px solid #D5DCEB;width:60px">SL</th><th style="text-align:left;padding:6px 8px;border:1px solid #D5DCEB">Nguyên nhân</th><th style="text-align:left;padding:6px 8px;border:1px solid #D5DCEB">Hướng xử lý</th></tr>
-      ${pqcRows.slice(0,60).map(r=>`<tr><td style="padding:5px 8px;border:1px solid #D5DCEB">${esc(r.name)}</td><td style="padding:5px 8px;border:1px solid #D5DCEB">${esc(r.source)}</td><td style="padding:5px 8px;border:1px solid #D5DCEB;text-align:right;font-weight:700">${fmt(r.qty)}</td><td style="padding:5px 8px;border:1px solid #D5DCEB">${esc(r.cause)||"—"}</td><td style="padding:5px 8px;border:1px solid #D5DCEB">${esc(r.action)||"—"}</td></tr>`).join("")}
-      </table>${pqcRows.length>60?`<div style="font-size:11px;color:#5A6684;margin-top:4px">Còn ${pqcRows.length-60} dòng khác, xem đầy đủ trong "Xuất báo cáo Excel".</div>`:""}`:`<div style="font-size:12px;color:#5A6684">Không có lỗi PQC ghi nhận trong kỳ.</div>`;
-    const hlHtml=hlRows.length?`<table style="width:100%;border-collapse:collapse;font-size:11.5px">
-      <tr style="background:#EAEEF7"><th style="text-align:left;padding:6px 8px;border:1px solid #D5DCEB;width:80px">Mã</th><th style="text-align:left;padding:6px 8px;border:1px solid #D5DCEB">Sản phẩm</th><th style="text-align:left;padding:6px 8px;border:1px solid #D5DCEB">Nội dung vấn đề</th><th style="text-align:left;padding:6px 8px;border:1px solid #D5DCEB;width:90px">Trạng thái</th><th style="text-align:left;padding:6px 8px;border:1px solid #D5DCEB">Hướng xử lý</th><th style="text-align:left;padding:6px 8px;border:1px solid #D5DCEB;width:100px">Bộ phận</th></tr>
-      ${hlRows.map(r=>{const fix=[r.countermeasure,r.short_term_action,r.long_term_action].filter(v=>v&&v.trim()).join(" · ");
-        return `<tr><td style="padding:5px 8px;border:1px solid #D5DCEB;font-family:monospace">${esc(r.code)}</td><td style="padding:5px 8px;border:1px solid #D5DCEB">${esc(r.product_code||"")}</td><td style="padding:5px 8px;border:1px solid #D5DCEB">${esc(r.issue_desc)}</td><td style="padding:5px 8px;border:1px solid #D5DCEB">${esc(ttName(HL_ST,r.status))}</td><td style="padding:5px 8px;border:1px solid #D5DCEB">${esc(fix)||"—"}</td><td style="padding:5px 8px;border:1px solid #D5DCEB">${esc(depName(r.dept_id))}</td></tr>`}).join("")}
-      </table>`:`<div style="font-size:12px;color:#5A6684">Không có vấn đề Hotline mở trong kỳ.</div>`;
-    const now=new Date();
-    const overlay=document.createElement("div");
-    overlay.id="tqPdfOverlay";
-    overlay.style.cssText="position:fixed;inset:0;z-index:99999;background:#fff;overflow:auto";
-    const root=document.createElement("div");
-    root.id="tqPdfRoot";
-    root.style.cssText="width:1120px;margin:0 auto;background:#fff;font-family:Arial,Helvetica,sans-serif;color:#16213D";
-    root.innerHTML=`<div style="padding:24px 28px 32px">
-      <div style="background:#20409A;color:#fff;border-radius:10px;padding:16px 20px;display:flex;justify-content:space-between;align-items:flex-start">
-       <div><div style="font-size:11px;letter-spacing:.08em;opacity:.85">NHÀ MÁY TLC LIGHTING</div>
-        <div style="font-size:21px;font-weight:800;margin-top:2px">BÁO CÁO TỔNG QUAN ${full?"TOÀN NHÀ MÁY":esc((dName||"").toUpperCase())}</div>
-        <div style="font-size:12px;margin-top:4px;opacity:.9">${esc(lbl)}</div></div>
-       <div style="text-align:right;font-size:11px;opacity:.9">Số liệu lúc ${now.toLocaleString("vi-VN")}<br>TLC Dashboard</div>
-      </div>
-      ${pdfSecHead(1,"CHỈ SỐ ĐIỀU HÀNH","Chỉ các chỉ số đã có số liệu trong kỳ")}
-      <div style="display:flex;flex-wrap:wrap;gap:10px">${tiles.map(t=>`<div style="flex:0 0 calc(25% - 8px)">${t}</div>`).join("")||'<div style="font-size:12px;color:#5A6684">Chưa có số liệu trong kỳ.</div>'}</div>
-      ${pdfSecHead(2,"CHI TIẾT LỖI PQC","Theo loại lỗi · kèm nguyên nhân và hướng xử lý đã ghi nhận")}
-      ${pqcHtml}
-      ${pdfSecHead(3,"HOTLINE & HƯỚNG XỬ LÝ","Vấn đề hotline mở trong kỳ")}
-      ${hlHtml}
-     </div>`;
-    overlay.appendChild(root);
-    document.body.appendChild(overlay);
-    await new Promise(res=>requestAnimationFrame(()=>requestAnimationFrame(res))); // đợi layout/font nạp xong trước khi chụp
-    await html2pdf().set({margin:8,filename:`TongQuan_${d1}_${d2}_${yymmdd(todayISO())}.pdf`,image:{type:"jpeg",quality:0.95},
-      html2canvas:{scale:2,useCORS:true,backgroundColor:"#ffffff"},
-      jsPDF:{unit:"pt",format:"a4",orientation:"landscape"},pagebreak:{mode:["css","avoid-all"]}}).from(root).save();
+    if(fives5)tiles.push(["Lỗi 3S trong kỳ",fives5,"lỗi","Sàng lọc "+S.fives.s1+" · Sắp xếp "+S.fives.s2+" · Sạch sẽ "+S.fives.s3,S.fives_overdue?"bad":(S.fives.open?"warn":"ok")]);
+    if(S.tasks&&S.tasks.overdue)tiles.push(["Việc / chỉ đạo quá hạn",S.tasks.overdue,"việc",S.tasks.open+" đang mở · "+S.tasks.done_in+" đóng trong kỳ","bad"]);
+    if(S.recon_flags)tiles.push(["Đối chiếu lệch giữa các bộ phận",S.recon_flags,"điểm","","bad"]);
+
+    const{jsPDF}=window.jspdf;
+    const doc=new jsPDF({unit:"mm",format:"a4",orientation:"landscape"});
+    await ensureRobotoFont(doc);
+    const now=new Date().toLocaleString("vi-VN");
+    const title="BÁO CÁO TỔNG QUAN "+(full?"TOÀN NHÀ MÁY":(dName||"").toUpperCase());
+    pdfHeader(doc,title,lbl,now);
+    let y=30;
+    y=pdfSecHead(doc,y,1,"CHỈ SỐ ĐIỀU HÀNH","Chỉ các chỉ số đã có số liệu trong kỳ");
+    if(!tiles.length){doc.setFont("Roboto","normal");doc.setFontSize(9);doc.setTextColor(90,102,132);doc.text("Chưa có số liệu trong kỳ.",PDF_MX,y+4);doc.setTextColor(22,33,61);y+=10}
+    else{
+      const gap=3,tw=(PDF_CW-3*gap)/4,th=23.5;
+      tiles.forEach((t,i)=>{const col=i%4,row=Math.floor(i/4);pdfTile(doc,PDF_MX+col*(tw+gap),y+row*(th+gap),tw,th,t[0],t[1],t[2],t[3],t[4]);});
+      y+=Math.ceil(tiles.length/4)*(th+gap)+2;
+    }
+    y=pdfSecHead(doc,y+2,2,"CHI TIẾT LỖI PQC","Theo loại lỗi · theo nhóm nguyên nhân · kèm hướng xử lý đã ghi nhận");
+    if(pqcRows.length){
+      const byType=new Map();pqcRows.forEach(r=>byType.set(r.name,(byType.get(r.name)||0)+r.qty));
+      const top=[...byType.entries()].sort((a,b)=>b[1]-a[1]).slice(0,8).map(([label,qty],i)=>({label,qty,color:hex2rgb(PDFCAT[i%PDFCAT.length])}));
+      const chartY=y+4,barW=PDF_CW*0.55;
+      doc.setFont("Roboto","bold");doc.setFontSize(8.3);doc.text("Top loại lỗi PQC theo số lượng",PDF_MX,chartY);
+      const barEndY=pdfBarChart(doc,PDF_MX,chartY+5,barW,top);
+      const byGroup=new Map();let totQ=0;pqcRows.forEach(r=>{byGroup.set(r.group,(byGroup.get(r.group)||0)+r.qty);totQ+=r.qty});
+      const groups=[...byGroup.entries()].sort((a,b)=>b[1]-a[1]).map(([label,qty],i)=>({label:`${label} — ${fmt(totQ?qty/totQ*100:0,0)}%`,pct:totQ?qty/totQ*100:0,color:hex2rgb(PDFCAT[i%PDFCAT.length])}));
+      const dcx=PDF_MX+barW+30,dcy=chartY+20,dr=15;
+      doc.setFont("Roboto","bold");doc.setFontSize(8.3);doc.text("Theo nhóm nguyên nhân",dcx-dr,chartY);
+      pdfDonut(doc,dcx,dcy,dr,groups);
+      pdfLegend(doc,dcx+dr+6,dcy-groups.length*5.3/2+2,groups);
+      y=Math.max(barEndY,dcy+dr+8)+4;
+      const cols=[{header:"Loại lỗi",key:"name",width:PDF_CW*0.20},{header:"Nguồn",key:"source",width:PDF_CW*0.08},
+        {header:"SL",key:"qty",width:PDF_CW*0.06,align:"right"},{header:"Nguyên nhân",key:"cause",width:PDF_CW*0.31},
+        {header:"Hướng xử lý",key:"action",width:PDF_CW*0.35}];
+      const rowsData=pqcRows.map(r=>({name:r.name,source:r.source,qty:r.qty,cause:r.cause||"—",action:r.action||"—"}));
+      y=pdfTable(doc,y,cols,rowsData,title+" — Chi tiết lỗi PQC (tiếp)");
+    }else{
+      doc.setFont("Roboto","normal");doc.setFontSize(9);doc.setTextColor(90,102,132);doc.text("Không có lỗi PQC ghi nhận trong kỳ.",PDF_MX,y+5);doc.setTextColor(22,33,61);
+    }
+    doc.addPage();pdfMiniHeader(doc,title);y=16;
+    y=pdfSecHead(doc,y,3,"HOTLINE & HƯỚNG XỬ LÝ","Vấn đề hotline mở trong kỳ · trạng thái xử lý và đối sách");
+    if(hlRows.length){
+      const byStatus={open:0,processing:0,closed:0};hlRows.forEach(r=>byStatus[r.status]=(byStatus[r.status]||0)+1);
+      const stCol={open:PDFC.bad,processing:PDFC.warn,closed:PDFC.ok};
+      const slices=["closed","processing","open"].filter(k=>byStatus[k]).map(k=>({label:`${ttName(HL_ST,k)} — ${byStatus[k]}`,pct:byStatus[k]/hlRows.length*100,color:stCol[k]}));
+      const dcx=PDF_MX+18,dcy=y+20,dr=15;
+      pdfDonut(doc,dcx,dcy,dr,slices);
+      pdfLegend(doc,dcx+dr+8,dcy-slices.length*5.3/2+2,slices);
+      y=dcy+dr+10;
+      const cols=[{header:"Mã",key:"code",width:PDF_CW*0.08},{header:"Sản phẩm",key:"product_code",width:PDF_CW*0.13},
+        {header:"Nội dung vấn đề",key:"issue_desc",width:PDF_CW*0.28},{header:"Trạng thái",key:"st",width:PDF_CW*0.1},
+        {header:"Hướng xử lý",key:"fix",width:PDF_CW*0.27},{header:"Bộ phận",key:"dept",width:PDF_CW*0.14}];
+      const rowsData=hlRows.map(r=>({code:r.code,product_code:r.product_code||"",issue_desc:r.issue_desc,
+        st:ttName(HL_ST,r.status),fix:[r.countermeasure,r.short_term_action,r.long_term_action].filter(v=>v&&v.trim()).join(" · ")||"—",
+        dept:depName(r.dept_id)}));
+      y=pdfTable(doc,y,cols,rowsData,title+" — Hotline (tiếp)");
+    }else{
+      doc.setFont("Roboto","normal");doc.setFontSize(9);doc.setTextColor(90,102,132);doc.text("Không có vấn đề Hotline mở trong kỳ.",PDF_MX,y+5);doc.setTextColor(22,33,61);
+    }
+    const pageCount=doc.internal.getNumberOfPages();
+    for(let p=1;p<=pageCount;p++){doc.setPage(p);doc.setFont("Roboto","normal");doc.setFontSize(8);doc.setTextColor(90,102,132);doc.text(`Trang ${p}/${pageCount}`,PDF_PW-PDF_MX,PDF_PH-6,{align:"right"});doc.setTextColor(22,33,61)}
+    doc.save(`TongQuan_${d1}_${d2}_${yymmdd(todayISO())}.pdf`);
     toast("Đã xuất báo cáo PDF");
   }catch(err){alert(sbErr(err))}
-  finally{const o=$("#tqPdfOverlay");if(o)o.remove();if(btn){btn.disabled=false;btn.textContent="Xuất báo cáo PDF"}}
+  finally{if(btn){btn.disabled=false;btn.textContent="Xuất báo cáo PDF"}}
 }
 function bindDashLive(){
   const today=ME.today||todayISO();
