@@ -1053,9 +1053,10 @@ function bindConfig(){
 /* ============================================================
    QUẢN LÝ TÀI KHOẢN (GĐNM)
    ============================================================ */
-let accQ="",accDept="",ACC_SECRET=null,accConfirm=null;
+let accQ="",accDept="",ACC_SECRET=null,accConfirm=null,ACC_ROWS_CACHE=null;
 async function viewAccounts(){
   const ps=await api.profiles();
+  ACC_ROWS_CACHE=ps;
   PENDING_BULK=BULK_LIST.filter(r=>!ps.some(p=>p.full_name===r.name));
   const ov=RUN==="LIVE"?new Set((await q(SB.from("user_roles").select("profile_id").eq("module","overview").eq("can_view",true))).map(r=>r.profile_id)):new Set();const posOf=id=>REF.positions.find(p=>p.id===id)||{};const dep=id=>(REF.depts.find(d=>d.id===id)||{}).name||"";
   const nm=id=>(ps.find(p=>p.id===id)||{}).full_name||"—";
@@ -1095,7 +1096,14 @@ async function viewAccounts(){
   <div class="tools"><input id="accQ" type="search" placeholder="Tìm tên, tên đăng nhập" value="${esc(accQ)}" style="flex:1;min-width:160px" aria-label="Tìm tài khoản">
    <select id="accDept" aria-label="Lọc bộ phận"><option value="">Tất cả bộ phận</option>${REF.depts.map(d=>`<option value="${d.id}" ${accDept===String(d.id)?"selected":""}>${esc(d.name)}</option>`).join("")}</select></div>
   <div class="tbl"><table><tr><th>Họ tên</th><th>Tên đăng nhập</th><th>Bộ phận</th><th>Vị trí</th><th>Vai trò</th><th>Quản lý trực tiếp</th><th title="Được xem màn Tổng quan toàn nhà máy">Xem Tổng quan</th><th>Trạng thái</th><th>Thao tác</th></tr>
-  ${rows.map(p=>`<tr><td><b>${esc(p.full_name)}</b>${p.must_change_pw?' <span class="pill p-warn">Chưa đổi MK</span>':""}</td><td class="mono">${esc(p.username)}</td><td>${esc(dep(p.dept_id))}</td><td>${esc(posOf(p.position_id).name||"")}</td><td>${ROLE[p.role]}</td><td>${esc(p.manager_id?nm(p.manager_id):"—")}</td>
+  ${rows.map(p=>`<tr><td><b>${esc(p.full_name)}</b>${p.must_change_pw?' <span class="pill p-warn">Chưa đổi MK</span>':""}</td><td class="mono">${esc(p.username)}</td><td>${esc(dep(p.dept_id))}</td><td>${esc(posOf(p.position_id).name||"")}</td>
+   <td>${p.id===ME.id?`<span title="Không thể tự đổi vai trò của chính mình">${ROLE[p.role]}</span>`:p.role==="guest"?`${ROLE[p.role]}<div class="small">Đổi vai trò Khách: tạo lại tài khoản</div>`:
+     `<select data-roleedit="${p.id}" data-roleold="${p.role}" aria-label="Vai trò của ${esc(p.full_name)}">
+      <option value="staff" ${p.role==="staff"?"selected":""}>Nhân viên</option>
+      <option value="head" ${p.role==="head"?"selected":""}>Trưởng bộ phận</option>
+      <option value="admin" ${p.role==="admin"?"selected":""}>GĐNM (Admin)</option>
+     </select>`}</td>
+   <td>${esc(p.manager_id?nm(p.manager_id):"—")}</td>
    <td style="text-align:center">${p.role==="admin"?'<span class="small">Luôn xem</span>':RUN==="LIVE"?`<input type="checkbox" data-ov="${p.id}" ${ov.has(p.id)?"checked":""} aria-label="Cho ${esc(p.full_name)} xem Tổng quan">`:"—"}</td>
    <td><span class="pill p-${p.status==="active"?"ok":"bad"}">${p.status==="active"?"Hoạt động":"Đã khóa"}</span></td>
    <td style="white-space:nowrap">${p.id===ME.id?'<span class="small">Tài khoản của bạn</span>':`
@@ -1110,6 +1118,18 @@ function bindAccounts(){
   const toggleGuest=()=>{const g=role.value==="guest";$("#aPosWrap").hidden=g;$("#aGuestWrap").hidden=!g};
   role.onchange=toggleGuest;toggleGuest();
   pos.onchange=()=>{const p=REF.positions.find(x=>x.id===+pos.value);if(p&&role.value!=="guest")role.value=p.kind==="head"?"head":p.kind==="director"?"admin":"staff"};
+  document.querySelectorAll("[data-roleedit]").forEach(sel=>{
+    sel.onchange=async()=>{
+      const id=sel.dataset.roleedit,oldRole=sel.dataset.roleold,newRole=sel.value;
+      const p=(ACC_ROWS_CACHE||[]).find(x=>x.id===id)||{};
+      const roleTxt={staff:"Nhân viên",head:"Trưởng bộ phận",admin:"GĐNM (Admin)"};
+      const warn=newRole==="admin"?"\n\nLƯU Ý: vai trò GĐNM có toàn quyền trên hệ thống (xem/sửa mọi dữ liệu, mọi bộ phận, cấu hình hệ thống).":"";
+      if(!confirm(`Đổi vai trò của ${p.full_name||"người này"} từ "${roleTxt[oldRole]||oldRole}" sang "${roleTxt[newRole]}"?${warn}`)){sel.value=oldRole;return}
+      sel.disabled=true;
+      try{await q(SB.from("profiles").update({role:newRole}).eq("id",id));toast("Đã đổi vai trò");render()}
+      catch(err){sel.disabled=false;sel.value=oldRole;alert(sbErr(err))}
+    };
+  });
   $("#accForm").addEventListener("submit",async e=>{e.preventDefault();const m=$("#aMsg");[name,pos,guestName].forEach(x=>x.classList.remove("err"));
     if(name.value.trim().split(/\s+/).length<2){name.classList.add("err");m.className="msg bad";m.textContent="Nhập đủ họ và tên.";return}
     let positionId;
