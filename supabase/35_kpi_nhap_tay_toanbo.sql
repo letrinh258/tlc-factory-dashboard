@@ -60,7 +60,7 @@ grant execute on function public.kpi_override_save(text,date,date,numeric,text) 
 
 create or replace function public.kpi_scorecard(d1 date, d2 date) returns json
 language plpgsql stable security definer set search_path = public as $$
-declare std numeric := coalesce((select (value->>'stdProd')::numeric from app_settings where key = 'rules'), 32); r jsonb; ov jsonb; ndays int;
+declare std numeric := coalesce((select (value->>'stdProd')::numeric from app_settings where key = 'rules'), 32); r jsonb; ov jsonb; ndays int; v_d1 date := d1; v_d2 date := d2;
 begin
   if not public.can_overview() then raise exception 'Bạn chưa được cấp quyền xem Báo cáo KPI. Liên hệ GĐNM.'; end if;
   ndays := greatest(1, d2 - d1 + 1);
@@ -113,7 +113,7 @@ begin
   ) into r;
   -- áp số nhập tay (đè số tính tự động) đúng theo kỳ [d1,d2] đang xem
   select coalesce(jsonb_object_agg(metric_key, jsonb_build_object('value', value, 'note', note, 'updated_at', updated_at)), '{}'::jsonb)
-    into ov from kpi_overrides where d1 = kpi_scorecard.d1 and d2 = kpi_scorecard.d2;
+    into ov from kpi_overrides where d1 = v_d1 and d2 = v_d2;
   r := (select jsonb_object_agg(kv.key, case when ov ? kv.key then ov->kv.key->'value' else kv.value end) from jsonb_each(r) kv)
        || jsonb_build_object('d1', d1, 'd2', d2, 'days', ndays, 'overrides', ov);
   return r::json;
