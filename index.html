@@ -413,6 +413,7 @@ function range(period,date){
   if(period==="week"){const w=(D0(date).getUTCDay()+6)%7;const a=addDays(date,-w);return[a,addDays(a,6)]}
   const a=date.slice(0,8)+"01";const n=new Date(Date.UTC(+date.slice(0,4),+date.slice(5,7),0)).getUTCDate();return[a,date.slice(0,8)+String(n).padStart(2,"0")];
 }
+function mondayOf(date){const w=(D0(date).getUTCDay()+6)%7;return addDays(date,-w)}
 function prevDate(period,date){
   if(period==="day"){let d=addDays(date,-1);for(let k=0;k<10&&!DB.days.includes(d);k++)d=addDays(d,-1);return d}
   if(period==="week")return addDays(range("week",date)[0],-1);
@@ -2423,7 +2424,17 @@ async function viewBH(){
   const b=rows[0];
   const causeTop=b?Object.entries(b.cause_totals||{}).sort((x,y)=>y[1]-x[1]).slice(0,12):[];
   const itemTop=b?Object.entries(b.item_totals||{}).sort((x,y)=>y[1]-x[1]).slice(0,12):[];
+  const openClaims=await q(SB.from("warranty_claims").select("*").eq("status","open").order("received_at"));
+  const nowMs=Date.now();
   return `<h2 class="sec" style="margin-top:0">Bảo hành</h2>
+  <div class="card" style="margin-bottom:10px"><h3>Case đang xử lý tại nhà máy <small>cam kết xử lý trong 72 giờ kể từ lúc nhận — dùng để tính chỉ số KPI "Ca BH quá cam kết"</small></h3>
+  ${openClaims.length?`<div class="tbl"><table><tr><th>Khách hàng</th><th>Mặt hàng</th><th class="num">SL</th><th>Nhận lúc</th><th>Đã quá</th><th></th></tr>
+   ${openClaims.map(c=>{const hrs=c.received_at?(nowMs-new Date(c.received_at).getTime())/3600000:null;const over=hrs!=null&&hrs>72;
+     return `<tr><td>${esc(c.customer||"—")}</td><td>${esc(c.item_name||"—")}</td><td class="num">${fmt(c.total_qty)}</td>
+      <td class="small">${c.received_at?new Date(c.received_at).toLocaleString("vi-VN"):"Chưa có"}</td>
+      <td>${hrs==null?"—":`<span class="pill p-${over?"bad":"ok"}">${fmt(hrs,0)} giờ${over?" · QUÁ CAM KẾT":""}</span>`}</td>
+      <td>${ME.role==="admin"?`<button class="btn ghost" type="button" data-whdone="${c.id}" style="padding:3px 9px">Đánh dấu xong</button>`:""}</td></tr>`}).join("")}
+   </table></div>`:`<p class="small" style="margin:0">Không có case nào đang mở.</p>`}</div>
   <p class="small" style="margin:0 0 10px">Bảng kê phiếu sửa chữa hàng bảo hành theo tháng (BHM + BHN gộp chung, nguồn nội bộ/Bravo).</p>
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
    <button class="btn ghost" type="button" id="bhPrev">‹</button>
@@ -2443,6 +2454,11 @@ async function viewBH(){
   ${itemTop.length?`<div class="card" style="margin-top:10px"><h3>Mặt hàng bị bảo hành nhiều nhất — ${monthLabel(M)}</h3><div class="tbl"><table><tr><th>Mặt hàng</th><th class="num">Số lượng</th></tr>${itemTop.map(([n,v])=>`<tr><td>${esc(n)}</td><td class="num">${fmt(v)}</td></tr>`).join("")}</table></div></div>`:""}`;
 }
 function bindBH(){
+  document.querySelectorAll("[data-whdone]").forEach(b=>b.onclick=async()=>{
+    b.disabled=true;
+    try{await rpc("warranty_claim_set_status",{p_claim_id:+b.dataset.whdone,p_status:"done"});toast("Đã đánh dấu xong");render()}
+    catch(err){alert(sbErr(err));b.disabled=false}
+  });
   $("#bhPrev").onclick=()=>{BHF.month=stepMonth(BHF.month,-1);BHF.open=false;render()};
   const bn=$("#bhNext");if(bn)bn.onclick=()=>{const s=stepMonth(BHF.month,1);BHF.month=s>monthISO(ME.today)?monthISO(ME.today):s;BHF.open=false;render()};
   $("#bhBtn").onclick=()=>{BHF.open=!BHF.open;render()};
@@ -2466,7 +2482,7 @@ function bindBH(){
       const CH=300;let saved=0;
       for(let i=0;i<claims.length;i+=CH){
         const part=claims.slice(i,i+CH);
-        const rows=part.map(cl=>({batch_id:bi.id,stt:cl.stt,customer:cl.customer,address:cl.address,item_name:cl.item_name,unit:cl.unit,prod_month:cl.prod_month,qty_sent:cl.qty_sent,qty_received:cl.qty_received,total_qty:cl.total_qty}));
+        const rows=part.map(cl=>({batch_id:bi.id,stt:cl.stt,customer:cl.customer,address:cl.address,item_name:cl.item_name,unit:cl.unit,prod_month:cl.prod_month,qty_sent:cl.qty_sent,qty_received:cl.qty_received,total_qty:cl.total_qty,received_at:new Date().toISOString(),status:"open"}));
         const{data:ins,error:e1}=await SB.from("warranty_claims").insert(rows).select("id");
         if(e1)throw e1;
         const causeRows=[];ins.forEach((r,k)=>part[k].causes.forEach(c=>causeRows.push({claim_id:r.id,cause:c.cause,qty:c.qty})));
@@ -2475,6 +2491,93 @@ function bindBH(){
       }
       BHF.open=false;toast("Đã lưu bảo hành "+fmt(claims.length)+" phiếu — "+monthLabel(M));render();
     }catch(err){setMsg("bhMsg",sbErr(err),"bad");$("#bhGo").disabled=false}
+  };
+}
+
+/* ============================================================
+   GĐ30: BÁO CÁO KPI — 19 chỉ số / 4 nhóm · lọc Ngày/Tuần/Tháng
+   ============================================================ */
+const KB={period:"week",date:null,customFrom:null,customTo:null,manualOpen:false,_x:null};
+function kbSpec(K){
+  return[
+   ["Sản lượng & giao hàng",[
+     ["Sản lượng nhập kho TP (so KH tuần)",K.sl_nhapkho_tp_tuan,"sp",0,K.sl_nhapkho_tp_kh!=null?"KH "+fmt(K.sl_nhapkho_tp_kh):"","Tổng tuần"],
+     ["% sản lượng nhập kho TP so KH ngày",K.sl_nhapkho_tp_ngay_pct,"%",1,"","TB ngày"],
+     ["% lệnh SX nhập kho đủ trong ngày KH",K.lenh_sx_du_hang_pct,"%",1,"","TB ngày"],
+     ["Đơn hàng chậm giao trong tuần",K.don_hang_cham_giao,"đơn",0,"","Cuối tuần"]]],
+   ["Năng suất & con người",[
+     ["Hiệu suất so định mức",K.hieu_suat_pct,"%",1,"","TB ngày"],
+     ["Phút dừng chuyền (cả tuần)",K.dung_chuyen_phut,"phút",0,"","Tổng tuần"],
+     ["Phút dừng máy do thiết bị (cả tuần)",K.dung_may_thietbi_phut,"phút",0,"","Tổng tuần"],
+     ["% hiện diện toàn nhà máy",K.hien_dien_pct,"%",1,"","TB ngày"],
+     ["Tai nạn / suýt tai nạn lao động (cả tuần)",K.tai_nan_vu,"vụ",0,"Nhập tay","Tổng tuần"]]],
+   ["Chất lượng",[
+     ["% lô IQC không đạt",K.iqc_khong_dat_pct,"%",1,"","TB ngày"],
+     ["Lô IQC tồn chưa kiểm (cuối tuần)",K.iqc_ton_lo,"lô",0,"Nhập tay","Cuối tuần"],
+     ["Tỷ lệ lỗi tại line (PQC xác nhận)",K.loi_line_pqc_pct,"%",1,"","TB ngày"],
+     ["Ca BH tại nhà quá cam kết 72h (cuối tuần)",K.bh_ca_qua_camket,"ca",0,"Tự tính từ module Bảo hành","Cuối tuần"],
+     ["Hàng BH tồn tại nhà máy (cuối tuần)",K.bh_ton_nha_may,"sp",0,"","Cuối tuần"],
+     ["Trong đó tồn > 30 ngày (cuối tuần)",K.bh_ton_tren_30ngay,"sp",0,"","Cuối tuần"]]],
+   ["Chi phí & tài sản",[
+     ["Giá trị phế phẩm / hàng lỗi (cả tuần)",K.phe_pham_loi_trieu,"triệu đ",1,"","Tổng tuần"],
+     ["Giá trị vật tư xuất vượt định mức (cả tuần)",K.vattu_vuot_dm_trieu,"triệu đ",1,"","Tổng tuần"],
+     ["Chi phí ngoài kế hoạch (cả tuần)",K.chiphi_ngoai_kh_trieu,"triệu đ",1,"Nhập tay","Tổng tuần"],
+     ["% mã kiểm kê bị lệch",K.ma_kiemke_lech_pct,"%",1,"","TB ngày"]]]
+  ];
+}
+async function viewKPIBC(){
+  if(RUN!=="LIVE")return liveOnly("Báo cáo KPI");
+  if(!ldFull())return `<h2 class="sec" style="margin-top:0">Báo cáo KPI</h2><div class="ph-card">Bạn chưa được cấp quyền xem Báo cáo KPI. Liên hệ GĐNM.</div>`;
+  const today=ME.today||todayISO();
+  if(!KB.date)KB.date=today;
+  let d1,d2;
+  if(KB.period==="custom"){d2=KB.customTo||today;d1=KB.customFrom||addDays(d2,-6);if(d1>d2)[d1,d2]=[d2,d1]}
+  else[d1,d2]=range(KB.period,KB.date);
+  const lbl=ldLbl(KB.period,d1,d2);
+  const K=await rpc("kpi_scorecard",{d1,d2});
+  KB._x={K,d1,d2,lbl};
+  const curWeek=mondayOf(today);
+  const curRow=(K.manual_weeks||[]).find(w=>w.week_start===curWeek)||{};
+  const n=(v,dec)=>v==null?"—":fmt(v,dec);
+  const sec=(title,rows)=>`<h2 class="sec">${esc(title)}</h2><div class="tbl"><table><tr><th>Chỉ số</th><th class="num">Giá trị</th><th>Đơn vị</th><th>Tổng hợp</th><th></th></tr>
+   ${rows.map(([name,val,unit,dec,note,agg])=>`<tr><td>${esc(name)}</td><td class="num"><b>${n(val,dec)}</b></td><td>${esc(unit)}</td><td class="small">${esc(agg)}</td><td class="small">${note?`<span class="pill p-none">${esc(note)}</span>`:""}</td></tr>`).join("")}
+   </table></div>`;
+  return `<h2 class="sec" style="margin-top:0">Báo cáo KPI</h2>
+  <div class="fbar" role="region" aria-label="Bộ lọc"><span class="flabel">Kỳ</span>
+   <div class="seg">${[["day","Ngày"],["week","Tuần"],["month","Tháng"],["custom","Tùy chọn"]].map(([k,n2])=>`<button type="button" data-kbper="${k}" aria-pressed="${KB.period===k}">${n2}</button>`).join("")}</div>
+   <div class="datebox">${KB.period==="custom"?
+     `<input type="date" id="kbFrom" value="${KB.customFrom||d1}" max="${today}"><span style="margin:0 4px">–</span><input type="date" id="kbTo" value="${KB.customTo||d2}" max="${today}">`
+     :`<button type="button" id="kbPrev" aria-label="Kỳ trước">‹</button><input type="date" id="kbDate" value="${KB.date}" max="${today}"><button type="button" id="kbNext" aria-label="Kỳ sau">›</button>`}</div>
+   <span class="period">${lbl}</span>
+   <div style="margin-left:auto;display:flex;gap:8px"><button class="btn ghost" type="button" id="kbManualBtn">${KB.manualOpen?"Đóng":"Nhập số liệu tuần này"}</button></div></div>
+  <p class="small" style="margin:0 0 10px">"Tổng hợp" = cách cộng dồn số liệu theo ngày trong kỳ đang chọn (Tổng cả kỳ / Trung bình ngày / Số liệu cuối kỳ). 3 chỉ số đánh dấu "Nhập tay" theo tuần (Thứ Hai – Chủ nhật) — nếu kỳ đang chọn gồm nhiều tuần, số liệu được cộng dồn (hoặc lấy tuần gần nhất) theo các tuần đã nhập.</p>
+  ${KB.manualOpen?`<div class="card" style="margin-bottom:10px"><h3>Nhập số liệu tuần hiện tại <small>Tuần ${dmyS(curWeek)} – ${dmyS(addDays(curWeek,6))}</small></h3>
+   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">
+    <div class="fld"><label for="kb_tn">Tai nạn / suýt tai nạn (vụ)</label><input id="kb_tn" inputmode="numeric" value="${curRow.tai_nan_count??""}"></div>
+    <div class="fld"><label for="kb_it">Lô IQC tồn chưa kiểm (lô)</label><input id="kb_it" inputmode="numeric" value="${curRow.iqc_ton_chua_kiem??""}"></div>
+    <div class="fld"><label for="kb_cp">Chi phí ngoài kế hoạch (triệu đ)</label><input id="kb_cp" inputmode="decimal" value="${curRow.chi_phi_ngoai_ke_hoach??""}"></div>
+    <div class="fld" style="grid-column:1/-1"><label for="kb_note">Ghi chú</label><input id="kb_note" value="${esc(curRow.note||"")}"></div>
+   </div><div style="margin-top:10px;display:flex;gap:8px;align-items:center"><button class="btn" type="button" id="kbManualGo">Lưu</button><span class="msg" id="kbMsg"></span></div></div>`:""}
+  ${kbSpec(K).map(([title,rows])=>sec(title,rows)).join("")}`;
+}
+function bindKPIBC(){
+  const today=ME.today||todayISO();
+  document.querySelectorAll("[data-kbper]").forEach(b=>b.onclick=()=>{KB.period=b.dataset.kbper;render()});
+  const dt=$("#kbDate");if(dt)dt.onchange=()=>{KB.date=dt.value||today;render()};
+  const step=dir=>{if(KB.period==="day")return addDays(KB.date,dir);if(KB.period==="week")return addDays(KB.date,7*dir);const d=D0(KB.date.slice(0,8)+"01");d.setUTCMonth(d.getUTCMonth()+dir);return isoOf(d)};
+  const pv=$("#kbPrev");if(pv)pv.onclick=()=>{KB.date=step(-1);render()};
+  const nx=$("#kbNext");if(nx)nx.onclick=()=>{const s=step(1);KB.date=s>today?today:s;render()};
+  const ff=$("#kbFrom");if(ff)ff.onchange=()=>{KB.customFrom=ff.value;render()};
+  const ft=$("#kbTo");if(ft)ft.onchange=()=>{KB.customTo=ft.value;render()};
+  const mb=$("#kbManualBtn");if(mb)mb.onclick=()=>{KB.manualOpen=!KB.manualOpen;render()};
+  const go=$("#kbManualGo");if(go)go.onclick=async()=>{
+    const today=ME.today||todayISO();
+    const tn=$("#kb_tn").value.trim(),it=$("#kb_it").value.trim(),cp=$("#kb_cp").value.trim(),note=$("#kb_note").value.trim();
+    go.disabled=true;
+    try{
+      await rpc("kpi_manual_save",{p_week:today,p_tai_nan:tn===""?null:+tn,p_iqc_ton:it===""?null:+it,p_chi_phi:cp===""?null:+cp,p_note:note||null});
+      toast("Đã lưu số liệu KPI tuần này");KB.manualOpen=false;render();
+    }catch(err){setMsg("kbMsg",sbErr(err),"bad");go.disabled=false}
   };
 }
 
@@ -3692,9 +3795,9 @@ function bindDashLive(){
   const dd=$("#ldDept");if(dd)dd.onchange=e=>{LD.dept=+e.target.value;render()};
   document.querySelectorAll("[data-goto]").forEach(b=>b.onclick=()=>{const m=b.dataset.goto;if(allowedMods().includes(m)){ST.screen=m;render();window.scrollTo(0,0)}});
 }
-const MODS=[["dash","Tổng quan nhà máy",2],["sum","Tổng hợp báo cáo ngày",4],["mydept","Bộ phận của tôi",3],["task","Giao việc",4],["mine","Công việc của tôi",3],["daily","Báo cáo hằng ngày",4],["sx","Sản xuất",5],["qc","Chất lượng",5],["kho","Kho",5],["kh","Kế hoạch",5],["kt","Kỹ thuật",5],["bt","Bảo trì",5],["gt","Giá thành",5],["bh","Bảo hành",5],["ns","Nhân sự",5],["kpi","KPI riêng",6],["5s","3S",5],["vd","Vấn đề và cải tiến",6],["lich","Lịch điều hành",6],["acc","Quản lý tài khoản",3],["cfg","Cấu hình hệ thống",3]];
+const MODS=[["dash","Tổng quan nhà máy",2],["kpibc","Báo cáo KPI",2],["sum","Tổng hợp báo cáo ngày",4],["mydept","Bộ phận của tôi",3],["task","Giao việc",4],["mine","Công việc của tôi",3],["daily","Báo cáo hằng ngày",4],["sx","Sản xuất",5],["qc","Chất lượng",5],["kho","Kho",5],["kh","Kế hoạch",5],["kt","Kỹ thuật",5],["bt","Bảo trì",5],["gt","Giá thành",5],["bh","Bảo hành",5],["ns","Nhân sự",5],["kpi","KPI riêng",6],["5s","3S",5],["vd","Vấn đề và cải tiến",6],["lich","Lịch điều hành",6],["acc","Quản lý tài khoản",3],["cfg","Cấu hình hệ thống",3]];
 const DEPT_MOD={SX:"sx",QAC:"qc",KHO:"kho",KHSX:"kh",KT:"kt",CD:"bt",KTGT:"gt",BHM:"bh",BHN:"bh",HCNS:"ns"};
-const BUILT=["dash","sum","mydept","task","mine","daily","sx","qc","bt","kho","ns","bh","kh","5s","vd","kpi","kt","lich","acc","cfg"];
+const BUILT=["dash","kpibc","sum","mydept","task","mine","daily","sx","qc","bt","kho","ns","bh","kh","5s","vd","kpi","kt","lich","acc","cfg"];
 function allowedMods(){
   if(!ME)return[];if(ME.role==="admin")return MODS.map(m=>m[0]).filter(k=>k!=="mydept");
   // "mydept" cố ý không cho Khách xem: màn này liệt kê DANH SÁCH TÀI KHOẢN cùng
@@ -3702,7 +3805,7 @@ function allowedMods(){
   // cho xem sẽ lộ các khách khác (vd 2 đối tác khác nhau thấy tên/tài khoản nhau).
   if(ME.role==="guest")return ME.overview?["dash","sum","task","mine","daily"]:[];
   const a=[];const approver=ME.role==="head"||(ME.approves_depts||[]).length;
-  if(ME.overview||approver)a.push("dash");if(approver)a.push("sum","mydept","task");a.push("mine","daily");
+  if(ME.overview||approver){a.push("dash");a.push("kpibc")}if(approver)a.push("sum","mydept","task");a.push("mine","daily");
   const dm=DEPT_MOD[ME.dept_code];if(dm)a.push(dm);
   (ME.approves_depts||[]).forEach(id=>{const c=(REF.depts.find(d=>d.id===id)||{}).code;const k=DEPT_MOD[c];if(k&&!a.includes(k))a.push(k)});
   a.push("kpi","5s","vd","lich");return a;
@@ -3710,7 +3813,7 @@ function allowedMods(){
 function homeMod(){if(ME.role==="guest")return "dash";return ME.role==="admin"?"dash":((ME.role==="head"||(ME.approves_depts||[]).length)?"mydept":"mine")}
 function renderSide(){
   const allow=allowedMods();const list=MODS.filter(m=>allow.includes(m[0]));
-  const grp=k=>["dash","sum","mydept","task","mine","daily"].includes(k)?"Điều hành":["acc","cfg","kpi","lich","vd","5s"].includes(k)?(["acc","cfg"].includes(k)?"Quản trị":"Theo dõi"):"Bộ phận";
+  const grp=k=>["dash","kpibc","sum","mydept","task","mine","daily"].includes(k)?"Điều hành":["acc","cfg","kpi","lich","vd","5s"].includes(k)?(["acc","cfg"].includes(k)?"Quản trị":"Theo dõi"):"Bộ phận";
   let last="";$("#side").innerHTML=list.map(([k,n,g])=>{const gname=grp(k);const h=gname!==last?`<div class="grp">${gname}</div>`:"";last=gname;
     return h+`<button type="button" data-mod="${k}" aria-current="${ST.screen===k}"><span>${n}</span>${!BUILT.includes(k)?`<span class="ph">GĐ${g}</span>`:""}</button>`}).join("");
   $("#side").querySelectorAll("button").forEach(b=>b.onclick=()=>{ST.screen=b.dataset.mod;ACC_SECRET=null;accConfirm=null;render();window.scrollTo(0,0)});
@@ -3750,6 +3853,7 @@ async function render(){
     else if(ST.screen==="kt"){const h=await viewKT();if(seq!==renderSeq)return;main.innerHTML=h;bindKT()}
     else if(ST.screen==="lich"){const h=await viewLH();if(seq!==renderSeq)return;main.innerHTML=h;bindLH()}
     else if(ST.screen==="sum"){const h=await viewSummary();if(seq!==renderSeq)return;main.innerHTML=h;bindSummary()}
+    else if(ST.screen==="kpibc"){const h=await viewKPIBC();if(seq!==renderSeq)return;main.innerHTML=h;bindKPIBC()}
     else main.innerHTML=`<h2 class="sec" style="margin-top:0">${mod[1]}</h2><div class="ph-card"><b>Xây ở Giai đoạn ${mod[2]}.</b><p class="small" style="margin:6px 0 0">Nội dung và phân quyền đã chốt ở Giai đoạn 1. Bạn thấy mục này vì vai trò của bạn được phép dùng nó.</p></div>`;
   }catch(err){main.innerHTML=`<div class="alert bad"><span class="sv"></span><div class="b"><div class="t">Không tải được dữ liệu</div><div class="d">${esc(sbErr(err))}</div></div></div>`}
   updateBell();
@@ -3759,7 +3863,7 @@ function startApp(){
   $("#user").innerHTML=`${esc(ME.full_name)}<small>${esc(ME.username)} · ${esc(ME.position_name)}</small>`;
   const c=$("#conn");c.classList.toggle("live",RUN==="LIVE");
   c.textContent=RUN==="LIVE"?"Đã kết nối máy chủ · số liệu thật":"DEMO · dùng thử, không lưu máy chủ";
-  ST.screen=homeMod();cfgTab="tbp";RP.code=null;RP.date=null;RP.editIssue=RP.editPlan=RP.editSr=null;SM.date=null;SXF.date=null;SXF.line=null;SXF.edit=null;SXF.assignOpen=false;SXF.unlockOpen=false;SX_CACHE=null;Object.keys(FM).forEach(k=>delete FM[k]);NM.q="";NM.f="all";NM.page=0;NM.dirty={};NM.bulkOpen=false;FS.date=null;FS.per="week";FS.tab="stat";FS.fstat="open";FS.fs="";FS.newOpen=false;FS.newS="";FS_CRIT=null;VD.tab="issue";VD.fSev="";VD.fSt="open";VD.fDept="";VD.q="";VD.projOpen=false;VD.editProj=null;KP.tab="dash";KP.defOpen=false;KP.editDef=null;KP.tgtOpenFor=null;KP.resKpi="";KP.resPs=null;KP.resPe=null;KT.tab="list";KT.fStatus="pending";KT.newOpen=false;KT.ctype="norm";KT.histCode="";LH.tab="session";LH.typeOpen=false;LH.editType=null;LH.sessOpen=false;LH.openId=null;LH.decOpen=null;LD.period="day";LD.date=null;LD.scope="all";LD.demo=false;LD.customFrom=null;LD.customTo=null;GV.f="open";GV.pos="";GV.q="";accQ="";accDept="";ACC_SECRET=null;accConfirm=null;render();
+  ST.screen=homeMod();cfgTab="tbp";RP.code=null;RP.date=null;RP.editIssue=RP.editPlan=RP.editSr=null;SM.date=null;SXF.date=null;SXF.line=null;SXF.edit=null;SXF.assignOpen=false;SXF.unlockOpen=false;SX_CACHE=null;Object.keys(FM).forEach(k=>delete FM[k]);NM.q="";NM.f="all";NM.page=0;NM.dirty={};NM.bulkOpen=false;FS.date=null;FS.per="week";FS.tab="stat";FS.fstat="open";FS.fs="";FS.newOpen=false;FS.newS="";FS_CRIT=null;VD.tab="issue";VD.fSev="";VD.fSt="open";VD.fDept="";VD.q="";VD.projOpen=false;VD.editProj=null;KP.tab="dash";KP.defOpen=false;KP.editDef=null;KP.tgtOpenFor=null;KP.resKpi="";KP.resPs=null;KP.resPe=null;KT.tab="list";KT.fStatus="pending";KT.newOpen=false;KT.ctype="norm";KT.histCode="";LH.tab="session";LH.typeOpen=false;LH.editType=null;LH.sessOpen=false;LH.openId=null;LH.decOpen=null;LD.period="day";LD.date=null;LD.scope="all";LD.demo=false;LD.customFrom=null;LD.customTo=null;KB.period="week";KB.date=null;KB.customFrom=null;KB.customTo=null;KB.manualOpen=false;GV.f="open";GV.pos="";GV.q="";accQ="";accDept="";ACC_SECRET=null;accConfirm=null;render();
 }
 $("#logout").onclick=()=>logout();
 $("#bell").onclick=e=>{e.stopPropagation();const p=$("#notif");p.hidden=!p.hidden;$("#bell").setAttribute("aria-expanded",String(!p.hidden))};
