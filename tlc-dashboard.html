@@ -2497,32 +2497,32 @@ function bindBH(){
 /* ============================================================
    GĐ30: BÁO CÁO KPI — 19 chỉ số / 4 nhóm · lọc Ngày/Tuần/Tháng
    ============================================================ */
-const KB={period:"week",date:null,customFrom:null,customTo:null,manualOpen:false,_x:null};
-function kbSpec(K){
+const KB={period:"week",date:null,customFrom:null,customTo:null,editKey:null,_x:null};
+function kbSpec(){
   return[
    ["Sản lượng & giao hàng",[
-     ["Sản lượng nhập kho TP (so KH tuần)",K.sl_nhapkho_tp_tuan,"sp",0,K.sl_nhapkho_tp_kh!=null?"KH "+fmt(K.sl_nhapkho_tp_kh):"","Tổng tuần"],
-     ["% sản lượng nhập kho TP so KH ngày",K.sl_nhapkho_tp_ngay_pct,"%",1,"","TB ngày"],
-     ["% lệnh SX nhập kho đủ trong ngày KH",K.lenh_sx_du_hang_pct,"%",1,"","TB ngày"],
-     ["Đơn hàng chậm giao trong tuần",K.don_hang_cham_giao,"đơn",0,"","Cuối tuần"]]],
+     ["sl_nhapkho_tp_tuan","Sản lượng nhập kho TP (so KH tuần)","sp",0,"Tổng tuần"],
+     ["sl_nhapkho_tp_ngay_pct","% sản lượng nhập kho TP so KH ngày","%",1,"TB ngày"],
+     ["lenh_sx_du_hang_pct","% lệnh SX nhập kho đủ trong ngày KH","%",1,"TB ngày"],
+     ["don_hang_cham_giao","Đơn hàng chậm giao trong tuần","đơn",0,"Cuối tuần"]]],
    ["Năng suất & con người",[
-     ["Hiệu suất so định mức",K.hieu_suat_pct,"%",1,"","TB ngày"],
-     ["Phút dừng chuyền (cả tuần)",K.dung_chuyen_phut,"phút",0,"","Tổng tuần"],
-     ["Phút dừng máy do thiết bị (cả tuần)",K.dung_may_thietbi_phut,"phút",0,"","Tổng tuần"],
-     ["% hiện diện toàn nhà máy",K.hien_dien_pct,"%",1,"","TB ngày"],
-     ["Tai nạn / suýt tai nạn lao động (cả tuần)",K.tai_nan_vu,"vụ",0,"Nhập tay","Tổng tuần"]]],
+     ["hieu_suat_pct","Hiệu suất so định mức","%",1,"TB ngày"],
+     ["dung_chuyen_phut","Phút dừng chuyền (cả tuần)","phút",0,"Tổng tuần"],
+     ["dung_may_thietbi_phut","Phút dừng máy do thiết bị (cả tuần)","phút",0,"Tổng tuần"],
+     ["hien_dien_pct","% hiện diện toàn nhà máy","%",1,"TB ngày"],
+     ["tai_nan_vu","Tai nạn / suýt tai nạn lao động (cả tuần)","vụ",0,"Tổng tuần"]]],
    ["Chất lượng",[
-     ["% lô IQC không đạt",K.iqc_khong_dat_pct,"%",1,"","TB ngày"],
-     ["Lô IQC tồn chưa kiểm (cuối tuần)",K.iqc_ton_lo,"lô",0,"Nhập tay","Cuối tuần"],
-     ["Tỷ lệ lỗi tại line (PQC xác nhận)",K.loi_line_pqc_pct,"%",1,"","TB ngày"],
-     ["Ca BH tại nhà quá cam kết 72h (cuối tuần)",K.bh_ca_qua_camket,"ca",0,"Tự tính từ module Bảo hành","Cuối tuần"],
-     ["Hàng BH tồn tại nhà máy (cuối tuần)",K.bh_ton_nha_may,"sp",0,"","Cuối tuần"],
-     ["Trong đó tồn > 30 ngày (cuối tuần)",K.bh_ton_tren_30ngay,"sp",0,"","Cuối tuần"]]],
+     ["iqc_khong_dat_pct","% lô IQC không đạt","%",1,"TB ngày"],
+     ["iqc_ton_lo","Lô IQC tồn chưa kiểm (cuối tuần)","lô",0,"Cuối tuần"],
+     ["loi_line_pqc_pct","Tỷ lệ lỗi tại line (PQC xác nhận)","%",1,"TB ngày"],
+     ["bh_ca_qua_camket","Ca BH tại nhà quá cam kết 72h (cuối tuần)","ca",0,"Cuối tuần"],
+     ["bh_ton_nha_may","Hàng BH tồn tại nhà máy (cuối tuần)","sp",0,"Cuối tuần"],
+     ["bh_ton_tren_30ngay","Trong đó tồn > 30 ngày (cuối tuần)","sp",0,"Cuối tuần"]]],
    ["Chi phí & tài sản",[
-     ["Giá trị phế phẩm / hàng lỗi (cả tuần)",K.phe_pham_loi_trieu,"triệu đ",1,"","Tổng tuần"],
-     ["Giá trị vật tư xuất vượt định mức (cả tuần)",K.vattu_vuot_dm_trieu,"triệu đ",1,"","Tổng tuần"],
-     ["Chi phí ngoài kế hoạch (cả tuần)",K.chiphi_ngoai_kh_trieu,"triệu đ",1,"Nhập tay","Tổng tuần"],
-     ["% mã kiểm kê bị lệch",K.ma_kiemke_lech_pct,"%",1,"","TB ngày"]]]
+     ["phe_pham_loi_trieu","Giá trị phế phẩm / hàng lỗi (cả tuần)","triệu đ",1,"Tổng tuần"],
+     ["vattu_vuot_dm_trieu","Giá trị vật tư xuất vượt định mức (cả tuần)","triệu đ",1,"Tổng tuần"],
+     ["chiphi_ngoai_kh_trieu","Chi phí ngoài kế hoạch (cả tuần)","triệu đ",1,"Tổng tuần"],
+     ["ma_kiemke_lech_pct","% mã kiểm kê bị lệch","%",1,"TB ngày"]]]
   ];
 }
 async function viewKPIBC(){
@@ -2536,49 +2536,55 @@ async function viewKPIBC(){
   const lbl=ldLbl(KB.period,d1,d2);
   const K=await rpc("kpi_scorecard",{d1,d2});
   KB._x={K,d1,d2,lbl};
-  const curWeek=mondayOf(today);
-  const curRow=(K.manual_weeks||[]).find(w=>w.week_start===curWeek)||{};
+  const OV=K.overrides||{};
   const n=(v,dec)=>v==null?"—":fmt(v,dec);
-  const sec=(title,rows)=>`<h2 class="sec">${esc(title)}</h2><div class="tbl"><table><tr><th>Chỉ số</th><th class="num">Giá trị</th><th>Đơn vị</th><th>Tổng hợp</th><th></th></tr>
-   ${rows.map(([name,val,unit,dec,note,agg])=>`<tr><td>${esc(name)}</td><td class="num"><b>${n(val,dec)}</b></td><td>${esc(unit)}</td><td class="small">${esc(agg)}</td><td class="small">${note?`<span class="pill p-none">${esc(note)}</span>`:""}</td></tr>`).join("")}
-   </table></div>`;
+  const isAdmin=ME.role==="admin";
+  const row=([key,name,unit,dec,agg])=>{const ov=OV[key];const editing=KB.editKey===key;
+    return `<tr><td>${esc(name)}</td>
+     <td class="num"><b>${n(ov?+ov.value:K[key],dec)}</b></td><td>${esc(unit)}</td><td class="small">${esc(agg)}</td>
+     <td class="small">${ov?`<span class="pill p-none" title="${ov.note?esc(ov.note):""}">Nhập tay</span>`:""}</td>
+     <td style="white-space:nowrap">${isAdmin?(editing?"":`<button class="btn ghost" type="button" data-kbedit="${key}" style="padding:3px 9px">${ov?"Sửa":"Nhập tay"}</button>`):""}</td></tr>
+    ${isAdmin&&editing?`<tr><td colspan="6"><div class="card" style="margin:6px 0"><form data-kbform="${key}" style="display:flex;gap:8px;align-items:end;flex-wrap:wrap">
+      <div class="fld"><label for="kbv_${key}">Giá trị nhập tay (${esc(unit)})</label><input id="kbv_${key}" inputmode="decimal" value="${ov?ov.value:""}"></div>
+      <div class="fld" style="flex:1;min-width:160px"><label for="kbn_${key}">Ghi chú</label><input id="kbn_${key}" value="${ov&&ov.note?esc(ov.note):""}"></div>
+      <button class="btn" type="submit">Lưu</button>${ov?`<button class="btn ghost" type="button" data-kbclear="${key}">Dùng lại số tự động</button>`:""}<button class="btn ghost" type="button" data-kbcancel="1">Hủy</button><span class="msg" id="kbMsg_${key}"></span>
+     </form><p class="small" style="margin:6px 0 0">Số tự động hiện tại: <b>${n(K[key],dec)}</b> ${esc(unit)} · áp dụng cho đúng kỳ đang xem (${esc(lbl)})</p></div></td></tr>`:""}`};
+  const sec=(title,rows)=>`<h2 class="sec">${esc(title)}</h2><div class="tbl"><table><tr><th>Chỉ số</th><th class="num">Giá trị</th><th>Đơn vị</th><th>Tổng hợp</th><th></th><th></th></tr>
+   ${rows.map(row).join("")}</table></div>`;
   return `<h2 class="sec" style="margin-top:0">Báo cáo KPI</h2>
   <div class="fbar" role="region" aria-label="Bộ lọc"><span class="flabel">Kỳ</span>
    <div class="seg">${[["day","Ngày"],["week","Tuần"],["month","Tháng"],["custom","Tùy chọn"]].map(([k,n2])=>`<button type="button" data-kbper="${k}" aria-pressed="${KB.period===k}">${n2}</button>`).join("")}</div>
    <div class="datebox">${KB.period==="custom"?
      `<input type="date" id="kbFrom" value="${KB.customFrom||d1}" max="${today}"><span style="margin:0 4px">–</span><input type="date" id="kbTo" value="${KB.customTo||d2}" max="${today}">`
      :`<button type="button" id="kbPrev" aria-label="Kỳ trước">‹</button><input type="date" id="kbDate" value="${KB.date}" max="${today}"><button type="button" id="kbNext" aria-label="Kỳ sau">›</button>`}</div>
-   <span class="period">${lbl}</span>
-   <div style="margin-left:auto;display:flex;gap:8px"><button class="btn ghost" type="button" id="kbManualBtn">${KB.manualOpen?"Đóng":"Nhập số liệu tuần này"}</button></div></div>
-  <p class="small" style="margin:0 0 10px">"Tổng hợp" = cách cộng dồn số liệu theo ngày trong kỳ đang chọn (Tổng cả kỳ / Trung bình ngày / Số liệu cuối kỳ). 3 chỉ số đánh dấu "Nhập tay" theo tuần (Thứ Hai – Chủ nhật) — nếu kỳ đang chọn gồm nhiều tuần, số liệu được cộng dồn (hoặc lấy tuần gần nhất) theo các tuần đã nhập.</p>
-  ${KB.manualOpen?`<div class="card" style="margin-bottom:10px"><h3>Nhập số liệu tuần hiện tại <small>Tuần ${dmyS(curWeek)} – ${dmyS(addDays(curWeek,6))}</small></h3>
-   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px">
-    <div class="fld"><label for="kb_tn">Tai nạn / suýt tai nạn (vụ)</label><input id="kb_tn" inputmode="numeric" value="${curRow.tai_nan_count??""}"></div>
-    <div class="fld"><label for="kb_it">Lô IQC tồn chưa kiểm (lô)</label><input id="kb_it" inputmode="numeric" value="${curRow.iqc_ton_chua_kiem??""}"></div>
-    <div class="fld"><label for="kb_cp">Chi phí ngoài kế hoạch (triệu đ)</label><input id="kb_cp" inputmode="decimal" value="${curRow.chi_phi_ngoai_ke_hoach??""}"></div>
-    <div class="fld" style="grid-column:1/-1"><label for="kb_note">Ghi chú</label><input id="kb_note" value="${esc(curRow.note||"")}"></div>
-   </div><div style="margin-top:10px;display:flex;gap:8px;align-items:center"><button class="btn" type="button" id="kbManualGo">Lưu</button><span class="msg" id="kbMsg"></span></div></div>`:""}
-  ${kbSpec(K).map(([title,rows])=>sec(title,rows)).join("")}`;
+   <span class="period">${lbl}</span></div>
+  <p class="small" style="margin:0 0 10px">"Tổng hợp" = cách cộng dồn số liệu theo ngày trong kỳ đang chọn. Số tính tự động luôn được ưu tiên hiển thị trước; ${isAdmin?'bấm "Nhập tay" ở bất kỳ dòng nào để GĐNM tự nhập/sửa số cho đúng kỳ đang xem (vd khi chưa có nguồn dữ liệu, hoặc cần đính chính) — số nhập tay áp dụng đúng theo kỳ lúc nhập, đổi sang kỳ khác hệ thống dùng lại số tự động trừ khi cũng nhập tay cho kỳ đó.':'chỉ GĐNM nhập/sửa được số tay.'}</p>
+  ${kbSpec().map(([title,rows])=>sec(title,rows)).join("")}`;
 }
 function bindKPIBC(){
   const today=ME.today||todayISO();
-  document.querySelectorAll("[data-kbper]").forEach(b=>b.onclick=()=>{KB.period=b.dataset.kbper;render()});
+  const{d1,d2}=KB._x||{};
+  document.querySelectorAll("[data-kbper]").forEach(b=>b.onclick=()=>{KB.period=b.dataset.kbper;KB.editKey=null;render()});
   const dt=$("#kbDate");if(dt)dt.onchange=()=>{KB.date=dt.value||today;render()};
   const step=dir=>{if(KB.period==="day")return addDays(KB.date,dir);if(KB.period==="week")return addDays(KB.date,7*dir);const d=D0(KB.date.slice(0,8)+"01");d.setUTCMonth(d.getUTCMonth()+dir);return isoOf(d)};
   const pv=$("#kbPrev");if(pv)pv.onclick=()=>{KB.date=step(-1);render()};
   const nx=$("#kbNext");if(nx)nx.onclick=()=>{const s=step(1);KB.date=s>today?today:s;render()};
   const ff=$("#kbFrom");if(ff)ff.onchange=()=>{KB.customFrom=ff.value;render()};
   const ft=$("#kbTo");if(ft)ft.onchange=()=>{KB.customTo=ft.value;render()};
-  const mb=$("#kbManualBtn");if(mb)mb.onclick=()=>{KB.manualOpen=!KB.manualOpen;render()};
-  const go=$("#kbManualGo");if(go)go.onclick=async()=>{
-    const today=ME.today||todayISO();
-    const tn=$("#kb_tn").value.trim(),it=$("#kb_it").value.trim(),cp=$("#kb_cp").value.trim(),note=$("#kb_note").value.trim();
-    go.disabled=true;
-    try{
-      await rpc("kpi_manual_save",{p_week:today,p_tai_nan:tn===""?null:+tn,p_iqc_ton:it===""?null:+it,p_chi_phi:cp===""?null:+cp,p_note:note||null});
-      toast("Đã lưu số liệu KPI tuần này");KB.manualOpen=false;render();
-    }catch(err){setMsg("kbMsg",sbErr(err),"bad");go.disabled=false}
-  };
+  document.querySelectorAll("[data-kbedit]").forEach(b=>b.onclick=()=>{KB.editKey=b.dataset.kbedit;render()});
+  document.querySelectorAll("[data-kbcancel]").forEach(b=>b.onclick=()=>{KB.editKey=null;render()});
+  document.querySelectorAll("[data-kbclear]").forEach(b=>b.onclick=async()=>{
+    const key=b.dataset.kbclear;b.disabled=true;
+    try{await rpc("kpi_override_save",{p_metric:key,p_d1:d1,p_d2:d2,p_value:null,p_note:null});toast("Đã bỏ số nhập tay, dùng lại số tự động");KB.editKey=null;render()}
+    catch(err){setMsg("kbMsg_"+key,sbErr(err),"bad");b.disabled=false}
+  });
+  document.querySelectorAll("[data-kbform]").forEach(f=>f.addEventListener("submit",async e=>{
+    e.preventDefault();const key=f.dataset.kbform;const v=$("#kbv_"+key).value.trim(),note=$("#kbn_"+key).value.trim();
+    if(v===""){setMsg("kbMsg_"+key,"Nhập giá trị, hoặc bấm \"Dùng lại số tự động\" để bỏ.","bad");return}
+    const btn=f.querySelector('button[type="submit"]');btn.disabled=true;
+    try{await rpc("kpi_override_save",{p_metric:key,p_d1:d1,p_d2:d2,p_value:+v,p_note:note||null});toast("Đã lưu số nhập tay");KB.editKey=null;render()}
+    catch(err){setMsg("kbMsg_"+key,sbErr(err),"bad");btn.disabled=false}
+  }));
 }
 
 /* ---------- KẾ HOẠCH – LỆNH SẢN XUẤT + THEO DÕI MUA HÀNG (PO) ---------- */
