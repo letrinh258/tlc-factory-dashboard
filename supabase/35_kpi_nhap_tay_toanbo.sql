@@ -112,8 +112,8 @@ begin
     'iqc_ton_lo', null
   ) into r;
   -- áp số nhập tay (đè số tính tự động) đúng theo kỳ [d1,d2] đang xem
-  select coalesce(jsonb_object_agg(metric_key, jsonb_build_object('value', value, 'note', note, 'updated_at', updated_at)), '{}'::jsonb)
-    into ov from kpi_overrides where d1 = v_d1 and d2 = v_d2;
+  select coalesce(jsonb_object_agg(ko.metric_key, jsonb_build_object('value', ko.value, 'note', ko.note, 'updated_at', ko.updated_at)), '{}'::jsonb)
+    into ov from kpi_overrides ko where ko.d1 = v_d1 and ko.d2 = v_d2;
   r := (select jsonb_object_agg(kv.key, case when ov ? kv.key then ov->kv.key->'value' else kv.value end) from jsonb_each(r) kv)
        || jsonb_build_object('d1', d1, 'd2', d2, 'days', ndays, 'overrides', ov);
   return r::json;
