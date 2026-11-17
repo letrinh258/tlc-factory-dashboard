@@ -2503,7 +2503,8 @@ function kbSpec(){
    ["Sản lượng & giao hàng",[
      ["sl_nhapkho_tp_tuan","Sản lượng nhập kho TP (so KH tuần)","sp",0,"Tổng tuần"],
      ["sl_nhapkho_tp_ngay_pct","% sản lượng nhập kho TP so KH ngày","%",1,"TB ngày"],
-     ["lenh_sx_du_hang_pct","% lệnh SX nhập kho đủ trong ngày KH","%",1,"TB ngày"],
+     ["lenh_sx_du_hang_pct","% lệnh SX nhập kho đủ trong ngày KH (chỉ lệnh Kế hoạch)","%",1,"TB ngày"],
+     ["sl_tranthu_sp","Sản lượng tận dụng công suất dư (lệnh Tranh thủ ngoài KH)","sp",0,"Tổng kỳ"],
      ["don_hang_cham_giao","Đơn hàng chậm giao trong tuần","đơn",0,"Cuối tuần"]]],
    ["Năng suất & con người",[
      ["hieu_suat_pct","Hiệu suất so định mức","%",1,"TB ngày"],
@@ -2788,16 +2789,26 @@ Dây chuyền SXHN 01	LSX11/26-018(2026-11-03)	TLC-BML-40W-01	Đèn led búp Max
    <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap"><button class="btn" type="button" id="lsxGo">Lưu lệnh SX ngày ${dmyS(D)}</button><span class="msg" id="lsxMsg"></span></div></div>`:""}
   </div>
   <h2 class="sec">Lệnh sản xuất ngày ${dmyS(D)} <small>${fmt(batches.length)} lệnh · ${fmt(totalItems)} mã</small></h2>
-  ${batches.length?batches.map(b=>`<div class="card" style="margin-bottom:8px">
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px"><b class="mono">${esc(b.code)}</b><span class="small">${esc(lineOptsName(b.line_id))} · ${fmt((b.production_orders||[]).length)} mã · tổng KH ${fmt(b.qty_total)}</span></div>
+  ${batches.length?batches.map(b=>{const canKind=ME.role==="admin"||ME.dept_code==="KHSX";
+    return`<div class="card" style="margin-bottom:8px">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px"><b class="mono">${esc(b.code)}</b>
+     <span class="small">${esc(lineOptsName(b.line_id))} · ${fmt((b.production_orders||[]).length)} mã · tổng KH ${fmt(b.qty_total)}
+      <span class="pill p-${b.kind==="overflow"?"warn":"ok"}" style="margin-left:6px">${b.kind==="overflow"?"Tranh thủ ngoài KH":"Kế hoạch"}</span>
+      ${canKind?`<button class="btn ghost" type="button" data-lsxkind="${b.id}|${b.kind==="overflow"?"planned":"overflow"}" style="padding:2px 8px;margin-left:6px">${b.kind==="overflow"?"Chuyển về Kế hoạch":"Đánh dấu Tranh thủ ngoài KH"}</button>`:""}</span></div>
     <div class="tbl" style="margin-top:6px"><table><tr><th>Mã sản phẩm</th><th>Tên</th><th class="num">SL kế hoạch</th></tr>
     ${(b.production_orders||[]).slice().sort((x,y)=>x.item_code<y.item_code?-1:x.item_code>y.item_code?1:0).map(r=>`<tr><td class="mono">${esc(r.item_code)}</td><td>${esc((C.byCode[r.item_code]||{}).name||"")}</td><td class="num">${fmt(r.qty_planned)}</td></tr>`).join("")}
-    </table></div></div>`).join(""):`<div class="empty">Chưa có lệnh sản xuất ngày này</div>`}`;
+    </table></div></div>`}).join(""):`<div class="empty">Chưa có lệnh sản xuất ngày này</div>`}
+  <p class="small" style="margin:8px 0 0">Lệnh <b>Tranh thủ ngoài KH</b> = line dư công suất, tự làm thêm lệnh mới trong ngày (không nằm trong kế hoạch chốt từ đầu) — không bị chấm "đủ/thiếu hàng" ở Báo cáo KPI, chỉ cộng dồn vào sản lượng tận dụng.</p>`;
 }
 function lineOptsName(id){return (CFG.lines||[])[id-1]||("Line "+id)}
 function bindLsx(){
   const d=$("#lsxDate");if(d)d.onchange=()=>{LSX.date=d.value;render()};
   const b=$("#lsxBtn");if(b)b.onclick=()=>{LSX.open=!LSX.open;render()};
+  document.querySelectorAll("[data-lsxkind]").forEach(btn=>btn.onclick=async()=>{
+    const[id,kind]=btn.dataset.lsxkind.split("|");btn.disabled=true;
+    try{await rpc("lsx_set_kind",{p_batch_id:+id,p_kind:kind});toast("Đã cập nhật loại lệnh");render()}
+    catch(err){alert(sbErr(err));btn.disabled=false}
+  });
   const ld=$("#lsxDelBtn");if(ld)ld.onclick=async()=>{
     if(!confirm("Xóa toàn bộ lệnh sản xuất ngày "+dmyS(LSX.date)+"? Không thể hoàn tác."))return;
     ld.disabled=true;
@@ -2846,7 +2857,7 @@ async function lsxHistTabHTML(){
   <h2 class="sec">${fmt(dates.length)} ngày có lệnh · ${fmt(batches.length)} lệnh · ${fmt(totalItems)} mã</h2>
   ${dates.length?dates.map(d=>`<div style="margin-bottom:14px"><h3 style="margin:0 0 6px">${dmyS(d)} <small>${fmt(byDate[d].length)} lệnh</small></h3>
     ${byDate[d].map(b=>`<div class="card" style="margin-bottom:8px">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px"><b class="mono">${esc(b.code)}</b><span class="small">${esc(lineOptsName(b.line_id))} · ${fmt((b.production_orders||[]).length)} mã · tổng KH ${fmt(b.qty_total)}</span></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px"><b class="mono">${esc(b.code)}</b><span class="small">${esc(lineOptsName(b.line_id))} · ${fmt((b.production_orders||[]).length)} mã · tổng KH ${fmt(b.qty_total)} <span class="pill p-${b.kind==="overflow"?"warn":"ok"}">${b.kind==="overflow"?"Tranh thủ ngoài KH":"Kế hoạch"}</span></span></div>
       <div class="tbl" style="margin-top:6px"><table><tr><th>Mã sản phẩm</th><th>Tên</th><th class="num">SL kế hoạch</th></tr>
       ${(b.production_orders||[]).slice().sort((x,y)=>x.item_code<y.item_code?-1:x.item_code>y.item_code?1:0).map(r=>`<tr><td class="mono">${esc(r.item_code)}</td><td>${esc((C.byCode[r.item_code]||{}).name||"")}</td><td class="num">${fmt(r.qty_planned)}</td></tr>`).join("")}
       </table></div></div>`).join("")}</div>`).join(""):`<div class="empty">Không có lệnh sản xuất nào trong khoảng ngày này</div>`}`;
