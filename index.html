@@ -2525,6 +2525,60 @@ function kbSpec(){
      ["ma_kiemke_lech_pct","% mã kiểm kê bị lệch","%",1,"TB ngày"]]]
   ];
 }
+/* ---------- Việc sẽ triển khai trong tuần (nhập tay, không theo kỳ) ---------- */
+const KPW={edit:null,del:null,items:null};
+async function kpPlanItems(){
+  if(KPW.items)return KPW.items;
+  const rows=await q(SB.from("kpi_plan_items").select("*").eq("active",true).order("due_date",{ascending:true,nullsFirst:false}).order("created_at",{ascending:false}));
+  KPW.items=rows;return rows;
+}
+const KP_ST=[["todo","Chưa làm"],["doing","Đang làm"],["done","Hoàn thành"]];
+const kpStName=s=>({todo:"Chưa làm",doing:"Đang làm",done:"Hoàn thành"}[s]||s);
+const kpStCls=s=>({todo:"none",doing:"warn",done:"ok"}[s]||"none");
+function kpForm(p){
+  const id=p?p.id:"new";
+  return `<tr><td colspan="6"><div class="card" style="margin:6px 0"><form data-kpform="${id}" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;align-items:end">
+   <div class="fld" style="grid-column:span 2"><label for="kp_ct_${id}">Nội dung công việc *</label><input id="kp_ct_${id}" value="${p?esc(p.content):""}"></div>
+   <div class="fld"><label for="kp_as_${id}">Người phụ trách</label><input id="kp_as_${id}" value="${p&&p.assignee?esc(p.assignee):""}"></div>
+   <div class="fld"><label for="kp_du_${id}">Hạn hoàn thành</label><input type="date" id="kp_du_${id}" value="${p&&p.due_date?p.due_date:""}"></div>
+   <div class="fld" style="grid-column:span 2"><label for="kp_ex_${id}">Kết quả mong đợi</label><input id="kp_ex_${id}" value="${p&&p.expected_result?esc(p.expected_result):""}"></div>
+   <div class="fld"><label for="kp_st_${id}">Trạng thái</label><select id="kp_st_${id}">${KP_ST.map(([k,nm])=>`<option value="${k}" ${((p&&p.status)||"todo")===k?"selected":""}>${nm}</option>`).join("")}</select></div>
+   <div style="grid-column:1/-1;display:flex;gap:8px;align-items:center"><button class="btn" type="submit">Lưu</button><button class="btn ghost" type="button" data-kpcancel="1">Hủy</button><span class="msg" id="kpMsg_${id}"></span></div>
+  </form></div></td></tr>`;
+}
+function kpPlanSec(items,isAdmin){
+  const row=p=>{const editing=KPW.edit===p.id;
+    return `<tr><td>${esc(p.content)}</td><td>${p.assignee?esc(p.assignee):"—"}</td><td>${p.due_date?dmyS(p.due_date):"—"}</td><td>${p.expected_result?esc(p.expected_result):"—"}</td>
+     <td><span class="pill p-${kpStCls(p.status)}">${kpStName(p.status)}</span></td>
+     <td style="white-space:nowrap">${isAdmin?(editing?"":`<button class="btn ghost" type="button" data-kpedit="${p.id}" style="padding:3px 9px">Sửa</button> <button class="btn ghost" type="button" data-kpdel="${p.id}" style="padding:3px 9px;color:var(--bad)">${KPW.del===p.id?"Xác nhận xóa?":"Xóa"}</button>`):""}</td></tr>
+    ${isAdmin&&editing?kpForm(p):""}`;
+  };
+  return `<h2 class="sec">Việc sẽ triển khai trong tuần <small>Nhập tay · GĐNM/trợ lý tự cập nhật, không theo kỳ báo cáo đang chọn</small></h2>
+   ${isAdmin?`<div style="margin-bottom:8px">${KPW.edit==="new"?"":'<button class="btn ghost" type="button" data-kpnew="1">+ Thêm việc</button>'}</div>`:""}
+   ${items.length||KPW.edit==="new"?`<div class="tbl"><table><tr><th>Nội dung</th><th>Người phụ trách</th><th>Hạn</th><th>Kết quả mong đợi</th><th>Trạng thái</th><th></th></tr>
+    ${KPW.edit==="new"?kpForm(null):""}${items.map(row).join("")}</table></div>`:`<div class="empty">Chưa có việc nào được lên kế hoạch</div>`}`;
+}
+function bindKpPlan(){
+  const go=()=>render();
+  const nb=$("[data-kpnew]");if(nb)nb.onclick=()=>{KPW.edit="new";go()};
+  document.querySelectorAll("[data-kpedit]").forEach(b=>b.onclick=()=>{KPW.edit=+b.dataset.kpedit;go()});
+  document.querySelectorAll("[data-kpcancel]").forEach(b=>b.onclick=()=>{KPW.edit=null;go()});
+  document.querySelectorAll("[data-kpdel]").forEach(b=>b.onclick=async()=>{const id=+b.dataset.kpdel;
+    if(KPW.del!==id){KPW.del=id;go();return}
+    b.disabled=true;
+    try{await rpc("kpi_plan_delete",{p_id:id});toast("Đã xóa");KPW.items=null;KPW.del=null;go()}
+    catch(err){toast(sbErr(err));KPW.del=null;b.disabled=false}});
+  document.querySelectorAll("[data-kpform]").forEach(f=>f.addEventListener("submit",async e=>{
+    e.preventDefault();const id=f.dataset.kpform;const pid=id==="new"?null:+id;
+    const content=$("#kp_ct_"+id).value.trim();
+    if(!content){setMsg("kpMsg_"+id,"Nhập nội dung công việc.","bad");return}
+    const btn=f.querySelector('button[type="submit"]');btn.disabled=true;
+    try{await rpc("kpi_plan_save",{p_id:pid,p_content:content,p_assignee:$("#kp_as_"+id).value.trim()||null,
+      p_due:$("#kp_du_"+id).value||null,p_expected:$("#kp_ex_"+id).value.trim()||null,p_status:$("#kp_st_"+id).value,p_note:null});
+      toast("Đã lưu");KPW.items=null;KPW.edit=null;go()}
+    catch(err){setMsg("kpMsg_"+id,sbErr(err),"bad");btn.disabled=false}
+  }));
+}
 async function viewKPIBC(){
   if(RUN!=="LIVE")return liveOnly("Báo cáo KPI");
   if(!ldFull())return `<h2 class="sec" style="margin-top:0">Báo cáo KPI</h2><div class="ph-card">Bạn chưa được cấp quyền xem Báo cáo KPI. Liên hệ GĐNM.</div>`;
@@ -2535,7 +2589,8 @@ async function viewKPIBC(){
   else[d1,d2]=range(KB.period,KB.date);
   const lbl=ldLbl(KB.period,d1,d2);
   const K=await rpc("kpi_scorecard",{d1,d2});
-  KB._x={K,d1,d2,lbl};
+  const planItems=await kpPlanItems();
+  KB._x={K,d1,d2,lbl,plan:planItems};
   const OV=K.overrides||{};
   const n=(v,dec)=>v==null?"—":fmt(v,dec);
   const isAdmin=ME.role==="admin";
@@ -2557,13 +2612,17 @@ async function viewKPIBC(){
    <div class="datebox">${KB.period==="custom"?
      `<input type="date" id="kbFrom" value="${KB.customFrom||d1}" max="${today}"><span style="margin:0 4px">–</span><input type="date" id="kbTo" value="${KB.customTo||d2}" max="${today}">`
      :`<button type="button" id="kbPrev" aria-label="Kỳ trước">‹</button><input type="date" id="kbDate" value="${KB.date}" max="${today}"><button type="button" id="kbNext" aria-label="Kỳ sau">›</button>`}</div>
-   <span class="period">${lbl}</span></div>
-  <p class="small" style="margin:0 0 10px">"Tổng hợp" = cách cộng dồn số liệu theo ngày trong kỳ đang chọn. Số tính tự động luôn được ưu tiên hiển thị trước; ${isAdmin?'bấm "Nhập tay" ở bất kỳ dòng nào để GĐNM tự nhập/sửa số cho đúng kỳ đang xem (vd khi chưa có nguồn dữ liệu, hoặc cần đính chính) — số nhập tay áp dụng đúng theo kỳ lúc nhập, đổi sang kỳ khác hệ thống dùng lại số tự động trừ khi cũng nhập tay cho kỳ đó.':'chỉ GĐNM nhập/sửa được số tay.'}</p>
+   <span class="period">${lbl}</span>
+   <div style="margin-left:auto"><button class="btn ghost" type="button" id="kbPdf">Xuất báo cáo PDF</button></div></div>
+  <p class="small" style="margin:0 0 10px">"Tổng hợp" = cách cộng dồn số liệu theo ngày trong kỳ đang chọn. Số tính tự động luôn được ưu tiên hiển thị trước; ${isAdmin?'bấm "Nhập tay" ở bất kỳ dòng nào để GĐNM tự nhập/sửa số cho đúng kỳ đang xem (vd khi chưa có nguồn dữ liệu, hoặc cần đính chính) — số nhập tay áp dụng đúng theo kỳ lúc nhập, đổi sang kỳ khác hệ thống dùng lại số tự động trừ khi cũng nhập tay cho kỳ đó.':'chỉ GĐNM nhập/sửa được số tay.'} Nút "Xuất báo cáo PDF" gộp cả Báo cáo KPI, việc trong tuần và Tổng quan nhà máy cùng kỳ đang xem.</p>
+  ${kpPlanSec(planItems,isAdmin)}
   ${kbSpec().map(([title,rows])=>sec(title,rows)).join("")}`;
 }
 function bindKPIBC(){
   const today=ME.today||todayISO();
   const{d1,d2}=KB._x||{};
+  bindKpPlan();
+  const pdfBtn=$("#kbPdf");if(pdfBtn)pdfBtn.onclick=()=>kbPdfExport();
   document.querySelectorAll("[data-kbper]").forEach(b=>b.onclick=()=>{KB.period=b.dataset.kbper;KB.editKey=null;render()});
   const dt=$("#kbDate");if(dt)dt.onchange=()=>{KB.date=dt.value||today;render()};
   const step=dir=>{if(KB.period==="day")return addDays(KB.date,dir);if(KB.period==="week")return addDays(KB.date,7*dir);const d=D0(KB.date.slice(0,8)+"01");d.setUTCMonth(d.getUTCMonth()+dir);return isoOf(d)};
@@ -2585,6 +2644,81 @@ function bindKPIBC(){
     try{await rpc("kpi_override_save",{p_metric:key,p_d1:d1,p_d2:d2,p_value:+v,p_note:note||null});toast("Đã lưu số nhập tay");KB.editKey=null;render()}
     catch(err){setMsg("kbMsg_"+key,sbErr(err),"bad");btn.disabled=false}
   }));
+}
+/* ---------- Xuất báo cáo PDF kết hợp: Báo cáo KPI + việc trong tuần + Tổng quan ---------- */
+async function kbPdfExport(){
+  const x=KB._x;if(!x)return;
+  const btn=$("#kbPdf");if(btn){btn.disabled=true;btn.textContent="Đang tạo PDF…"}
+  try{
+    const{K,d1,d2,lbl,plan}=x;
+    const OV=K.overrides||{};
+    const S=await rpc("dash_summary",{d1,d2,p_line:null,p_dept:null});
+    S.prod=S.prod||{rows:0,days:0,plan:0,plan_rows:0,good:0,ng_op:0,ng_sup:0,man_hours:0,ot_hours:0,std_hours:0,downtime:0,no_norm:0};
+    S.qc=S.qc||{pqc_insp:0,pqc_op:0,pqc_sup:0,iqc_insp:0};S.cd=S.cd||{stops:0,downtime:0,open:0};S.hr=S.hr||{days:0};S.wh=S.wh||{shortage_items:0,receipt_sx:0};
+    S.fives=S.fives||{s1:0,s2:0,s3:0,open:0};S.tasks=S.tasks||{overdue:0,open:0,done_in:0,pending_close:0,due_req:0};
+    const r2=(n,d)=>n==null||!isFinite(n)?null:+Number(n).toFixed(d);
+    const out=o=>o.good+o.ng_op+o.ng_sup;
+    const pr=S.prod,has=pr.rows>0;
+    const kh2=pr.plan_rows?r2(pr.good/pr.plan*100,1):null;
+    const ngPct=out(pr)?r2((pr.ng_op+pr.ng_sup)/out(pr)*100,2):null;
+    const nsPct=pr.man_hours?r2(pr.std_hours/pr.man_hours*100,1):null;
+    const tiles=[];
+    if(has){
+      tiles.push(["Sản lượng đạt",pr.good,"sản phẩm",pr.plan_rows?"KH "+fmt(pr.plan):"",judge("out",kh2,1).s]);
+      if(pr.plan_rows)tiles.push(["Hoàn thành kế hoạch",kh2,"%","",judge("out",kh2,1).s]);
+      if(out(pr))tiles.push(["Tỷ lệ NG (SX báo)",ngPct,"%","Thao tác "+fmt(r2(pr.ng_op/out(pr)*100,2),2)+"% · NCC "+fmt(r2(pr.ng_sup/out(pr)*100,2),2)+"%",judge("def",ngPct,-1).s]);
+      if(pr.man_hours)tiles.push(["Năng suất",nsPct,"% định mức",fmt(pr.std_hours,0)+" giờ chuẩn / "+fmt(pr.man_hours,0)+" giờ công",judge("prod",nsPct,1).s]);
+    }
+    if(S.cd.stops)tiles.push(["Dừng máy (Cơ điện)",S.cd.downtime,"phút",S.cd.stops+" sự cố",judge("dt",S.cd.downtime,-1,Math.max(1,pr.days||1)).s]);
+    if(S.qc.pqc_insp)tiles.push(["Kiểm PQC (QAC)",S.qc.pqc_insp,"sản phẩm","NG "+fmt(r2((S.qc.pqc_op+S.qc.pqc_sup)/S.qc.pqc_insp*100,2),2)+"% · thao tác "+fmt(S.qc.pqc_op)+" · NCC "+fmt(S.qc.pqc_sup),judge("def",r2((S.qc.pqc_op+S.qc.pqc_sup)/S.qc.pqc_insp*100,2),-1).s]);
+    if(S.hr.days)tiles.push(["Vắng mặt",S.hr.absent_pct,"%","TB "+fmt(S.hr.absent_avg,0)+"/"+fmt(S.hr.total)+" người · nghỉ việc "+(S.hr.quits||0)+" · tuyển mới "+(S.hr.new||0),"none"]);
+    if(S.wh.shortage_items)tiles.push(["Kho — mã vật tư thiếu",S.wh.shortage_items,"mã","Nhập kho từ SX "+(S.wh.receipt_sx||0)+" sp",S.wh.shortage_items?"warn":"ok"]);
+    const fives5=S.fives.s1+S.fives.s2+S.fives.s3;
+    if(fives5)tiles.push(["Lỗi 3S trong kỳ",fives5,"lỗi","Sàng lọc "+S.fives.s1+" · Sắp xếp "+S.fives.s2+" · Sạch sẽ "+S.fives.s3,S.fives.open?"warn":"ok"]);
+    if(S.tasks.overdue)tiles.push(["Việc / chỉ đạo quá hạn",S.tasks.overdue,"việc",S.tasks.open+" đang mở · "+S.tasks.done_in+" đóng trong kỳ","bad"]);
+    if(S.recon_flags)tiles.push(["Đối chiếu lệch giữa các bộ phận",S.recon_flags,"điểm","","bad"]);
+
+    const{jsPDF}=window.jspdf;
+    const doc=new jsPDF({unit:"mm",format:"a4",orientation:"landscape"});
+    await ensureRobotoFont(doc);
+    const now=new Date().toLocaleString("vi-VN");
+    const title="BÁO CÁO KPI & TỔNG QUAN";
+    pdfHeader(doc,title,lbl,now);
+    let y=30;
+    y=pdfSecHead(doc,y,1,"BÁO CÁO KPI","19 chỉ số · số tính tự động, có đánh dấu dòng nhập tay");
+    const n2=(v,dec)=>v==null?"—":fmt(v,dec);
+    kbSpec().forEach(([catTitle,rows])=>{
+      if(y>PDF_PH-30){doc.addPage();pdfMiniHeader(doc,title);y=16}
+      doc.setFont("Roboto","bold");doc.setFontSize(8.5);doc.setTextColor(22,33,61);doc.text(catTitle,PDF_MX,y+3);y+=6;
+      const cols=[{header:"Chỉ số",key:"name",width:PDF_CW*0.42},{header:"Giá trị",key:"val",width:PDF_CW*0.12,align:"right"},
+        {header:"Đơn vị",key:"unit",width:PDF_CW*0.12},{header:"Tổng hợp",key:"agg",width:PDF_CW*0.16},{header:"Ghi chú",key:"note",width:PDF_CW*0.18}];
+      const rowsData=rows.map(([key,name,unit,dec,agg])=>{const ov=OV[key];
+        return{name,val:n2(ov?+ov.value:K[key],dec),unit,agg,note:ov?"Nhập tay"+(ov.note?": "+ov.note:""):""};});
+      y=pdfTable(doc,y,cols,rowsData,title+" — Báo cáo KPI (tiếp)");
+    });
+    doc.addPage();pdfMiniHeader(doc,title);y=16;
+    y=pdfSecHead(doc,y,2,"VIỆC SẼ TRIỂN KHAI TRONG TUẦN","Nhập tay · không theo kỳ báo cáo đang chọn");
+    if(plan&&plan.length){
+      const cols2=[{header:"Nội dung",key:"content",width:PDF_CW*0.34},{header:"Người phụ trách",key:"assignee",width:PDF_CW*0.16},
+        {header:"Hạn",key:"due",width:PDF_CW*0.1},{header:"Kết quả mong đợi",key:"exp",width:PDF_CW*0.26},{header:"Trạng thái",key:"st",width:PDF_CW*0.14}];
+      const rows2=plan.map(p=>({content:p.content,assignee:p.assignee||"—",due:p.due_date?dmyS(p.due_date):"—",exp:p.expected_result||"—",st:kpStName(p.status)}));
+      y=pdfTable(doc,y,cols2,rows2,title+" — Việc trong tuần (tiếp)");
+    }else{
+      doc.setFont("Roboto","normal");doc.setFontSize(9);doc.setTextColor(90,102,132);doc.text("Chưa có việc nào được lên kế hoạch.",PDF_MX,y+5);doc.setTextColor(22,33,61);
+    }
+    doc.addPage();pdfMiniHeader(doc,title);y=16;
+    y=pdfSecHead(doc,y,3,"TỔNG QUAN NHÀ MÁY","Chỉ số điều hành — cùng kỳ với Báo cáo KPI ở trên");
+    if(!tiles.length){doc.setFont("Roboto","normal");doc.setFontSize(9);doc.setTextColor(90,102,132);doc.text("Chưa có số liệu trong kỳ.",PDF_MX,y+4);doc.setTextColor(22,33,61)}
+    else{
+      const gap=3,tw=(PDF_CW-3*gap)/4,th=23.5;
+      tiles.forEach((t,i)=>{const col=i%4,row=Math.floor(i/4);pdfTile(doc,PDF_MX+col*(tw+gap),y+row*(th+gap),tw,th,t[0],t[1],t[2],t[3],t[4]);});
+    }
+    const pageCount=doc.internal.getNumberOfPages();
+    for(let p=1;p<=pageCount;p++){doc.setPage(p);doc.setFont("Roboto","normal");doc.setFontSize(8);doc.setTextColor(90,102,132);doc.text(`Trang ${p}/${pageCount}`,PDF_PW-PDF_MX,PDF_PH-6,{align:"right"});doc.setTextColor(22,33,61)}
+    doc.save(`BaoCaoKPI_${d1}_${d2}_${yymmdd(todayISO())}.pdf`);
+    toast("Đã xuất báo cáo PDF");
+  }catch(err){alert(sbErr(err))}
+  finally{const b=$("#kbPdf");if(b){b.disabled=false;b.textContent="Xuất báo cáo PDF"}}
 }
 
 /* ---------- KẾ HOẠCH – LỆNH SẢN XUẤT + THEO DÕI MUA HÀNG (PO) ---------- */
@@ -3869,7 +4003,7 @@ function startApp(){
   $("#user").innerHTML=`${esc(ME.full_name)}<small>${esc(ME.username)} · ${esc(ME.position_name)}</small>`;
   const c=$("#conn");c.classList.toggle("live",RUN==="LIVE");
   c.textContent=RUN==="LIVE"?"Đã kết nối máy chủ · số liệu thật":"DEMO · dùng thử, không lưu máy chủ";
-  ST.screen=homeMod();cfgTab="tbp";RP.code=null;RP.date=null;RP.editIssue=RP.editPlan=RP.editSr=null;SM.date=null;SXF.date=null;SXF.line=null;SXF.edit=null;SXF.assignOpen=false;SXF.unlockOpen=false;SX_CACHE=null;Object.keys(FM).forEach(k=>delete FM[k]);NM.q="";NM.f="all";NM.page=0;NM.dirty={};NM.bulkOpen=false;FS.date=null;FS.per="week";FS.tab="stat";FS.fstat="open";FS.fs="";FS.newOpen=false;FS.newS="";FS_CRIT=null;VD.tab="issue";VD.fSev="";VD.fSt="open";VD.fDept="";VD.q="";VD.projOpen=false;VD.editProj=null;KP.tab="dash";KP.defOpen=false;KP.editDef=null;KP.tgtOpenFor=null;KP.resKpi="";KP.resPs=null;KP.resPe=null;KT.tab="list";KT.fStatus="pending";KT.newOpen=false;KT.ctype="norm";KT.histCode="";LH.tab="session";LH.typeOpen=false;LH.editType=null;LH.sessOpen=false;LH.openId=null;LH.decOpen=null;LD.period="day";LD.date=null;LD.scope="all";LD.demo=false;LD.customFrom=null;LD.customTo=null;KB.period="week";KB.date=null;KB.customFrom=null;KB.customTo=null;KB.manualOpen=false;GV.f="open";GV.pos="";GV.q="";accQ="";accDept="";ACC_SECRET=null;accConfirm=null;render();
+  ST.screen=homeMod();cfgTab="tbp";RP.code=null;RP.date=null;RP.editIssue=RP.editPlan=RP.editSr=null;SM.date=null;SXF.date=null;SXF.line=null;SXF.edit=null;SXF.assignOpen=false;SXF.unlockOpen=false;SX_CACHE=null;Object.keys(FM).forEach(k=>delete FM[k]);NM.q="";NM.f="all";NM.page=0;NM.dirty={};NM.bulkOpen=false;FS.date=null;FS.per="week";FS.tab="stat";FS.fstat="open";FS.fs="";FS.newOpen=false;FS.newS="";FS_CRIT=null;VD.tab="issue";VD.fSev="";VD.fSt="open";VD.fDept="";VD.q="";VD.projOpen=false;VD.editProj=null;KP.tab="dash";KP.defOpen=false;KP.editDef=null;KP.tgtOpenFor=null;KP.resKpi="";KP.resPs=null;KP.resPe=null;KT.tab="list";KT.fStatus="pending";KT.newOpen=false;KT.ctype="norm";KT.histCode="";LH.tab="session";LH.typeOpen=false;LH.editType=null;LH.sessOpen=false;LH.openId=null;LH.decOpen=null;LD.period="day";LD.date=null;LD.scope="all";LD.demo=false;LD.customFrom=null;LD.customTo=null;KB.period="week";KB.date=null;KB.customFrom=null;KB.customTo=null;KB.manualOpen=false;KB.editKey=null;KPW.edit=null;KPW.del=null;KPW.items=null;GV.f="open";GV.pos="";GV.q="";accQ="";accDept="";ACC_SECRET=null;accConfirm=null;render();
 }
 $("#logout").onclick=()=>logout();
 $("#bell").onclick=e=>{e.stopPropagation();const p=$("#notif");p.hidden=!p.hidden;$("#bell").setAttribute("aria-expanded",String(!p.hidden))};
