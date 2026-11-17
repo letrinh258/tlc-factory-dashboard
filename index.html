@@ -1831,7 +1831,8 @@ async function viewSx(){
   const stCell=s=>s.n_rows?`<span class="pill p-ok">Đã nhập ${s.last_edit?new Date(s.last_edit).toLocaleTimeString("vi-VN",{hour:"2-digit",minute:"2-digit"}):""}</span>`:late?`<span class="pill p-bad">CHƯA NHẬP</span>`:`<span class="pill p-none">Chưa nhập</span>`;
   const visibleSt=manager||ME.dept_code!=="SX"?st:st.filter(s=>myL.includes(s.line_id));
   const lineRows=rows.filter(r=>r.line_id===L);const ed=SXF.edit==="new"?{}:lineRows.find(r=>r.id===SXF.edit);
-  const lsxBatches=canEdit&&SXF.edit==="new"?await q(SB.from("production_order_batches").select("*,production_orders(*)").eq("order_date",D).eq("line_id",L).order("code")):[];
+  const lsxBatchesAll=canEdit?await q(SB.from("production_order_batches").select("*,production_orders(*)").eq("order_date",D).eq("line_id",L).order("code")):[];
+  const lsxBatches=SXF.edit==="new"?lsxBatchesAll:[];
   const lsxBatch=lsxBatches.length===1?lsxBatches[0]:lsxBatches.length>1?lsxBatches.find(b=>b.id===SXF.lsxPick)||null:null;
   SXF.curBatchId=lsxBatch?lsxBatch.id:null; // nhớ lệnh đang chọn để bindSx() biết gắn p_order_batch_id khi lưu
   const ordRows=lsxBatch?(lsxBatch.production_orders||[]).slice().sort((a,b)=>a.item_code<b.item_code?-1:a.item_code>b.item_code?1:0):[];
@@ -1866,6 +1867,12 @@ async function viewSx(){
 
   <h2 class="sec">${esc(lineName(L))} – ngày ${dmyS(D)} <small>${canEdit?"Bạn đang nhập line này":myL.includes(L)?"Đã khóa":"Chỉ xem"}</small>
     ${isAdmin&&!canEdit&&D<today?` <button class="btn ghost" type="button" id="sxUnlockBtn" style="padding:3px 10px">Mở khóa line này</button>`:""}</h2>
+  ${canEdit&&lsxBatchesAll.length?`<div class="card" style="margin-bottom:10px"><h3 style="margin:0 0 6px">Lệnh sản xuất hôm nay của line này</h3>
+   <p class="small" style="margin:0 0 8px">Nếu line làm vượt kế hoạch và tự làm thêm 1 lệnh mới ngoài kế hoạch (tranh thủ dư công suất), đánh dấu lệnh đó <b>"Tranh thủ ngoài KH"</b> ngay đây — lệnh này sẽ không bị chấm "thiếu hàng" ở Báo cáo KPI.</p>
+   ${lsxBatchesAll.map(b=>`<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;padding:4px 0"><span><b class="mono">${esc(b.code)}</b> <span class="small">${fmt((b.production_orders||[]).length)} mã · tổng KH ${fmt(b.qty_total)}</span></span>
+    <span><span class="pill p-${b.kind==="overflow"?"warn":"ok"}">${b.kind==="overflow"?"Tranh thủ ngoài KH":"Kế hoạch"}</span>
+     <button class="btn ghost" type="button" data-lsxkind="${b.id}|${b.kind==="overflow"?"planned":"overflow"}" style="padding:2px 8px;margin-left:6px">${b.kind==="overflow"?"Chuyển về Kế hoạch":"Đánh dấu Tranh thủ ngoài KH"}</button></span></div>`).join("")}
+  </div>`:""}
   ${SXF.unlockOpen?`<div class="card" style="margin-bottom:10px"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
     <div class="fld"><label for="sxUlH">Trong (giờ)</label><input id="sxUlH" value="4" inputmode="numeric" style="width:80px"></div>
     <div class="fld" style="flex:1;min-width:200px"><label for="sxUlR">Lý do</label><input id="sxUlR" placeholder="vd: tổ trưởng quên nhập"></div>
@@ -1932,6 +1939,11 @@ function bindSx(){
     try{if(c.checked)await q(SB.from("user_lines").insert({profile_id:pid,line_id:+l}));else await q(SB.from("user_lines").delete().eq("profile_id",pid).eq("line_id",+l));toast("Đã cập nhật phân line")}
     catch(e){c.checked=!c.checked;toast(sbErr(e))}c.disabled=false});
   const ub=$("#sxUnlockBtn");if(ub)ub.onclick=()=>{SXF.unlockOpen=!SXF.unlockOpen;render()};
+  document.querySelectorAll("[data-lsxkind]").forEach(btn=>btn.onclick=async()=>{
+    const[id,kind]=btn.dataset.lsxkind.split("|");btn.disabled=true;
+    try{await rpc("lsx_set_kind",{p_batch_id:+id,p_kind:kind});toast("Đã cập nhật loại lệnh");render()}
+    catch(err){alert(sbErr(err));btn.disabled=false}
+  });
   const ug=$("#sxUlGo");if(ug)ug.onclick=async()=>{const h=+$("#sxUlH").value||4,r=$("#sxUlR").value.trim();if(r.length<3){setMsg("sxUlMsg","Ghi lý do mở khóa","bad");return}
     try{await rpc("unlock_report",{p_code:"LINE-"+SXF.line,p_date:SXF.date,p_hours:h,p_reason:r});SXF.unlockOpen=false;toast("Đã mở khóa");render()}catch(e){setMsg("sxUlMsg",sbErr(e),"bad")}};
   const nb=$("#sxNew");if(nb)nb.onclick=()=>{SXF.edit="new";SXF.manualProd=false;SXF.lsxPick=null;render().then(()=>{const f=$("#f_prod")||$("#f_lsxPick");if(f)f.focus()})};

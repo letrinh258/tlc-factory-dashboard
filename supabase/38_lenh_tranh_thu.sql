@@ -17,12 +17,15 @@
 
 alter table public.production_order_batches add column if not exists kind text not null default 'planned' check (kind in ('planned','overflow'));
 
+-- GĐ33b (17/11): theo yêu cầu, nút đổi loại lệnh chủ yếu dành cho PHÂN
+-- HỆ SẢN XUẤT (tổ trưởng SX ngay trên Form A) quyết định tại chỗ khi
+-- line tranh thủ làm thêm lệnh mới — không chỉ KHSX.
 create or replace function public.lsx_set_kind(p_batch_id bigint, p_kind text) returns void
 language plpgsql security definer set search_path = public as $$
 begin
   if p_kind not in ('planned','overflow') then raise exception 'Loại lệnh không hợp lệ'; end if;
-  if not (public.is_admin() or public.in_dept(public.dept_id_of('KHSX'))) then
-    raise exception 'Chỉ KHSX/GĐNM được đổi loại lệnh';
+  if not (public.is_admin() or public.in_dept(public.dept_id_of('KHSX')) or public.in_dept(public.dept_id_of('SX'))) then
+    raise exception 'Chỉ Sản xuất/KHSX/GĐNM được đổi loại lệnh';
   end if;
   update public.production_order_batches set kind = p_kind where id = p_batch_id;
 end $$;
