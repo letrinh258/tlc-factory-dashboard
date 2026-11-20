@@ -2678,8 +2678,8 @@ function dhChart(X,id,sp){
   const n=rows.length,N=labels.length,ds=[];const nn=v=>v==null||isNaN(v)?null:Math.round(v*100)/100;
   sp.series.forEach(s=>{
    const vals=rows.map(r=>nn(s.f(r.A))),tot=nn(s.f(AT));const col=A=>typeof s.c==="function"?s.c(A):s.c;
-   const base={type:s.t,label:s.l,dec:s.d??0,k:s.k,stk:!!sp.stack&&s.t==="bar"};
-   const st=s.t==="line"?{borderColor:s.c,backgroundColor:s.c,pointRadius:3,borderWidth:2,stack:"ln"+ds.length}:{borderRadius:3,maxBarThickness:46,stack:sp.stack?"s":"g"+ds.length};
+   const base={type:s.t,label:s.l,dec:s.d??0,k:s.k,stk:!!sp.stack&&s.t==="bar"&&!s.nostack};
+   const st=s.t==="line"?{borderColor:s.c,backgroundColor:s.c,pointRadius:3,borderWidth:2,stack:"ln"+ds.length}:{borderRadius:3,maxBarThickness:46,stack:sp.stack&&!s.nostack?"s":"g"+ds.length};
    if(s.k==="pct"||!withTot){const bc=rows.map(r=>col(r.A)).concat(withTot?[dhShade(col(AT))]:[]);
     ds.push({...base,...st,data:withTot?vals.concat([tot]):vals,yAxisID:mixed?"yP":"y",lastBold:withTot,...(s.t==="bar"?{backgroundColor:bc}:{})})}
    else{ds.push({...base,...st,data:vals.concat([null]),yAxisID:"y",...(s.t==="bar"?{backgroundColor:rows.map(r=>col(r.A))}:{})});
@@ -2700,7 +2700,7 @@ function dhChart(X,id,sp){
 }
 const dhSTC=s=>A=>({g:"#16a34a",a:"#f59e0b",r:"#ef4444",n:"#94a3b8"})[dhStatus(DH_BY[s],A.v[s],DH.x.T,A)];
 const DH_CH={
- 1:[["Sản lượng TP nhập kho – theo KH / ngoài KH / Kế hoạch",{stack:1,pctTop:A=>A.v[2],series:[{l:"TP theo KH",t:"bar",k:"qty",f:dhQ("tp_kh"),c:"#2563eb"},{l:"TP ngoài KH",t:"bar",k:"qty",f:dhQ("tp_ngoai"),c:"#60a5fa"},{l:"Kế hoạch",t:"line",k:"qty",f:dhQ("kh_sl"),c:"#111827"}]}],
+ 1:[["Sản lượng TP nhập kho – Kế hoạch / Thực hiện / % đạt",{stack:1,series:[{l:"TP theo KH",t:"bar",k:"qty",f:dhQ("tp_kh"),c:"#2563eb"},{l:"TP ngoài KH",t:"bar",k:"qty",f:dhQ("tp_ngoai"),c:"#60a5fa"},{l:"Kế hoạch",t:"bar",k:"qty",f:dhQ("kh_sl"),c:"#94a3b8",nostack:true},{l:"% đạt KH",t:"line",k:"pct",d:1,f:A=>A.v[2],c:"#16a34a"}]}],
     ["Đơn hàng chậm giao phát sinh",{series:[{l:"Chậm giao",t:"bar",k:"qty",f:dhQ("don_cham"),c:"#f59e0b"},{l:"Chậm theo cam kết",t:"bar",k:"qty",f:dhQ("don_cham_ck"),c:"#ef4444"}]}]],
  2:[["Hiệu suất so với định mức (%)",{tgt:8,yMin:50,series:[{l:"Hiệu suất",t:"bar",k:"pct",d:1,f:A=>A.v[8],c:dhSTC(8)}]}],
     ["Thời gian dừng chuyền theo nguyên nhân (phút)",{stack:1,series:[{l:"Thiết bị",t:"bar",k:"qty",f:dhQ("dung_tb"),c:"#2563eb"},{l:"Hàng lỗi",t:"bar",k:"qty",f:dhQ("dung_loi"),c:"#ef4444"},{l:"Thiếu vật tư",t:"bar",k:"qty",f:dhQ("dung_vt"),c:"#8b5cf6"},{l:"Line SX",t:"bar",k:"qty",f:dhQ("dung_line"),c:"#f59e0b"}]}]],
