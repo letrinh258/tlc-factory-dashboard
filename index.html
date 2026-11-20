@@ -5,7 +5,7 @@
      ISO) — dùng để tự phát hiện trình duyệt đang chạy bản cache cũ và
      nhắc tải lại, tránh lỗi kiểu "KB/KPW is not defined" sau khi đổi tên
      biến ở các giai đoạn trước (GĐ34). -->
-<meta name="app-build" content="2026-11-20T09:17:08Z">
+<meta name="app-build" content="2026-11-20T09:22:25Z">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#20409A">
@@ -1910,6 +1910,7 @@ async function viewSx(){
     <span><span class="pill p-${b.kind==="overflow"?"warn":"ok"}">${b.kind==="overflow"?"Tranh thủ ngoài KH":"Kế hoạch"}</span>
      <button class="btn ghost" type="button" data-lsxkind="${b.id}|${b.kind==="overflow"?"planned":"overflow"}" style="padding:2px 8px;margin-left:6px">${b.kind==="overflow"?"Chuyển về Kế hoạch":"Đánh dấu Tranh thủ ngoài KH"}</button>
      <button class="btn ghost" type="button" data-lsxpullopen="${b.id}" style="padding:2px 8px;margin-left:6px">Kéo từ ngày mai…</button></span></div>
+    ${b.note?`<div class="small" style="margin:2px 0 6px;padding:4px 8px;border-radius:6px;background:var(--warn-bg,rgba(234,179,8,.12));color:var(--warn-fg,#92620a)">⚠ ${esc(b.note)}</div>`:""}
     ${PULL.batchId===b.id?lsxPullPanelHTML(sxPullItems||[],C,D):""}`).join("")}
   </div>`:""}
   ${SXF.unlockOpen?`<div class="card" style="margin-bottom:10px"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
@@ -3002,13 +3003,16 @@ function bindLsxPull(afterOk){
 }
 function bindLsxBack(afterOk){
   document.querySelectorAll("[data-lsxback]").forEach(btn=>btn.onclick=async()=>{
-    const[id,maxQ,toDate]=btn.dataset.lsxback.split("|");
+    const[id,maxQ]=btn.dataset.lsxback.split("|");
     const inp=document.querySelector(`[data-backqty="${id}"]`);
     const qty=numOrNull(inp&&inp.value?inp.value:maxQ);
     if(qty==null||qty<=0){if(inp)inp.classList.add("err");return}
-    if(qty>+maxQ){alert("Số lượng trả vượt quá số lượng hiện có ("+fmt(+maxQ)+")");return}
+    if(qty>+maxQ){alert("Số lượng chuyển vượt quá phần còn thiếu ("+fmt(+maxQ)+")");return}
     btn.disabled=true;
-    try{await rpc("lsx_move_qty",{p_item_id:+id,p_qty:qty,p_to_date:toDate});toast("Đã trả lại ngày mai — giữ nguyên mã lệnh");afterOk()}
+    // GĐ42: dùng lsx_defer_shortfall (không phải lsx_move_qty) để lệnh
+    // ngày mai được GHI CHÚ rõ "chuyển từ lệnh chưa sản xuất hết" — cùng
+    // cơ chế với job tự động chạy mỗi đêm.
+    try{await rpc("lsx_defer_shortfall",{p_item_id:+id,p_qty:qty});toast("Đã chuyển sang ngày mai — giữ nguyên mã lệnh");afterOk()}
     catch(err){alert(sbErr(err));btn.disabled=false}
   });
 }
@@ -3045,13 +3049,14 @@ Dây chuyền SXHN 01	LSX11/26-018(2026-11-03)	TLC-BML-40W-01	Đèn led búp Max
       ${canKind?`<button class="btn ghost" type="button" data-lsxedit="${b.id}" style="padding:2px 8px;margin-left:6px">Sửa lệnh</button><button class="btn ghost" type="button" data-lsxdel="${b.id}" style="padding:2px 8px;margin-left:6px;color:var(--bad)">Xóa lệnh</button>`:""}</span></div>
     ${KHF.editBatch===b.id?lsxEditForm(b,C):""}
     ${PULL.batchId===b.id?lsxPullPanelHTML(pullItems||[],C,D):""}
+    ${b.note?`<div class="small" style="margin-top:6px;padding:5px 8px;border-radius:6px;background:var(--warn-bg,rgba(234,179,8,.12));color:var(--warn-fg,#92620a)">⚠ ${esc(b.note)}</div>`:""}
     <div class="tbl" style="margin-top:6px"><table><tr><th>Mã sản phẩm</th><th>Tên</th><th class="num">SL kế hoạch</th><th class="num">SL đã làm</th>${canKind?"<th></th>":""}</tr>
     ${(b.production_orders||[]).filter(r=>+r.qty_planned>0).slice().sort((x,y)=>x.item_code<y.item_code?-1:x.item_code>y.item_code?1:0).map(r=>{
       const act=actualMap[b.id+"|"+r.item_code]||0,remain=Math.max(0,+r.qty_planned-act);
       return `<tr><td class="mono">${esc(r.item_code)}</td><td>${esc((C.byCode[r.item_code]||{}).name||"")}</td><td class="num">${fmt(r.qty_planned)}</td><td class="num">${fmt(act)}</td>
-     ${canKind?(remain>0?`<td style="white-space:nowrap"><input data-backqty="${r.id}" inputmode="decimal" style="width:70px;text-align:right" placeholder="${fmt(remain)}"> <button class="btn ghost" type="button" data-lsxback="${r.id}|${remain}|${addDays(b.order_date,1)}" style="padding:2px 8px" title="Thiếu ${fmt(remain)} so với KH — chuyển sang lệnh ngày mai, giữ nguyên mã lệnh">Chuyển thiếu sang ngày mai</button></td>`:"<td></td>"):""}</tr>`}).join("")}
+     ${canKind?(remain>0?`<td style="white-space:nowrap"><input data-backqty="${r.id}" inputmode="decimal" style="width:70px;text-align:right" placeholder="${fmt(remain)}"> <button class="btn ghost" type="button" data-lsxback="${r.id}|${remain}" style="padding:2px 8px" title="Thiếu ${fmt(remain)} so với KH — chuyển sang lệnh ngày mai, giữ nguyên mã lệnh">Chuyển thiếu sang ngày mai</button></td>`:"<td></td>"):""}</tr>`}).join("")}
     </table></div></div>`}).join(""):`<div class="empty">Chưa có lệnh sản xuất ngày này</div>`}
-  <p class="small" style="margin:8px 0 0">Lệnh <b>Tranh thủ ngoài KH</b> = line dư công suất, tự làm thêm lệnh mới trong ngày (không nằm trong kế hoạch chốt từ đầu) — được tính là "TP ngoài KH (làm vượt)" ở Báo cáo điều hành. Mã nào làm KHÔNG hết kế hoạch trong ngày (ví dụ KH 1.000, làm được 900) thì ở bảng mã hàng bấm <b>"Chuyển thiếu sang ngày mai"</b> — phần còn thiếu (100) tách sang NGÀY MAI, giữ nguyên mã lệnh, tính là kế hoạch của ngày hôm sau; kế hoạch hôm nay tự giảm còn đúng số đã làm (900) nên không bị chấm thiếu hàng oan.</p>`;
+  <p class="small" style="margin:8px 0 0">Lệnh <b>Tranh thủ ngoài KH</b> = line dư công suất, tự làm thêm lệnh mới trong ngày (không nằm trong kế hoạch chốt từ đầu) — được tính là "TP ngoài KH (làm vượt)" ở Báo cáo điều hành. Mã nào làm KHÔNG hết kế hoạch trong ngày (ví dụ KH 1.000, làm được 900) hệ thống <b>TỰ ĐỘNG</b> chuyển phần còn thiếu (100) sang lệnh NGÀY MAI vào rạng sáng hôm sau — giữ nguyên mã lệnh, tính là kế hoạch chính thức của ngày hôm sau, kèm ghi chú vàng trên lệnh đích; kế hoạch hôm nay tự giảm còn đúng số đã làm (900) nên không bị chấm thiếu hàng oan. Muốn chuyển ngay (không chờ tự động) thì bấm <b>"Chuyển thiếu sang ngày mai"</b> ở bảng mã hàng.</p>`;
 }
 function lineOptsName(id){return (CFG.lines||[])[id-1]||("Line "+id)}
 function bindLsx(){
