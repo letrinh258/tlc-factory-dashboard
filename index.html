@@ -2952,7 +2952,8 @@ Dây chuyền SXHN 01	LSX11/26-018(2026-11-03)	TLC-BML-40W-01	Đèn led búp Max
      <span class="small">${esc(lineOptsName(b.line_id))} · ${fmt((b.production_orders||[]).length)} mã · tổng KH ${fmt(b.qty_total)}
       <span class="pill p-${b.kind==="overflow"?"warn":"ok"}" style="margin-left:6px">${b.kind==="overflow"?"Tranh thủ ngoài KH":"Kế hoạch"}</span>
       ${canKind?`<button class="btn ghost" type="button" data-lsxkind="${b.id}|${b.kind==="overflow"?"planned":"overflow"}" style="padding:2px 8px;margin-left:6px">${b.kind==="overflow"?"Chuyển về Kế hoạch":"Đánh dấu Tranh thủ ngoài KH"}</button>`:""}
-      ${canKind?`<button class="btn ghost" type="button" data-lsxdel="${b.id}" style="padding:2px 8px;margin-left:6px;color:var(--bad)">Xóa lệnh</button>`:""}</span></div>
+      ${canKind?`<button class="btn ghost" type="button" data-lsxedit="${b.id}" style="padding:2px 8px;margin-left:6px">Sửa lệnh</button><button class="btn ghost" type="button" data-lsxdel="${b.id}" style="padding:2px 8px;margin-left:6px;color:var(--bad)">Xóa lệnh</button>`:""}</span></div>
+    ${KHF.editBatch===b.id?lsxEditForm(b,C):""}
     <div class="tbl" style="margin-top:6px"><table><tr><th>Mã sản phẩm</th><th>Tên</th><th class="num">SL kế hoạch</th></tr>
     ${(b.production_orders||[]).slice().sort((x,y)=>x.item_code<y.item_code?-1:x.item_code>y.item_code?1:0).map(r=>`<tr><td class="mono">${esc(r.item_code)}</td><td>${esc((C.byCode[r.item_code]||{}).name||"")}</td><td class="num">${fmt(r.qty_planned)}</td></tr>`).join("")}
     </table></div></div>`}).join(""):`<div class="empty">Chưa có lệnh sản xuất ngày này</div>`}
@@ -2970,6 +2971,8 @@ function bindLsx(){
   document.querySelectorAll("[data-lsxdel]").forEach(btn=>btn.onclick=async()=>{
     if(!confirm("Xóa lệnh này? Không thể hoàn tác."))return;btn.disabled=true;
     try{await rpc("lsx_delete",{p_batch_id:+btn.dataset.lsxdel});toast("Đã xóa lệnh");render()}catch(err){alert(sbErr(err));btn.disabled=false}});
+  document.querySelectorAll("[data-lsxedit]").forEach(b=>b.onclick=()=>{KHF.editBatch=+b.dataset.lsxedit;render()});
+  if(SX_CACHE)bindLsxEdit(SX_CACHE);
   const ld=$("#lsxDelBtn");if(ld)ld.onclick=async()=>{
     if(!confirm("Xóa toàn bộ lệnh sản xuất ngày "+dmyS(LSX.date)+"? Không thể hoàn tác."))return;
     ld.disabled=true;
@@ -2990,30 +2993,81 @@ function bindLsx(){
   };
 }
 const KHTABS=[["lsx","Lệnh sản xuất"],["hist","Lịch sử lệnh SX"],["po","Theo dõi mua hàng (PO)"]];
+/* ---------- GĐ36: Lịch sử lệnh SX nhóm theo NGÀY → TỔ (line) · Sửa lệnh ---------- */
+const lsxCanEdit=()=>ME.role==="admin"||ME.dept_code==="KHSX";
+function lsxEditRow(it,C){return `<tr data-lsxitem><td><input data-k="item" list="lsxProdList" value="${esc(it.item_code||"")}" style="width:100%;min-width:170px" aria-label="Mã sản phẩm"></td>
+  <td class="small" data-name>${esc(((C.byCode[it.item_code]||{}).name)||"")}</td>
+  <td class="num"><input data-k="qty" inputmode="decimal" value="${it.qty_planned??""}" style="width:100px;text-align:right" aria-label="SL kế hoạch"></td>
+  <td><button class="btn ghost" type="button" data-lsxrm style="padding:2px 8px">Bỏ</button></td></tr>`}
+function lsxEditForm(b,C){
+  const nL=(CFG.lines||[]).length||10;
+  return `<div class="card" id="lsxEdit" style="margin:6px 0 10px;border-left:4px solid var(--accent)"><h3 style="margin-top:0">Sửa lệnh ${esc(b.code)}</h3>
+   <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+    <div class="fld" style="max-width:220px"><label for="le_code">Mã lệnh</label><input id="le_code" value="${esc(b.code)}"></div>
+    <div class="fld" style="max-width:180px"><label for="le_date">Ngày sản xuất</label><input id="le_date" type="date" value="${b.order_date}"></div>
+    <div class="fld" style="max-width:240px"><label for="le_line">Tổ / line</label><select id="le_line">${Array.from({length:nL},(_,i)=>`<option value="${i+1}" ${b.line_id===i+1?"selected":""}>${esc(lineOptsName(i+1))}</option>`).join("")}</select></div>
+   </div>
+   <div class="tbl" style="margin-top:8px"><table><thead><tr><th>Mã sản phẩm</th><th>Tên</th><th class="num">SL kế hoạch</th><th></th></tr></thead><tbody id="le_items">
+    ${(b.production_orders||[]).map(it=>lsxEditRow(it,C)).join("")}</tbody></table></div>
+   <datalist id="lsxProdList">${Object.keys(C.byCode).map(c=>`<option value="${esc(c)}">`).join("")}</datalist>
+   <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap"><button class="btn ghost" type="button" id="le_add">+ Thêm mã</button>
+    <button class="btn" type="button" id="le_save">Lưu thay đổi</button><button class="btn ghost" type="button" id="le_cancel">Hủy</button><span class="msg" id="le_msg"></span></div>
+   <p class="small" style="margin:6px 0 0">Lệnh đã có báo cáo sản xuất (Form A) thì không đổi được ngày/tổ và không bỏ được mã đã báo cáo — chỉ sửa số lượng hoặc thêm mã.</p></div>`;
+}
+function bindLsxEdit(C){
+  const box=$("#lsxEdit");if(!box)return;
+  const wireRow=tr=>{const inp=tr.querySelector('[data-k="item"]');inp.oninput=()=>{tr.querySelector("[data-name]").textContent=((C.byCode[inp.value.trim()]||{}).name)||""};
+    tr.querySelector("[data-lsxrm]").onclick=()=>tr.remove()};
+  box.querySelectorAll("[data-lsxitem]").forEach(wireRow);
+  $("#le_add").onclick=()=>{$("#le_items").insertAdjacentHTML("beforeend",lsxEditRow({},C));wireRow($("#le_items").lastElementChild)};
+  $("#le_cancel").onclick=()=>{KHF.editBatch=null;render()};
+  $("#le_save").onclick=async()=>{
+    const items=[];let bad="";
+    box.querySelectorAll("[data-lsxitem]").forEach(tr=>{const it=tr.querySelector('[data-k="item"]').value.trim(),qs=tr.querySelector('[data-k="qty"]').value.trim();
+      if(!it&&!qs)return;const qn=parseInvNum(qs);if(!it)bad="Thiếu mã sản phẩm";else if(!C.byCode[it])bad="Mã "+it+" không có trong danh mục";else if(!(qn>0))bad="SL của mã "+it+" phải lớn hơn 0";items.push({item:it,qty:qn})});
+    if(!items.length)bad=bad||"Lệnh phải có ít nhất 1 mã";
+    if(bad){setMsg("le_msg",bad,"bad");return}
+    const btn=$("#le_save");btn.disabled=true;setMsg("le_msg","Đang lưu…");
+    try{await rpc("lsx_edit",{p_batch_id:KHF.editBatch,p_code:$("#le_code").value.trim(),p_date:$("#le_date").value,p_line:+$("#le_line").value,p_items:items});
+      toast("Đã sửa lệnh");KHF.editBatch=null;render()}catch(e){setMsg("le_msg",sbErr(e),"bad");btn.disabled=false}};
+}
 async function lsxHistTabHTML(){
   const C=await sxCache();
   const to=KHF.histTo=KHF.histTo||todayISO();
   const from=KHF.histFrom=KHF.histFrom||addDays(to,-6);
-  const batches=await q(SB.from("production_order_batches").select("*,production_orders(*)").gte("order_date",from).lte("order_date",to).order("order_date",{ascending:false}).order("line_id"));
-  const byDate={};batches.forEach(b=>{(byDate[b.order_date]=byDate[b.order_date]||[]).push(b)});
+  const batches=await q(SB.from("production_order_batches").select("*,production_orders(*)").gte("order_date",from).lte("order_date",to).order("order_date",{ascending:false}).order("line_id").order("code"));
+  KHF._histBatches=batches;
+  const byDate={};batches.forEach(b=>{((byDate[b.order_date]=byDate[b.order_date]||{})[b.line_id]=byDate[b.order_date][b.line_id]||[]).push(b)});
   const dates=Object.keys(byDate).sort((a,b)=>b<a?-1:b>a?1:0);
   const totalItems=batches.reduce((a,b)=>a+(b.production_orders||[]).length,0);
-  return `<p class="small" style="margin:0 0 10px">Xem lại lệnh sản xuất đã dán trong 1 khoảng ngày — gộp tất cả các line.</p>
+  const can=lsxCanEdit();
+  const sumQ=bs=>bs.reduce((a,b)=>a+(+b.qty_total||0),0),cntI=bs=>bs.reduce((a,b)=>a+(b.production_orders||[]).length,0);
+  const lineCard=(ln,bs)=>`<div class="card" style="margin-bottom:8px">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px"><b>${esc(lineOptsName(+ln))}</b><span class="small">${fmt(bs.length)} lệnh · ${fmt(cntI(bs))} mã · tổng KH <b>${fmt(sumQ(bs))}</b></span></div>
+    <div class="tbl" style="margin-top:6px"><table><tr><th>Mã lệnh</th><th>Mã sản phẩm</th><th>Tên</th><th class="num">SL kế hoạch</th><th>Loại</th>${can?"<th></th>":""}</tr>
+    ${bs.map(b=>{const its=(b.production_orders||[]).slice().sort((x,y)=>x.item_code<y.item_code?-1:1);const n=Math.max(its.length,1);
+      const rows=(its.length?its:[{}]).map((r,i)=>`<tr>${i===0?`<td class="mono" rowspan="${n}">${esc(b.code)}</td>`:""}<td class="mono">${esc(r.item_code||"—")}</td><td>${esc((C.byCode[r.item_code]||{}).name||"")}</td><td class="num">${r.qty_planned!=null?fmt(r.qty_planned):"—"}</td>
+        ${i===0?`<td rowspan="${n}"><span class="pill p-${b.kind==="overflow"?"warn":"ok"}">${b.kind==="overflow"?"Tranh thủ":"Kế hoạch"}</span></td>${can?`<td rowspan="${n}" style="white-space:nowrap"><button class="btn ghost" type="button" data-lsxedit="${b.id}" style="padding:2px 8px">Sửa</button> <button class="btn ghost" type="button" data-lsxdel="${b.id}" style="padding:2px 8px;color:var(--bad)">Xóa</button></td>`:""}`:""}</tr>`).join("");
+      return rows+(KHF.editBatch===b.id?`<tr><td colspan="${can?6:5}">${lsxEditForm(b,C)}</td></tr>`:"")}).join("")}
+    </table></div></div>`;
+  return `<p class="small" style="margin:0 0 10px">Xem lại lệnh sản xuất theo ngày, trong ngày nhóm theo tổ (line). ${can?"Bấm <b>Sửa</b> để sửa mã lệnh, ngày, tổ, mã sản phẩm, số lượng.":""}</p>
   <div class="card" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
    <div class="fld" style="max-width:180px"><label for="histFrom">Từ ngày</label><input id="histFrom" type="date" value="${from}" max="${to}"></div>
-   <div class="fld" style="max-width:180px"><label for="histTo">Đến ngày</label><input id="histTo" type="date" value="${to}" max="${todayISO()}"></div>
+   <div class="fld" style="max-width:180px"><label for="histTo">Đến ngày</label><input id="histTo" type="date" value="${to}"></div>
   </div>
   <h2 class="sec">${fmt(dates.length)} ngày có lệnh · ${fmt(batches.length)} lệnh · ${fmt(totalItems)} mã</h2>
-  ${dates.length?dates.map(d=>`<div style="margin-bottom:14px"><h3 style="margin:0 0 6px">${dmyS(d)} <small>${fmt(byDate[d].length)} lệnh</small></h3>
-    ${byDate[d].map(b=>`<div class="card" style="margin-bottom:8px">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px"><b class="mono">${esc(b.code)}</b><span class="small">${esc(lineOptsName(b.line_id))} · ${fmt((b.production_orders||[]).length)} mã · tổng KH ${fmt(b.qty_total)} <span class="pill p-${b.kind==="overflow"?"warn":"ok"}">${b.kind==="overflow"?"Tranh thủ ngoài KH":"Kế hoạch"}</span></span></div>
-      <div class="tbl" style="margin-top:6px"><table><tr><th>Mã sản phẩm</th><th>Tên</th><th class="num">SL kế hoạch</th></tr>
-      ${(b.production_orders||[]).slice().sort((x,y)=>x.item_code<y.item_code?-1:x.item_code>y.item_code?1:0).map(r=>`<tr><td class="mono">${esc(r.item_code)}</td><td>${esc((C.byCode[r.item_code]||{}).name||"")}</td><td class="num">${fmt(r.qty_planned)}</td></tr>`).join("")}
-      </table></div></div>`).join("")}</div>`).join(""):`<div class="empty">Không có lệnh sản xuất nào trong khoảng ngày này</div>`}`;
+  ${dates.length?dates.map(d=>{const lines=Object.keys(byDate[d]).sort((a,b)=>a-b);const all=lines.flatMap(l=>byDate[d][l]);
+    return `<div style="margin-bottom:16px"><h3 style="margin:0 0 6px">${dmyS(d)} <small>${fmt(lines.length)} tổ · ${fmt(all.length)} lệnh · ${fmt(cntI(all))} mã · tổng KH ${fmt(sumQ(all))}</small></h3>
+    ${lines.map(l=>lineCard(l,byDate[d][l])).join("")}</div>`}).join(""):`<div class="empty">Không có lệnh sản xuất nào trong khoảng ngày này</div>`}`;
 }
 function bindLsxHist(){
   const f=$("#histFrom");if(f)f.onchange=()=>{KHF.histFrom=f.value;render()};
   const t=$("#histTo");if(t)t.onchange=()=>{KHF.histTo=t.value;render()};
+  document.querySelectorAll("[data-lsxedit]").forEach(b=>b.onclick=()=>{KHF.editBatch=+b.dataset.lsxedit;render()});
+  document.querySelectorAll("[data-lsxdel]").forEach(btn=>btn.onclick=async()=>{
+    if(!confirm("Xóa lệnh này? Không thể hoàn tác."))return;btn.disabled=true;
+    try{await rpc("lsx_delete",{p_batch_id:+btn.dataset.lsxdel});toast("Đã xóa lệnh");render()}catch(err){alert(sbErr(err));btn.disabled=false}});
+  if(SX_CACHE)bindLsxEdit(SX_CACHE);
 }
 async function viewKH(){
   if(RUN!=="LIVE")return liveOnly("Kế hoạch");
