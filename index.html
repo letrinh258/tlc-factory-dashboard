@@ -2900,8 +2900,10 @@ function parseLsxPaste(text,byCode,cfgLines){
     if(!chuyen&&!lsxCode)continue; // dòng tổng phụ Bravo — bỏ qua
     if(/^tên chuyền$/i.test(chuyen))continue; // dòng tiêu đề
     if(!lsxCode)continue;
-    const code=(c[2]||"").trim();const qty=parseInvNum(c[5]);
+    const code=(c[2]||"").trim();let qty=parseInvNum(c[5]);
+    if(!(qty>0)){for(let k=c.length-1;k>=3;k--){const v=parseInvNum(c[k]);if(v>0&&/\d/.test(c[k])&&!/[a-zA-ZÀ-ỹ]/.test(c[k])){qty=v;break}}}
     if(!code)continue;
+    if(!(qty>0)){bad.push(`Lệnh "${lsxCode}" mã "${code}": không đọc được Số lượng (cột 6) — kiểm tra lại dòng này`);continue}
     const ln=lineIdx[chuyen.toLowerCase()];
     if(!ln){bad.push(`Lệnh "${lsxCode}": không nhận ra tên chuyền "${chuyen}" — kiểm tra đúng tên ở Cấu hình → Line & quy tắc (1–${nLines})`);continue}
     if(!byCode[code]){bad.push(`Lệnh "${lsxCode}": mã "${code}" không có trong danh mục sản phẩm`);continue}
@@ -2933,7 +2935,7 @@ async function lsxTabHTML(){
   const C=await sxCache();const D=LSX.date=LSX.date||todayISO();const nLines=(CFG.lines||[]).length||10;
   const batches=await q(SB.from("production_order_batches").select("*,production_orders(*)").eq("order_date",D).order("line_id"));
   const totalItems=batches.reduce((a,b)=>a+(b.production_orders||[]).length,0);
-  return `<p class="small" style="margin:0 0 10px">Mỗi lần dán là KẾ HOẠCH CHỐT của ngày đó — dán lại cùng ngày sẽ XÓA và NẠP LẠI toàn bộ lệnh SX ngày đó. <b>Mã lệnh do anh tự điền</b> (lấy theo số lệnh thật của Bravo, hoặc tự đặt) — hệ thống KHÔNG tự sinh mã. Nhiều dòng cùng 1 Mã lệnh sẽ gộp vào CÙNG 1 lệnh đó. Tổ trưởng sẽ CHỌN LỆNH này khi nhập Form A (Sản xuất), mã hàng + SL kế hoạch lấy thẳng từ đây.</p>
+  return `<p class="small" style="margin:0 0 10px">Mỗi lần dán chỉ <b>THÊM MỚI hoặc CẬP NHẬT</b> đúng các lệnh có trong lượt dán — các lệnh đã lưu khác giữ nguyên (dán từng lệnh một cũng không mất lệnh trước). Muốn bỏ 1 lệnh: bấm Xóa ở lệnh đó. <b>Mã lệnh do anh tự điền</b> (lấy theo số lệnh thật của Bravo, hoặc tự đặt) — hệ thống KHÔNG tự sinh mã. Nhiều dòng cùng 1 Mã lệnh sẽ gộp vào CÙNG 1 lệnh đó. Tổ trưởng sẽ CHỌN LỆNH này khi nhập Form A (Sản xuất), mã hàng + SL kế hoạch lấy thẳng từ đây.</p>
   <div class="card">
    <div class="fld" style="max-width:220px"><label for="lsxDate">Ngày sản xuất</label><input id="lsxDate" type="date" value="${D}"></div>
    <p class="small" style="margin:8px 0">Dán THẲNG nguyên 6 cột từ file Bravo (kể cả dòng tổng phụ, dòng tiêu đề — hệ thống tự bỏ qua): <b>Tên chuyền</b> (phải đúng tên line ở Cấu hình → Line & quy tắc) · <b>Số lệnh sản xuất</b> · <b>Vật tư</b> (phải có trong danh mục) · Tên vật tư (chỉ để đối chiếu, không lưu) · Đvt (không lưu) · <b>Số lượng</b>.</p>
@@ -2949,7 +2951,8 @@ Dây chuyền SXHN 01	LSX11/26-018(2026-11-03)	TLC-BML-40W-01	Đèn led búp Max
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px"><b class="mono">${esc(b.code)}</b>
      <span class="small">${esc(lineOptsName(b.line_id))} · ${fmt((b.production_orders||[]).length)} mã · tổng KH ${fmt(b.qty_total)}
       <span class="pill p-${b.kind==="overflow"?"warn":"ok"}" style="margin-left:6px">${b.kind==="overflow"?"Tranh thủ ngoài KH":"Kế hoạch"}</span>
-      ${canKind?`<button class="btn ghost" type="button" data-lsxkind="${b.id}|${b.kind==="overflow"?"planned":"overflow"}" style="padding:2px 8px;margin-left:6px">${b.kind==="overflow"?"Chuyển về Kế hoạch":"Đánh dấu Tranh thủ ngoài KH"}</button>`:""}</span></div>
+      ${canKind?`<button class="btn ghost" type="button" data-lsxkind="${b.id}|${b.kind==="overflow"?"planned":"overflow"}" style="padding:2px 8px;margin-left:6px">${b.kind==="overflow"?"Chuyển về Kế hoạch":"Đánh dấu Tranh thủ ngoài KH"}</button>`:""}
+      ${canKind?`<button class="btn ghost" type="button" data-lsxdel="${b.id}" style="padding:2px 8px;margin-left:6px;color:var(--bad)">Xóa lệnh</button>`:""}</span></div>
     <div class="tbl" style="margin-top:6px"><table><tr><th>Mã sản phẩm</th><th>Tên</th><th class="num">SL kế hoạch</th></tr>
     ${(b.production_orders||[]).slice().sort((x,y)=>x.item_code<y.item_code?-1:x.item_code>y.item_code?1:0).map(r=>`<tr><td class="mono">${esc(r.item_code)}</td><td>${esc((C.byCode[r.item_code]||{}).name||"")}</td><td class="num">${fmt(r.qty_planned)}</td></tr>`).join("")}
     </table></div></div>`}).join(""):`<div class="empty">Chưa có lệnh sản xuất ngày này</div>`}
@@ -2964,6 +2967,9 @@ function bindLsx(){
     try{await rpc("lsx_set_kind",{p_batch_id:+id,p_kind:kind});toast("Đã cập nhật loại lệnh");render()}
     catch(err){alert(sbErr(err));btn.disabled=false}
   });
+  document.querySelectorAll("[data-lsxdel]").forEach(btn=>btn.onclick=async()=>{
+    if(!confirm("Xóa lệnh này? Không thể hoàn tác."))return;btn.disabled=true;
+    try{await rpc("lsx_delete",{p_batch_id:+btn.dataset.lsxdel});toast("Đã xóa lệnh");render()}catch(err){alert(sbErr(err));btn.disabled=false}});
   const ld=$("#lsxDelBtn");if(ld)ld.onclick=async()=>{
     if(!confirm("Xóa toàn bộ lệnh sản xuất ngày "+dmyS(LSX.date)+"? Không thể hoàn tác."))return;
     ld.disabled=true;
@@ -2977,21 +2983,9 @@ function bindLsx(){
     const items=parsed.items;
     $("#lsxGo").disabled=true;setMsg("lsxMsg","Đang lưu "+fmt(items.length)+" dòng…"+(parsed.bad&&parsed.bad.length?" (bỏ qua "+parsed.bad.length+" dòng lỗi)":""));
     try{
-      const pLines=[...new Set(items.map(i=>i.line_id))];
-      await rpc("lsx_begin_replace",{p_date:D,p_lines:pLines});
-      const byCode={};items.forEach(i=>{(byCode[i.lsx_code]=byCode[i.lsx_code]||[]).push(i)});
-      const codes=Object.keys(byCode);
-      for(const lsxCode of codes){
-        const rowsLn=byCode[lsxCode];
-        const{data:bRows,error:eB}=await SB.from("production_order_batches").insert({
-          code:lsxCode,order_date:D,line_id:rowsLn[0].line_id,item_count:rowsLn.length,
-          qty_total:rowsLn.reduce((a,r)=>a+(+r.qty_planned||0),0),source:"paste",created_by:ME.id}).select("id");
-        if(eB)throw eB;
-        const batchId=bRows[0].id;
-        const rows=rowsLn.map(r=>({batch_id:batchId,item_code:r.item_code,qty_planned:r.qty_planned}));
-        for(let j=0;j<rows.length;j+=500){const{error:e1}=await SB.from("production_orders").insert(rows.slice(j,j+500));if(e1)throw e1}
-      }
-      LSX.open=false;toast("Đã lưu "+fmt(codes.length)+" lệnh SX ("+fmt(items.length)+" mã) — "+dmyS(D));render();
+      if(parsed.bad&&parsed.bad.length){setMsg("lsxMsg","Chưa lưu — sửa các dòng lỗi rồi dán lại: "+parsed.bad.slice(0,5).join("; "),"bad");$("#lsxGo").disabled=false;return}
+      const res=await rpc("lsx_save",{p_date:D,p_items:items.map(i=>({code:i.lsx_code,line:i.line_id,item:i.item_code,qty:i.qty_planned}))});
+      LSX.open=false;toast("Đã lưu lệnh SX ngày "+dmyS(D)+": "+fmt(res.new)+" lệnh mới, "+fmt(res.updated)+" lệnh cập nhật");render();
     }catch(err){setMsg("lsxMsg",sbErr(err),"bad");$("#lsxGo").disabled=false}
   };
 }
