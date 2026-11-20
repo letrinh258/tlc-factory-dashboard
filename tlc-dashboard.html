@@ -5,7 +5,7 @@
      ISO) — dùng để tự phát hiện trình duyệt đang chạy bản cache cũ và
      nhắc tải lại, tránh lỗi kiểu "KB/KPW is not defined" sau khi đổi tên
      biến ở các giai đoạn trước (GĐ34). -->
-<meta name="app-build" content="2026-11-20T08:25:52Z">
+<meta name="app-build" content="2026-11-20T08:36:09Z">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#20409A">
@@ -2557,7 +2557,7 @@ const DH_KEYS=["kh_sl","tp_kh","tp_kh_pl","tp_ngoai_pl","tp_ngoai","don_cham","d
 /* ô nhập trong Báo cáo hằng ngày (lưu vào daily_reports.metrics, khóa dh_*) */
 const DH_IN={
   KHSX:[["dh_don_cham","Đơn chậm giao phát sinh trong ngày","đơn"],["dh_don_cham_ck","Trong đó: chậm theo cam kết (trừ đơn đã thỏa thuận KD)","đơn"],["dh_ton_kh","SL tồn chưa hoàn thành theo KH (cuối ngày)","sp"]],
-  QAC:[["dh_fpy_kiem","SP kiểm tra lần đầu","sp"],["dh_fpy_dat","SP đạt ngay lần đầu","sp"],["dh_iqc_ton","Lô IQC tồn chưa kiểm (cuối ngày)","lô"]],
+  QAC:[["dh_fpy_kiem","SP kiểm tra lần đầu","sp"],["dh_fpy_dat","SP đạt ngay lần đầu","sp"],["dh_iqc_kiem","Số lô IQC kiểm tra","lô"],["dh_iqc_kd","Số lô IQC lỗi (không đạt)","lô"],["dh_iqc_ton","Lô IQC tồn chưa kiểm (cuối ngày)","lô"]],
   HCNS:[["dh_nghi_kp","Lao động nghỉ không phép","người"],["dh_tai_nan","Tai nạn / sự cố an toàn lao động","vụ"]],
   KTKLK:[["dh_kk_ma","Số mã kiểm kê trong ngày","mã"],["dh_kk_lech","Số mã kiểm kê bị lệch","mã"],["dh_kk_gt","Giá trị chênh lệch tồn kho","triệu đ"]],
   KTKTP:[["dh_kk_ma","Số mã kiểm kê trong ngày","mã"],["dh_kk_lech","Số mã kiểm kê bị lệch","mã"],["dh_kk_gt","Giá trị chênh lệch tồn kho","triệu đ"]],
@@ -2704,7 +2704,7 @@ const DH_CH={
     ["Đơn hàng chậm giao phát sinh",{series:[{l:"Chậm giao",t:"bar",k:"qty",f:dhQ("don_cham"),c:"#f59e0b"},{l:"Chậm theo cam kết",t:"bar",k:"qty",f:dhQ("don_cham_ck"),c:"#ef4444"}]}]],
  2:[["Hiệu suất so với định mức (%)",{tgt:8,yMin:50,series:[{l:"Hiệu suất",t:"bar",k:"pct",d:1,f:A=>A.v[8],c:dhSTC(8)}]}],
     ["Thời gian dừng chuyền theo nguyên nhân (phút)",{stack:1,series:[{l:"Thiết bị",t:"bar",k:"qty",f:dhQ("dung_tb"),c:"#2563eb"},{l:"Hàng lỗi",t:"bar",k:"qty",f:dhQ("dung_loi"),c:"#ef4444"},{l:"Thiếu vật tư",t:"bar",k:"qty",f:dhQ("dung_vt"),c:"#8b5cf6"},{l:"Line SX",t:"bar",k:"qty",f:dhQ("dung_line"),c:"#f59e0b"}]}]],
- 3:[["Tỷ lệ lô IQC không đạt (%)",{tgt:15,series:[{l:"% lô không đạt",t:"bar",k:"pct",d:1,f:A=>A.v[15],c:"#6366f1"}]}],
+ 3:[["Số lô IQC – Kiểm tra / Lỗi / % không đạt",{tgt:15,series:[{l:"Lô kiểm tra",t:"bar",k:"qty",f:dhQ("iqc_kiem"),c:"#2563eb"},{l:"Lô lỗi (không đạt)",t:"bar",k:"qty",f:dhQ("iqc_kd"),c:"#ef4444"},{l:"% không đạt",t:"line",k:"pct",d:1,f:A=>A.v[15],c:"#6366f1"}]}],
     ["Lỗi tại line (PQC): SP lỗi & tỷ lệ lỗi",{series:[{l:"Tỷ lệ lỗi",t:"line",k:"pct",d:2,f:A=>A.v[17],c:"#c81e1e"},{l:"SP lỗi",t:"bar",k:"qty",f:dhQ("pqc_loi"),c:"#f87171"}]}],
     ["Lỗi nghiêm trọng (mới / tái diễn)",{stack:1,series:[{l:"Lỗi mới",t:"bar",k:"qty",f:A=>A.v[19]==null?null:A.v[19]-A.v[20],c:"#f59e0b"},{l:"Tái diễn",t:"bar",k:"qty",f:A=>A.v[20],c:"#c81e1e"}]}],
     ["Ca bảo hành tại nhà quá cam kết",{series:[{l:"Ca quá hạn",t:"bar",k:"qty",f:dhQ("bh_quahan"),c:"#14b8a6"}]}]],
@@ -2891,6 +2891,7 @@ function bindDhDaily(C,D,mv){
     document.querySelectorAll("[data-dh]").forEach(el=>{el.classList.remove("err");const raw=el.value.trim().replace(",",".");const n=raw===""?null:+raw;if(raw!==""&&(!isFinite(n)||n<0))bad.push(el.id);else if(n==null)delete vals[el.dataset.dh];else vals[el.dataset.dh]=n});
     if(bad.length){markErr(bad);return setMsg("dh_msg","Ô đỏ: chỉ nhập số ≥ 0","bad")}
     if(vals.dh_fpy_dat!=null&&vals.dh_fpy_kiem!=null&&vals.dh_fpy_dat>vals.dh_fpy_kiem)return setMsg("dh_msg","SP đạt lần đầu không được lớn hơn SP kiểm tra","bad");
+    if(vals.dh_iqc_kd!=null&&vals.dh_iqc_kiem!=null&&vals.dh_iqc_kd>vals.dh_iqc_kiem)return setMsg("dh_msg","Số lô IQC lỗi không được lớn hơn số lô kiểm tra","bad");
     if(vals.dh_don_cham_ck!=null&&vals.dh_don_cham!=null&&vals.dh_don_cham_ck>vals.dh_don_cham)return setMsg("dh_msg","Đơn chậm theo cam kết không được lớn hơn tổng đơn chậm","bad");
     if(vals.dh_kk_lech!=null&&vals.dh_kk_ma!=null&&vals.dh_kk_lech>vals.dh_kk_ma)return setMsg("dh_msg","Mã lệch không được lớn hơn mã kiểm kê","bad");
     if(vals.dh_cp_dung!=null&&vals.dh_cp_yc!=null&&vals.dh_cp_dung>vals.dh_cp_yc)return setMsg("dh_msg","YC cấp đúng không được lớn hơn tổng YC","bad");
