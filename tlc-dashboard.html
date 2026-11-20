@@ -1,6 +1,11 @@
 <!doctype html><html lang="vi"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>TLC Factory Dashboard</title>
+<!-- GĐ34e: đổi BUILD_ID này mỗi lần sửa index.html (vd: giờ hiện tại dạng
+     ISO) — dùng để tự phát hiện trình duyệt đang chạy bản cache cũ và
+     nhắc tải lại, tránh lỗi kiểu "KB/KPW is not defined" sau khi đổi tên
+     biến ở các giai đoạn trước (GĐ34). -->
+<meta name="app-build" content="2026-11-20T06:43:21Z">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#20409A">
@@ -223,6 +228,16 @@ textarea{font:inherit;color:var(--fg);background:var(--surface);border:1px solid
         <button class="btn" type="button" id="pushOn">Bật thông báo</button>
         <button class="btn ghost" type="button" id="pushDismiss">Để sau</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<div id="staleBanner" class="alert bad" hidden style="margin:10px 16px 0;position:sticky;top:0;z-index:50">
+  <span class="sv"></span>
+  <div class="b">
+    <div class="t">Trang đang hiển thị bản cũ</div>
+    <div class="d">Hệ thống vừa có cập nhật — tải lại trang để tránh lỗi (vd "… is not defined").
+      <div style="margin-top:6px"><button class="btn" type="button" id="staleReload">Tải lại trang</button></div>
     </div>
   </div>
 </div>
@@ -4270,6 +4285,21 @@ $("#bell").onclick=e=>{e.stopPropagation();const p=$("#notif");p.hidden=!p.hidde
 document.addEventListener("click",e=>{const p=$("#notif");if(!p.hidden&&!p.contains(e.target)&&e.target!==$("#bell")){p.hidden=true;$("#bell").setAttribute("aria-expanded","false")}});
 $("#notif").addEventListener("click",e=>{const b=e.target.closest("[data-goto]");if(!b)return;const m=b.dataset.goto;if(allowedMods().includes(m)){$("#notif").hidden=true;$("#bell").setAttribute("aria-expanded","false");ST.screen=m;render();window.scrollTo(0,0)}});
 function tick(){const d=new Date();$("#clock").textContent=["CN","T2","T3","T4","T5","T6","T7"][d.getDay()]+" "+String(d.getDate()).padStart(2,"0")+"/"+String(d.getMonth()+1).padStart(2,"0")+"/"+d.getFullYear()+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0")}
+/* GĐ34e: tự phát hiện bản cache cũ — tránh lỗi kiểu "KB/KPW is not
+   defined" khi trình duyệt vẫn chạy JS cũ sau khi anh sửa trang. So
+   sánh meta app-build của trang đang chạy với bản mới nhất trên máy
+   chủ (tải bỏ qua cache); nếu khác, hiện banner nhắc tải lại. */
+const APP_BUILD=(document.querySelector('meta[name="app-build"]')||{}).content||"";
+async function checkStale(){
+  try{
+    const res=await fetch(location.pathname+"?_="+Date.now(),{cache:"no-store"});
+    const html=await res.text();
+    const m=/<meta name="app-build" content="([^"]*)"/.exec(html);
+    if(m&&m[1]&&APP_BUILD&&m[1]!==APP_BUILD){const b=$("#staleBanner");if(b)b.hidden=false}
+  }catch(e){}
+}
+const staleReloadBtn=$("#staleReload");if(staleReloadBtn)staleReloadBtn.onclick=()=>location.reload();
+setTimeout(checkStale,15000);setInterval(checkStale,300000);
 tick();setInterval(tick,30000);
 setInterval(()=>{if(RUN==="LIVE"&&ME)loadAlertsLive()},120000);
 (async()=>{if(SB){try{const{data}=await SB.auth.getSession();if(data&&data.session){RUN="LIVE";await afterLogin();return}}catch(e){}}showLogin()})();
