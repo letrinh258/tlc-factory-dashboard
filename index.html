@@ -5,7 +5,7 @@
      ISO) — dùng để tự phát hiện trình duyệt đang chạy bản cache cũ và
      nhắc tải lại, tránh lỗi kiểu "KB/KPW is not defined" sau khi đổi tên
      biến ở các giai đoạn trước (GĐ34). -->
-<meta name="app-build" content="2026-11-20T06:43:21Z">
+<meta name="app-build" content="2026-11-20T08:25:52Z">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#20409A">
@@ -1910,7 +1910,7 @@ async function viewSx(){
     <span><span class="pill p-${b.kind==="overflow"?"warn":"ok"}">${b.kind==="overflow"?"Tranh thủ ngoài KH":"Kế hoạch"}</span>
      <button class="btn ghost" type="button" data-lsxkind="${b.id}|${b.kind==="overflow"?"planned":"overflow"}" style="padding:2px 8px;margin-left:6px">${b.kind==="overflow"?"Chuyển về Kế hoạch":"Đánh dấu Tranh thủ ngoài KH"}</button>
      <button class="btn ghost" type="button" data-lsxpullopen="${b.id}" style="padding:2px 8px;margin-left:6px">Kéo từ ngày mai…</button></span></div>
-    ${PULL.batchId===b.id?lsxPullPanelHTML(sxPullItems||[],C):""}`).join("")}
+    ${PULL.batchId===b.id?lsxPullPanelHTML(sxPullItems||[],C,D):""}`).join("")}
   </div>`:""}
   ${SXF.unlockOpen?`<div class="card" style="margin-bottom:10px"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
     <div class="fld"><label for="sxUlH">Trong (giờ)</label><input id="sxUlH" value="4" inputmode="numeric" style="width:80px"></div>
@@ -2974,28 +2974,42 @@ async function lsxTomorrowItems(lineId,baseDate){
   batches.forEach(b=>(b.production_orders||[]).forEach(o=>{if(+o.qty_planned>0)items.push({batchCode:b.code,id:o.id,item_code:o.item_code,qty_planned:o.qty_planned})}));
   return items;
 }
-function lsxPullPanelHTML(items,C){
+function lsxPullPanelHTML(items,C,toDate){
+  // GĐ38: kéo lên KHÔNG gộp vào lệnh hôm nay đang mở — mã lệnh ngày mai
+  // được GIỮ NGUYÊN trên 1 lệnh riêng của hôm nay (lsx_move_qty tự tách).
   return `<div class="card" style="margin:6px 0 10px;border-left:4px solid var(--accent)"><h3 style="margin:0 0 6px">Kéo lệnh ngày mai lên làm hôm nay</h3>
-   <p class="small" style="margin:0 0 8px">Chọn mã hàng và nhập số lượng muốn làm trước — số lượng này sẽ bị trừ khỏi kế hoạch ngày mai và cộng vào lệnh hôm nay (tính là Tranh thủ ngoài KH, không chấm thiếu hàng).</p>
+   <p class="small" style="margin:0 0 8px">Chọn mã hàng và nhập số lượng muốn làm trước — số lượng này sẽ bị trừ khỏi kế hoạch ngày mai và xuất hiện thành 1 lệnh riêng của hôm nay, <b>giữ nguyên mã lệnh ngày mai</b> (tính là Tranh thủ ngoài KH, không chấm thiếu hàng). Kéo nhầm thì vào lệnh đó bấm "Trả lại ngày mai".</p>
    ${items.length?`<div class="tbl"><table><tr><th>Lệnh (ngày mai)</th><th>Mã sản phẩm</th><th>Tên</th><th class="num">SL còn lại</th><th class="num" style="width:110px">SL kéo lên</th><th></th></tr>
     ${items.map(it=>`<tr><td class="mono small">${esc(it.batchCode)}</td><td class="mono">${esc(it.item_code)}</td><td class="small">${esc((C.byCode[it.item_code]||{}).name||"")}</td><td class="num">${fmt(it.qty_planned)}</td>
      <td class="num"><input data-pullqty="${it.id}" inputmode="decimal" style="width:90px;text-align:right" placeholder="0"></td>
-     <td><button class="btn ghost" type="button" data-lsxpull="${it.id}|${it.qty_planned}" style="padding:2px 8px">Kéo lên</button></td></tr>`).join("")}
+     <td><button class="btn ghost" type="button" data-lsxpull="${it.id}|${it.qty_planned}|${toDate}" style="padding:2px 8px">Kéo lên</button></td></tr>`).join("")}
     </table></div>`:`<div class="small">Ngày mai chưa có lệnh nào ở line này để kéo.</div>`}
    <div style="margin-top:8px"><button class="btn ghost" type="button" data-lsxpullclose>Đóng</button></div></div>`;
 }
 function bindLsxPull(afterOk){
   document.querySelectorAll("[data-lsxpull]").forEach(btn=>btn.onclick=async()=>{
-    const[srcId,maxQ]=btn.dataset.lsxpull.split("|");
+    const[srcId,maxQ,toDate]=btn.dataset.lsxpull.split("|");
     const inp=document.querySelector(`[data-pullqty="${srcId}"]`);
     const qty=numOrNull(inp?inp.value:"");
     if(qty==null||qty<=0){if(inp)inp.classList.add("err");return}
     if(qty>+maxQ){alert("Số lượng kéo vượt quá số lượng còn lại ngày mai ("+fmt(+maxQ)+")");return}
     btn.disabled=true;
-    try{await rpc("lsx_pull_tomorrow",{p_target_batch_id:PULL.batchId,p_source_item_id:+srcId,p_qty:qty});toast("Đã kéo lên hôm nay");afterOk()}
+    try{await rpc("lsx_move_qty",{p_item_id:+srcId,p_qty:qty,p_to_date:toDate});toast("Đã kéo lên hôm nay — giữ nguyên mã lệnh ngày mai");afterOk()}
     catch(err){alert(sbErr(err));btn.disabled=false}
   });
   document.querySelectorAll("[data-lsxpullclose]").forEach(b=>b.onclick=()=>{PULL.batchId=null;render()});
+}
+function bindLsxBack(afterOk){
+  document.querySelectorAll("[data-lsxback]").forEach(btn=>btn.onclick=async()=>{
+    const[id,maxQ,toDate]=btn.dataset.lsxback.split("|");
+    const inp=document.querySelector(`[data-backqty="${id}"]`);
+    const qty=numOrNull(inp&&inp.value?inp.value:maxQ);
+    if(qty==null||qty<=0){if(inp)inp.classList.add("err");return}
+    if(qty>+maxQ){alert("Số lượng trả vượt quá số lượng hiện có ("+fmt(+maxQ)+")");return}
+    btn.disabled=true;
+    try{await rpc("lsx_move_qty",{p_item_id:+id,p_qty:qty,p_to_date:toDate});toast("Đã trả lại ngày mai — giữ nguyên mã lệnh");afterOk()}
+    catch(err){alert(sbErr(err));btn.disabled=false}
+  });
 }
 const PULL={batchId:null};
 async function lsxTabHTML(){
@@ -3023,9 +3037,10 @@ Dây chuyền SXHN 01	LSX11/26-018(2026-11-03)	TLC-BML-40W-01	Đèn led búp Max
       <button class="btn ghost" type="button" data-lsxpullopen="${b.id}" style="padding:2px 8px;margin-left:6px">Kéo từ ngày mai…</button>`:""}
       ${canKind?`<button class="btn ghost" type="button" data-lsxedit="${b.id}" style="padding:2px 8px;margin-left:6px">Sửa lệnh</button><button class="btn ghost" type="button" data-lsxdel="${b.id}" style="padding:2px 8px;margin-left:6px;color:var(--bad)">Xóa lệnh</button>`:""}</span></div>
     ${KHF.editBatch===b.id?lsxEditForm(b,C):""}
-    ${PULL.batchId===b.id?lsxPullPanelHTML(pullItems||[],C):""}
-    <div class="tbl" style="margin-top:6px"><table><tr><th>Mã sản phẩm</th><th>Tên</th><th class="num">SL kế hoạch</th></tr>
-    ${(b.production_orders||[]).filter(r=>+r.qty_planned>0).slice().sort((x,y)=>x.item_code<y.item_code?-1:x.item_code>y.item_code?1:0).map(r=>`<tr><td class="mono">${esc(r.item_code)}</td><td>${esc((C.byCode[r.item_code]||{}).name||"")}</td><td class="num">${fmt(r.qty_planned)}</td></tr>`).join("")}
+    ${PULL.batchId===b.id?lsxPullPanelHTML(pullItems||[],C,D):""}
+    <div class="tbl" style="margin-top:6px"><table><tr><th>Mã sản phẩm</th><th>Tên</th><th class="num">SL kế hoạch</th>${b.kind==="overflow"&&canKind?"<th></th>":""}</tr>
+    ${(b.production_orders||[]).filter(r=>+r.qty_planned>0).slice().sort((x,y)=>x.item_code<y.item_code?-1:x.item_code>y.item_code?1:0).map(r=>`<tr><td class="mono">${esc(r.item_code)}</td><td>${esc((C.byCode[r.item_code]||{}).name||"")}</td><td class="num">${fmt(r.qty_planned)}</td>
+     ${b.kind==="overflow"&&canKind?`<td style="white-space:nowrap"><input data-backqty="${r.id}" inputmode="decimal" style="width:70px;text-align:right" placeholder="${fmt(r.qty_planned)}"> <button class="btn ghost" type="button" data-lsxback="${r.id}|${r.qty_planned}|${addDays(b.order_date,1)}" style="padding:2px 8px" title="Dùng khi kéo nhầm — mã lệnh giữ nguyên">Trả lại ngày mai</button></td>`:""}</tr>`).join("")}
     </table></div></div>`}).join(""):`<div class="empty">Chưa có lệnh sản xuất ngày này</div>`}
   <p class="small" style="margin:8px 0 0">Lệnh <b>Tranh thủ ngoài KH</b> = line dư công suất, tự làm thêm lệnh mới trong ngày (không nằm trong kế hoạch chốt từ đầu) — được tính là "TP ngoài KH (làm vượt)" ở Báo cáo điều hành.</p>`;
 }
@@ -3044,6 +3059,7 @@ function bindLsx(){
   document.querySelectorAll("[data-lsxedit]").forEach(b=>b.onclick=()=>{KHF.editBatch=+b.dataset.lsxedit;render()});
   document.querySelectorAll("[data-lsxpullopen]").forEach(b=>b.onclick=()=>{PULL.batchId=PULL.batchId===+b.dataset.lsxpullopen?null:+b.dataset.lsxpullopen;render()});
   bindLsxPull(()=>{PULL.batchId=null;render()});
+  bindLsxBack(()=>render());
   if(SX_CACHE)bindLsxEdit(SX_CACHE);
   const ld=$("#lsxDelBtn");if(ld)ld.onclick=async()=>{
     if(!confirm("Xóa toàn bộ lệnh sản xuất ngày "+dmyS(LSX.date)+"? Không thể hoàn tác."))return;
