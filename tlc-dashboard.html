@@ -5,7 +5,7 @@
      ISO) — dùng để tự phát hiện trình duyệt đang chạy bản cache cũ và
      nhắc tải lại, tránh lỗi kiểu "KB/KPW is not defined" sau khi đổi tên
      biến ở các giai đoạn trước (GĐ34). -->
-<meta name="app-build" content="2026-11-20T08:36:09Z">
+<meta name="app-build" content="2026-11-20T09:17:08Z">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#20409A">
@@ -2979,7 +2979,7 @@ function lsxPullPanelHTML(items,C,toDate){
   // GĐ38: kéo lên KHÔNG gộp vào lệnh hôm nay đang mở — mã lệnh ngày mai
   // được GIỮ NGUYÊN trên 1 lệnh riêng của hôm nay (lsx_move_qty tự tách).
   return `<div class="card" style="margin:6px 0 10px;border-left:4px solid var(--accent)"><h3 style="margin:0 0 6px">Kéo lệnh ngày mai lên làm hôm nay</h3>
-   <p class="small" style="margin:0 0 8px">Chọn mã hàng và nhập số lượng muốn làm trước — số lượng này sẽ bị trừ khỏi kế hoạch ngày mai và xuất hiện thành 1 lệnh riêng của hôm nay, <b>giữ nguyên mã lệnh ngày mai</b> (tính là Tranh thủ ngoài KH, không chấm thiếu hàng). Kéo nhầm thì vào lệnh đó bấm "Trả lại ngày mai".</p>
+   <p class="small" style="margin:0 0 8px">Chọn mã hàng và nhập số lượng muốn làm trước — số lượng này sẽ bị trừ khỏi kế hoạch ngày mai và xuất hiện thành 1 lệnh riêng của hôm nay, <b>giữ nguyên mã lệnh ngày mai</b> (tính là Tranh thủ ngoài KH, không chấm thiếu hàng). Kéo nhầm thì vào lệnh đó bấm "Chuyển thiếu sang ngày mai".</p>
    ${items.length?`<div class="tbl"><table><tr><th>Lệnh (ngày mai)</th><th>Mã sản phẩm</th><th>Tên</th><th class="num">SL còn lại</th><th class="num" style="width:110px">SL kéo lên</th><th></th></tr>
     ${items.map(it=>`<tr><td class="mono small">${esc(it.batchCode)}</td><td class="mono">${esc(it.item_code)}</td><td class="small">${esc((C.byCode[it.item_code]||{}).name||"")}</td><td class="num">${fmt(it.qty_planned)}</td>
      <td class="num"><input data-pullqty="${it.id}" inputmode="decimal" style="width:90px;text-align:right" placeholder="0"></td>
@@ -3018,6 +3018,12 @@ async function lsxTabHTML(){
   const batches=await q(SB.from("production_order_batches").select("*,production_orders(*)").eq("order_date",D).order("line_id"));
   const totalItems=batches.reduce((a,b)=>a+(b.production_orders||[]).length,0);
   const pullItems=PULL.batchId&&batches.find(b=>b.id===PULL.batchId)?await lsxTomorrowItems(batches.find(b=>b.id===PULL.batchId).line_id,D):null;
+  // GĐ41: SL đã làm thực tế theo từng mã của lệnh — để biết còn THIẾU bao
+  // nhiêu so với KH, cho phép chuyển phần thiếu sang lệnh ngày mai (giữ
+  // nguyên mã lệnh, tính là kế hoạch ngày hôm sau).
+  const batchIds=batches.map(b=>b.id);
+  const prRows=batchIds.length?await q(SB.from("production_reports").select("order_batch_id,product_code,good_qty").in("order_batch_id",batchIds)):[];
+  const actualMap={};prRows.forEach(r=>{const k=r.order_batch_id+"|"+r.product_code;actualMap[k]=(actualMap[k]||0)+(+r.good_qty||0)});
   return `<p class="small" style="margin:0 0 10px">Mỗi lần dán chỉ <b>THÊM MỚI hoặc CẬP NHẬT</b> đúng các lệnh có trong lượt dán — các lệnh đã lưu khác giữ nguyên (dán từng lệnh một cũng không mất lệnh trước). Muốn bỏ 1 lệnh: bấm Xóa ở lệnh đó. <b>Mã lệnh do anh tự điền</b> (lấy theo số lệnh thật của Bravo, hoặc tự đặt) — hệ thống KHÔNG tự sinh mã. Nhiều dòng cùng 1 Mã lệnh sẽ gộp vào CÙNG 1 lệnh đó. Tổ trưởng sẽ CHỌN LỆNH này khi nhập Form A (Sản xuất), mã hàng + SL kế hoạch lấy thẳng từ đây.</p>
   <div class="card">
    <div class="fld" style="max-width:220px"><label for="lsxDate">Ngày sản xuất</label><input id="lsxDate" type="date" value="${D}"></div>
@@ -3039,11 +3045,13 @@ Dây chuyền SXHN 01	LSX11/26-018(2026-11-03)	TLC-BML-40W-01	Đèn led búp Max
       ${canKind?`<button class="btn ghost" type="button" data-lsxedit="${b.id}" style="padding:2px 8px;margin-left:6px">Sửa lệnh</button><button class="btn ghost" type="button" data-lsxdel="${b.id}" style="padding:2px 8px;margin-left:6px;color:var(--bad)">Xóa lệnh</button>`:""}</span></div>
     ${KHF.editBatch===b.id?lsxEditForm(b,C):""}
     ${PULL.batchId===b.id?lsxPullPanelHTML(pullItems||[],C,D):""}
-    <div class="tbl" style="margin-top:6px"><table><tr><th>Mã sản phẩm</th><th>Tên</th><th class="num">SL kế hoạch</th>${b.kind==="overflow"&&canKind?"<th></th>":""}</tr>
-    ${(b.production_orders||[]).filter(r=>+r.qty_planned>0).slice().sort((x,y)=>x.item_code<y.item_code?-1:x.item_code>y.item_code?1:0).map(r=>`<tr><td class="mono">${esc(r.item_code)}</td><td>${esc((C.byCode[r.item_code]||{}).name||"")}</td><td class="num">${fmt(r.qty_planned)}</td>
-     ${b.kind==="overflow"&&canKind?`<td style="white-space:nowrap"><input data-backqty="${r.id}" inputmode="decimal" style="width:70px;text-align:right" placeholder="${fmt(r.qty_planned)}"> <button class="btn ghost" type="button" data-lsxback="${r.id}|${r.qty_planned}|${addDays(b.order_date,1)}" style="padding:2px 8px" title="Dùng khi kéo nhầm — mã lệnh giữ nguyên">Trả lại ngày mai</button></td>`:""}</tr>`).join("")}
+    <div class="tbl" style="margin-top:6px"><table><tr><th>Mã sản phẩm</th><th>Tên</th><th class="num">SL kế hoạch</th><th class="num">SL đã làm</th>${canKind?"<th></th>":""}</tr>
+    ${(b.production_orders||[]).filter(r=>+r.qty_planned>0).slice().sort((x,y)=>x.item_code<y.item_code?-1:x.item_code>y.item_code?1:0).map(r=>{
+      const act=actualMap[b.id+"|"+r.item_code]||0,remain=Math.max(0,+r.qty_planned-act);
+      return `<tr><td class="mono">${esc(r.item_code)}</td><td>${esc((C.byCode[r.item_code]||{}).name||"")}</td><td class="num">${fmt(r.qty_planned)}</td><td class="num">${fmt(act)}</td>
+     ${canKind?(remain>0?`<td style="white-space:nowrap"><input data-backqty="${r.id}" inputmode="decimal" style="width:70px;text-align:right" placeholder="${fmt(remain)}"> <button class="btn ghost" type="button" data-lsxback="${r.id}|${remain}|${addDays(b.order_date,1)}" style="padding:2px 8px" title="Thiếu ${fmt(remain)} so với KH — chuyển sang lệnh ngày mai, giữ nguyên mã lệnh">Chuyển thiếu sang ngày mai</button></td>`:"<td></td>"):""}</tr>`}).join("")}
     </table></div></div>`}).join(""):`<div class="empty">Chưa có lệnh sản xuất ngày này</div>`}
-  <p class="small" style="margin:8px 0 0">Lệnh <b>Tranh thủ ngoài KH</b> = line dư công suất, tự làm thêm lệnh mới trong ngày (không nằm trong kế hoạch chốt từ đầu) — được tính là "TP ngoài KH (làm vượt)" ở Báo cáo điều hành.</p>`;
+  <p class="small" style="margin:8px 0 0">Lệnh <b>Tranh thủ ngoài KH</b> = line dư công suất, tự làm thêm lệnh mới trong ngày (không nằm trong kế hoạch chốt từ đầu) — được tính là "TP ngoài KH (làm vượt)" ở Báo cáo điều hành. Mã nào làm KHÔNG hết kế hoạch trong ngày (ví dụ KH 1.000, làm được 900) thì ở bảng mã hàng bấm <b>"Chuyển thiếu sang ngày mai"</b> — phần còn thiếu (100) tách sang NGÀY MAI, giữ nguyên mã lệnh, tính là kế hoạch của ngày hôm sau; kế hoạch hôm nay tự giảm còn đúng số đã làm (900) nên không bị chấm thiếu hàng oan.</p>`;
 }
 function lineOptsName(id){return (CFG.lines||[])[id-1]||("Line "+id)}
 function bindLsx(){
