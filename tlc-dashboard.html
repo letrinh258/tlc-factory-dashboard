@@ -214,6 +214,19 @@ textarea{font:inherit;color:var(--fg);background:var(--surface);border:1px solid
   <div class="notif" id="notif" hidden></div>
 </header>
 
+<div id="pushBanner" class="alert warn" hidden style="margin:10px 16px 0">
+  <span class="sv"></span>
+  <div class="b">
+    <div class="t">Bật thông báo đẩy — nhận cảnh báo cả khi không mở app</div>
+    <div class="d">Đối chiếu lệch bộ phận, việc/chỉ đạo quá hạn, bảo hành quá 72h, line chưa nộp báo cáo cuối ca — như Zalo.
+      <div style="margin-top:6px;display:flex;gap:8px">
+        <button class="btn" type="button" id="pushOn">Bật thông báo</button>
+        <button class="btn ghost" type="button" id="pushDismiss">Để sau</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="shell">
   <nav class="side" id="side" aria-label="Module"></nav>
   <main id="main"></main>
@@ -4212,12 +4225,45 @@ async function render(){
   }catch(err){main.innerHTML=`<div class="alert bad"><span class="sv"></span><div class="b"><div class="t">Không tải được dữ liệu</div><div class="d">${esc(sbErr(err))}</div></div></div>`}
   updateBell();
 }
+/* GĐ34: Web Push — nhận thông báo cả khi không mở app (giống Zalo).
+   Public key VAPID (an toàn để lộ ở client), ghép theo mô tả tại
+   supabase/39_push_notifications.sql. */
+const PUSH_VAPID_PUBLIC_KEY="BFMlJhDa8qrexIfNE7sW_UJX2FI7IC9UGzfH5U3oM65seDWmscoJOdEE000nmVu9iyA1_W7QpCnPrU2dvCUHUO8";
+function pushUrlB64ToUint8(b64){const pad="=".repeat((4-b64.length%4)%4);const base64=(b64+pad).replace(/-/g,"+").replace(/_/g,"/");const raw=atob(base64);const out=new Uint8Array(raw.length);for(let i=0;i<raw.length;i++)out[i]=raw.charCodeAt(i);return out}
+async function pushInit(){
+  try{
+    if(RUN!=="LIVE"||!ME||!("serviceWorker" in navigator)||!("PushManager" in window))return;
+    if(localStorage.getItem("pushDismissed")==="1")return;
+    if(Notification.permission==="denied")return;
+    const reg=await navigator.serviceWorker.getRegistration();
+    const sub=reg?await reg.pushManager.getSubscription():null;
+    if(sub)return; // đã đăng ký rồi, không hiện banner nữa
+    const b=$("#pushBanner");if(b)b.hidden=false;
+  }catch(e){}
+}
+async function pushSubscribe(){
+  try{
+    if(!("serviceWorker" in navigator)||!("PushManager" in window)){alert("Trình duyệt này không hỗ trợ thông báo đẩy");return}
+    const perm=await Notification.requestPermission();
+    if(perm!=="granted"){toast("Bạn chưa cấp quyền thông báo");return}
+    const reg=await navigator.serviceWorker.register("sw.js");
+    await navigator.serviceWorker.ready;
+    let sub=await reg.pushManager.getSubscription();
+    if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:pushUrlB64ToUint8(PUSH_VAPID_PUBLIC_KEY)});
+    const j=sub.toJSON();
+    await rpc("push_subscribe",{p_endpoint:j.endpoint,p_p256dh:j.keys.p256dh,p_auth:j.keys.auth});
+    const b=$("#pushBanner");if(b)b.hidden=true;
+    toast("Đã bật thông báo đẩy");
+  }catch(err){alert("Không bật được thông báo: "+(err&&err.message||err))}
+}
+function pushDismiss(){try{localStorage.setItem("pushDismissed","1")}catch(e){}const b=$("#pushBanner");if(b)b.hidden=true}
+(function(){const a=$("#pushOn");if(a)a.onclick=pushSubscribe;const d=$("#pushDismiss");if(d)d.onclick=pushDismiss})();
 function startApp(){
   showView("appView");
   $("#user").innerHTML=`${esc(ME.full_name)}<small>${esc(ME.username)} · ${esc(ME.position_name)}</small>`;
   const c=$("#conn");c.classList.toggle("live",RUN==="LIVE");
   c.textContent=RUN==="LIVE"?"Đã kết nối máy chủ · số liệu thật":"DEMO · dùng thử, không lưu máy chủ";
-  ST.screen=homeMod();cfgTab="tbp";RP.code=null;RP.date=null;RP.editIssue=RP.editPlan=RP.editSr=null;SM.date=null;SXF.date=null;SXF.line=null;SXF.edit=null;SXF.assignOpen=false;SXF.unlockOpen=false;SX_CACHE=null;Object.keys(FM).forEach(k=>delete FM[k]);NM.q="";NM.f="all";NM.page=0;NM.dirty={};NM.bulkOpen=false;FS.date=null;FS.per="week";FS.tab="stat";FS.fstat="open";FS.fs="";FS.newOpen=false;FS.newS="";FS_CRIT=null;VD.tab="issue";VD.fSev="";VD.fSt="open";VD.fDept="";VD.q="";VD.projOpen=false;VD.editProj=null;KP.tab="dash";KP.defOpen=false;KP.editDef=null;KP.tgtOpenFor=null;KP.resKpi="";KP.resPs=null;KP.resPe=null;KT.tab="list";KT.fStatus="pending";KT.newOpen=false;KT.ctype="norm";KT.histCode="";LH.tab="session";LH.typeOpen=false;LH.editType=null;LH.sessOpen=false;LH.openId=null;LH.decOpen=null;LD.period="day";LD.date=null;LD.scope="all";LD.demo=false;LD.customFrom=null;LD.customTo=null;DH.mode="week";DH.date=null;DH.tgOpen=false;DH.wkOpen=false;GV.f="open";GV.pos="";GV.q="";accQ="";accDept="";ACC_SECRET=null;accConfirm=null;render();
+  ST.screen=homeMod();cfgTab="tbp";RP.code=null;RP.date=null;RP.editIssue=RP.editPlan=RP.editSr=null;SM.date=null;SXF.date=null;SXF.line=null;SXF.edit=null;SXF.assignOpen=false;SXF.unlockOpen=false;SX_CACHE=null;Object.keys(FM).forEach(k=>delete FM[k]);NM.q="";NM.f="all";NM.page=0;NM.dirty={};NM.bulkOpen=false;FS.date=null;FS.per="week";FS.tab="stat";FS.fstat="open";FS.fs="";FS.newOpen=false;FS.newS="";FS_CRIT=null;VD.tab="issue";VD.fSev="";VD.fSt="open";VD.fDept="";VD.q="";VD.projOpen=false;VD.editProj=null;KP.tab="dash";KP.defOpen=false;KP.editDef=null;KP.tgtOpenFor=null;KP.resKpi="";KP.resPs=null;KP.resPe=null;KT.tab="list";KT.fStatus="pending";KT.newOpen=false;KT.ctype="norm";KT.histCode="";LH.tab="session";LH.typeOpen=false;LH.editType=null;LH.sessOpen=false;LH.openId=null;LH.decOpen=null;LD.period="day";LD.date=null;LD.scope="all";LD.demo=false;LD.customFrom=null;LD.customTo=null;DH.mode="week";DH.date=null;DH.tgOpen=false;DH.wkOpen=false;GV.f="open";GV.pos="";GV.q="";accQ="";accDept="";ACC_SECRET=null;accConfirm=null;render();pushInit();
 }
 $("#logout").onclick=()=>logout();
 $("#bell").onclick=e=>{e.stopPropagation();const p=$("#notif");p.hidden=!p.hidden;$("#bell").setAttribute("aria-expanded",String(!p.hidden))};
