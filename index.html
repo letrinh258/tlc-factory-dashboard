@@ -1876,6 +1876,7 @@ async function viewSx(){
   // line/ngày (kể cả cùng 1 lệnh) — không ẩn mã đã nhập khỏi danh sách chọn,
   // tổ trưởng tự quyết định nhập thêm dòng mới hay bấm Sửa dòng cũ.
   const availOrders=ordRows;
+  const sxPullItems=PULL.batchId&&lsxBatchesAll.find(b=>b.id===PULL.batchId)?await lsxTomorrowItems(L,D):null;
   const lineBatchIds=[...new Set(lineRows.map(r=>r.order_batch_id).filter(Boolean))];
   const lineBatchCodes=lineBatchIds.length?Object.fromEntries((await q(SB.from("production_order_batches").select("id,code").in("id",lineBatchIds))).map(b=>[b.id,b.code])):{};
   const dupCodes=new Set(lineRows.map(r=>r.product_code).filter((c,i,a)=>a.indexOf(c)!==i));
@@ -1904,10 +1905,12 @@ async function viewSx(){
   <h2 class="sec">${esc(lineName(L))} – ngày ${dmyS(D)} <small>${canEdit?"Bạn đang nhập line này":myL.includes(L)?"Đã khóa":"Chỉ xem"}</small>
     ${isAdmin&&!canEdit&&D<today?` <button class="btn ghost" type="button" id="sxUnlockBtn" style="padding:3px 10px">Mở khóa line này</button>`:""}</h2>
   ${canEdit&&lsxBatchesAll.length?`<div class="card" style="margin-bottom:10px"><h3 style="margin:0 0 6px">Lệnh sản xuất hôm nay của line này</h3>
-   <p class="small" style="margin:0 0 8px">Nếu line làm vượt kế hoạch và tự làm thêm 1 lệnh mới ngoài kế hoạch (tranh thủ dư công suất), đánh dấu lệnh đó <b>"Tranh thủ ngoài KH"</b> ngay đây — sản lượng lệnh này được tính là "TP ngoài KH (làm vượt)" ở Báo cáo điều hành.</p>
+   <p class="small" style="margin:0 0 8px">Nếu line làm vượt kế hoạch, đánh dấu lệnh đó <b>"Tranh thủ ngoài KH"</b> ngay đây — sản lượng lệnh này được tính là "TP ngoài KH (làm vượt)" ở Báo cáo điều hành, không chấm thiếu hàng. Làm vượt mà muốn tranh thủ luôn 1 phần lệnh đã lập cho NGÀY MAI thì bấm <b>"Kéo từ ngày mai…"</b>.</p>
    ${lsxBatchesAll.map(b=>`<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;padding:4px 0"><span><b class="mono">${esc(b.code)}</b> <span class="small">${fmt((b.production_orders||[]).length)} mã · tổng KH ${fmt(b.qty_total)}</span></span>
     <span><span class="pill p-${b.kind==="overflow"?"warn":"ok"}">${b.kind==="overflow"?"Tranh thủ ngoài KH":"Kế hoạch"}</span>
-     <button class="btn ghost" type="button" data-lsxkind="${b.id}|${b.kind==="overflow"?"planned":"overflow"}" style="padding:2px 8px;margin-left:6px">${b.kind==="overflow"?"Chuyển về Kế hoạch":"Đánh dấu Tranh thủ ngoài KH"}</button></span></div>`).join("")}
+     <button class="btn ghost" type="button" data-lsxkind="${b.id}|${b.kind==="overflow"?"planned":"overflow"}" style="padding:2px 8px;margin-left:6px">${b.kind==="overflow"?"Chuyển về Kế hoạch":"Đánh dấu Tranh thủ ngoài KH"}</button>
+     <button class="btn ghost" type="button" data-lsxpullopen="${b.id}" style="padding:2px 8px;margin-left:6px">Kéo từ ngày mai…</button></span></div>
+    ${PULL.batchId===b.id?lsxPullPanelHTML(sxPullItems||[],C):""}`).join("")}
   </div>`:""}
   ${SXF.unlockOpen?`<div class="card" style="margin-bottom:10px"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
     <div class="fld"><label for="sxUlH">Trong (giờ)</label><input id="sxUlH" value="4" inputmode="numeric" style="width:80px"></div>
@@ -1980,6 +1983,8 @@ function bindSx(){
     try{await rpc("lsx_set_kind",{p_batch_id:+id,p_kind:kind});toast("Đã cập nhật loại lệnh");render()}
     catch(err){alert(sbErr(err));btn.disabled=false}
   });
+  document.querySelectorAll("[data-lsxpullopen]").forEach(b=>b.onclick=()=>{PULL.batchId=PULL.batchId===+b.dataset.lsxpullopen?null:+b.dataset.lsxpullopen;render()});
+  bindLsxPull(()=>{PULL.batchId=null;render()});
   const ug=$("#sxUlGo");if(ug)ug.onclick=async()=>{const h=+$("#sxUlH").value||4,r=$("#sxUlR").value.trim();if(r.length<3){setMsg("sxUlMsg","Ghi lý do mở khóa","bad");return}
     try{await rpc("unlock_report",{p_code:"LINE-"+SXF.line,p_date:SXF.date,p_hours:h,p_reason:r});SXF.unlockOpen=false;toast("Đã mở khóa");render()}catch(e){setMsg("sxUlMsg",sbErr(e),"bad")}};
   const nb=$("#sxNew");if(nb)nb.onclick=()=>{SXF.edit="new";SXF.manualProd=false;SXF.lsxPick=null;render().then(()=>{const f=$("#f_prod")||$("#f_lsxPick");if(f)f.focus()})};
@@ -2959,10 +2964,45 @@ function parsePoPaste(text){
   if(!items.length)return{error:"Không đọc được dòng nào — kiểm tra đã dán đủ cột (Stt…Số lượng) và bỏ dòng tiêu đề/dòng tổng theo NCC."};
   return{items};
 }
+/* GĐ37: "Kéo lệnh ngày mai" — dùng chung giữa trang Kế hoạch (KHSX) và
+   Form A (Sản xuất). Lấy các dòng mã hàng còn SL kế hoạch > 0 của NGÀY
+   MAI, cùng line, để chọn kéo một phần lên làm hôm nay. */
+async function lsxTomorrowItems(lineId,baseDate){
+  const tDate=addDays(baseDate,1);
+  const batches=await q(SB.from("production_order_batches").select("id,code,production_orders(id,item_code,qty_planned)").eq("order_date",tDate).eq("line_id",lineId).order("code"));
+  const items=[];
+  batches.forEach(b=>(b.production_orders||[]).forEach(o=>{if(+o.qty_planned>0)items.push({batchCode:b.code,id:o.id,item_code:o.item_code,qty_planned:o.qty_planned})}));
+  return items;
+}
+function lsxPullPanelHTML(items,C){
+  return `<div class="card" style="margin:6px 0 10px;border-left:4px solid var(--accent)"><h3 style="margin:0 0 6px">Kéo lệnh ngày mai lên làm hôm nay</h3>
+   <p class="small" style="margin:0 0 8px">Chọn mã hàng và nhập số lượng muốn làm trước — số lượng này sẽ bị trừ khỏi kế hoạch ngày mai và cộng vào lệnh hôm nay (tính là Tranh thủ ngoài KH, không chấm thiếu hàng).</p>
+   ${items.length?`<div class="tbl"><table><tr><th>Lệnh (ngày mai)</th><th>Mã sản phẩm</th><th>Tên</th><th class="num">SL còn lại</th><th class="num" style="width:110px">SL kéo lên</th><th></th></tr>
+    ${items.map(it=>`<tr><td class="mono small">${esc(it.batchCode)}</td><td class="mono">${esc(it.item_code)}</td><td class="small">${esc((C.byCode[it.item_code]||{}).name||"")}</td><td class="num">${fmt(it.qty_planned)}</td>
+     <td class="num"><input data-pullqty="${it.id}" inputmode="decimal" style="width:90px;text-align:right" placeholder="0"></td>
+     <td><button class="btn ghost" type="button" data-lsxpull="${it.id}|${it.qty_planned}" style="padding:2px 8px">Kéo lên</button></td></tr>`).join("")}
+    </table></div>`:`<div class="small">Ngày mai chưa có lệnh nào ở line này để kéo.</div>`}
+   <div style="margin-top:8px"><button class="btn ghost" type="button" data-lsxpullclose>Đóng</button></div></div>`;
+}
+function bindLsxPull(afterOk){
+  document.querySelectorAll("[data-lsxpull]").forEach(btn=>btn.onclick=async()=>{
+    const[srcId,maxQ]=btn.dataset.lsxpull.split("|");
+    const inp=document.querySelector(`[data-pullqty="${srcId}"]`);
+    const qty=numOrNull(inp?inp.value:"");
+    if(qty==null||qty<=0){if(inp)inp.classList.add("err");return}
+    if(qty>+maxQ){alert("Số lượng kéo vượt quá số lượng còn lại ngày mai ("+fmt(+maxQ)+")");return}
+    btn.disabled=true;
+    try{await rpc("lsx_pull_tomorrow",{p_target_batch_id:PULL.batchId,p_source_item_id:+srcId,p_qty:qty});toast("Đã kéo lên hôm nay");afterOk()}
+    catch(err){alert(sbErr(err));btn.disabled=false}
+  });
+  document.querySelectorAll("[data-lsxpullclose]").forEach(b=>b.onclick=()=>{PULL.batchId=null;render()});
+}
+const PULL={batchId:null};
 async function lsxTabHTML(){
   const C=await sxCache();const D=LSX.date=LSX.date||todayISO();const nLines=(CFG.lines||[]).length||10;
   const batches=await q(SB.from("production_order_batches").select("*,production_orders(*)").eq("order_date",D).order("line_id"));
   const totalItems=batches.reduce((a,b)=>a+(b.production_orders||[]).length,0);
+  const pullItems=PULL.batchId&&batches.find(b=>b.id===PULL.batchId)?await lsxTomorrowItems(batches.find(b=>b.id===PULL.batchId).line_id,D):null;
   return `<p class="small" style="margin:0 0 10px">Mỗi lần dán chỉ <b>THÊM MỚI hoặc CẬP NHẬT</b> đúng các lệnh có trong lượt dán — các lệnh đã lưu khác giữ nguyên (dán từng lệnh một cũng không mất lệnh trước). Muốn bỏ 1 lệnh: bấm Xóa ở lệnh đó. <b>Mã lệnh do anh tự điền</b> (lấy theo số lệnh thật của Bravo, hoặc tự đặt) — hệ thống KHÔNG tự sinh mã. Nhiều dòng cùng 1 Mã lệnh sẽ gộp vào CÙNG 1 lệnh đó. Tổ trưởng sẽ CHỌN LỆNH này khi nhập Form A (Sản xuất), mã hàng + SL kế hoạch lấy thẳng từ đây.</p>
   <div class="card">
    <div class="fld" style="max-width:220px"><label for="lsxDate">Ngày sản xuất</label><input id="lsxDate" type="date" value="${D}"></div>
@@ -2979,11 +3019,13 @@ Dây chuyền SXHN 01	LSX11/26-018(2026-11-03)	TLC-BML-40W-01	Đèn led búp Max
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px"><b class="mono">${esc(b.code)}</b>
      <span class="small">${esc(lineOptsName(b.line_id))} · ${fmt((b.production_orders||[]).length)} mã · tổng KH ${fmt(b.qty_total)}
       <span class="pill p-${b.kind==="overflow"?"warn":"ok"}" style="margin-left:6px">${b.kind==="overflow"?"Tranh thủ ngoài KH":"Kế hoạch"}</span>
-      ${canKind?`<button class="btn ghost" type="button" data-lsxkind="${b.id}|${b.kind==="overflow"?"planned":"overflow"}" style="padding:2px 8px;margin-left:6px">${b.kind==="overflow"?"Chuyển về Kế hoạch":"Đánh dấu Tranh thủ ngoài KH"}</button>`:""}
+      ${canKind?`<button class="btn ghost" type="button" data-lsxkind="${b.id}|${b.kind==="overflow"?"planned":"overflow"}" style="padding:2px 8px;margin-left:6px">${b.kind==="overflow"?"Chuyển về Kế hoạch":"Đánh dấu Tranh thủ ngoài KH"}</button>
+      <button class="btn ghost" type="button" data-lsxpullopen="${b.id}" style="padding:2px 8px;margin-left:6px">Kéo từ ngày mai…</button>`:""}
       ${canKind?`<button class="btn ghost" type="button" data-lsxedit="${b.id}" style="padding:2px 8px;margin-left:6px">Sửa lệnh</button><button class="btn ghost" type="button" data-lsxdel="${b.id}" style="padding:2px 8px;margin-left:6px;color:var(--bad)">Xóa lệnh</button>`:""}</span></div>
     ${KHF.editBatch===b.id?lsxEditForm(b,C):""}
+    ${PULL.batchId===b.id?lsxPullPanelHTML(pullItems||[],C):""}
     <div class="tbl" style="margin-top:6px"><table><tr><th>Mã sản phẩm</th><th>Tên</th><th class="num">SL kế hoạch</th></tr>
-    ${(b.production_orders||[]).slice().sort((x,y)=>x.item_code<y.item_code?-1:x.item_code>y.item_code?1:0).map(r=>`<tr><td class="mono">${esc(r.item_code)}</td><td>${esc((C.byCode[r.item_code]||{}).name||"")}</td><td class="num">${fmt(r.qty_planned)}</td></tr>`).join("")}
+    ${(b.production_orders||[]).filter(r=>+r.qty_planned>0).slice().sort((x,y)=>x.item_code<y.item_code?-1:x.item_code>y.item_code?1:0).map(r=>`<tr><td class="mono">${esc(r.item_code)}</td><td>${esc((C.byCode[r.item_code]||{}).name||"")}</td><td class="num">${fmt(r.qty_planned)}</td></tr>`).join("")}
     </table></div></div>`}).join(""):`<div class="empty">Chưa có lệnh sản xuất ngày này</div>`}
   <p class="small" style="margin:8px 0 0">Lệnh <b>Tranh thủ ngoài KH</b> = line dư công suất, tự làm thêm lệnh mới trong ngày (không nằm trong kế hoạch chốt từ đầu) — được tính là "TP ngoài KH (làm vượt)" ở Báo cáo điều hành.</p>`;
 }
@@ -3000,6 +3042,8 @@ function bindLsx(){
     if(!confirm("Xóa lệnh này? Không thể hoàn tác."))return;btn.disabled=true;
     try{await rpc("lsx_delete",{p_batch_id:+btn.dataset.lsxdel});toast("Đã xóa lệnh");render()}catch(err){alert(sbErr(err));btn.disabled=false}});
   document.querySelectorAll("[data-lsxedit]").forEach(b=>b.onclick=()=>{KHF.editBatch=+b.dataset.lsxedit;render()});
+  document.querySelectorAll("[data-lsxpullopen]").forEach(b=>b.onclick=()=>{PULL.batchId=PULL.batchId===+b.dataset.lsxpullopen?null:+b.dataset.lsxpullopen;render()});
+  bindLsxPull(()=>{PULL.batchId=null;render()});
   if(SX_CACHE)bindLsxEdit(SX_CACHE);
   const ld=$("#lsxDelBtn");if(ld)ld.onclick=async()=>{
     if(!confirm("Xóa toàn bộ lệnh sản xuất ngày "+dmyS(LSX.date)+"? Không thể hoàn tác."))return;
@@ -4278,7 +4322,7 @@ function startApp(){
   $("#user").innerHTML=`${esc(ME.full_name)}<small>${esc(ME.username)} · ${esc(ME.position_name)}</small>`;
   const c=$("#conn");c.classList.toggle("live",RUN==="LIVE");
   c.textContent=RUN==="LIVE"?"Đã kết nối máy chủ · số liệu thật":"DEMO · dùng thử, không lưu máy chủ";
-  ST.screen=homeMod();cfgTab="tbp";RP.code=null;RP.date=null;RP.editIssue=RP.editPlan=RP.editSr=null;SM.date=null;SXF.date=null;SXF.line=null;SXF.edit=null;SXF.assignOpen=false;SXF.unlockOpen=false;SX_CACHE=null;Object.keys(FM).forEach(k=>delete FM[k]);NM.q="";NM.f="all";NM.page=0;NM.dirty={};NM.bulkOpen=false;FS.date=null;FS.per="week";FS.tab="stat";FS.fstat="open";FS.fs="";FS.newOpen=false;FS.newS="";FS_CRIT=null;VD.tab="issue";VD.fSev="";VD.fSt="open";VD.fDept="";VD.q="";VD.projOpen=false;VD.editProj=null;KP.tab="dash";KP.defOpen=false;KP.editDef=null;KP.tgtOpenFor=null;KP.resKpi="";KP.resPs=null;KP.resPe=null;KT.tab="list";KT.fStatus="pending";KT.newOpen=false;KT.ctype="norm";KT.histCode="";LH.tab="session";LH.typeOpen=false;LH.editType=null;LH.sessOpen=false;LH.openId=null;LH.decOpen=null;LD.period="day";LD.date=null;LD.scope="all";LD.demo=false;LD.customFrom=null;LD.customTo=null;DH.mode="week";DH.date=null;DH.tgOpen=false;DH.wkOpen=false;GV.f="open";GV.pos="";GV.q="";accQ="";accDept="";ACC_SECRET=null;accConfirm=null;render();pushInit();
+  ST.screen=homeMod();cfgTab="tbp";RP.code=null;RP.date=null;RP.editIssue=RP.editPlan=RP.editSr=null;SM.date=null;SXF.date=null;SXF.line=null;SXF.edit=null;SXF.assignOpen=false;SXF.unlockOpen=false;SX_CACHE=null;Object.keys(FM).forEach(k=>delete FM[k]);NM.q="";NM.f="all";NM.page=0;NM.dirty={};NM.bulkOpen=false;FS.date=null;FS.per="week";FS.tab="stat";FS.fstat="open";FS.fs="";FS.newOpen=false;FS.newS="";FS_CRIT=null;VD.tab="issue";VD.fSev="";VD.fSt="open";VD.fDept="";VD.q="";VD.projOpen=false;VD.editProj=null;KP.tab="dash";KP.defOpen=false;KP.editDef=null;KP.tgtOpenFor=null;KP.resKpi="";KP.resPs=null;KP.resPe=null;KT.tab="list";KT.fStatus="pending";KT.newOpen=false;KT.ctype="norm";KT.histCode="";LH.tab="session";LH.typeOpen=false;LH.editType=null;LH.sessOpen=false;LH.openId=null;LH.decOpen=null;LD.period="day";LD.date=null;LD.scope="all";LD.demo=false;LD.customFrom=null;LD.customTo=null;DH.mode="week";DH.date=null;DH.tgOpen=false;DH.wkOpen=false;GV.f="open";GV.pos="";GV.q="";accQ="";accDept="";ACC_SECRET=null;accConfirm=null;PULL.batchId=null;render();pushInit();
 }
 $("#logout").onclick=()=>logout();
 $("#bell").onclick=e=>{e.stopPropagation();const p=$("#notif");p.hidden=!p.hidden;$("#bell").setAttribute("aria-expanded",String(!p.hidden))};
