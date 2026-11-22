@@ -5,7 +5,7 @@
      ISO) — dùng để tự phát hiện trình duyệt đang chạy bản cache cũ và
      nhắc tải lại, tránh lỗi kiểu "KB/KPW is not defined" sau khi đổi tên
      biến ở các giai đoạn trước (GĐ34). -->
-<meta name="app-build" content="2026-11-22T08:21:55Z">
+<meta name="app-build" content="2026-11-22T11:52:38Z">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#20409A">
@@ -2995,8 +2995,11 @@ function bindDhDaily(C,D,mv){
 }
 
 /* ---------- KẾ HOẠCH – LỆNH SẢN XUẤT + THEO DÕI MUA HÀNG (PO) ---------- */
-const KHF={date:null,open:false,view:null,viewRows:null,tab:"lsx"};
+const KHF={date:null,open:false,view:null,viewRows:null,tab:"lsx",pauseItem:null};
 const LSX={date:null,open:false};
+// GĐ47 (22/11): "Kéo lệnh từ line khác" — line rảnh kéo nguyên 1 lệnh
+// CHƯA sản xuất của line khác (cùng ngày) về làm, giữ nguyên mã lệnh.
+const PULLX={open:false,toLine:null};
 function parseLsxPaste(text,byCode,cfgLines){
   // GĐ21: dán THẲNG nguyên form Bravo 6 cột — Tên chuyền · Số lệnh sản
   // xuất · Vật tư · Tên vật tư · Đvt · Số lượng — không cần dọn lại trước.
@@ -3099,6 +3102,69 @@ function bindLsxBack(afterOk){
   });
 }
 const PULL={batchId:null};
+/* GĐ47: "Tạm dừng lệnh" — hàng lỗi chờ xử lý (tính đạt 100% KH, không
+   chuyển đi đâu) hoặc đổi lệnh gấp cho lệnh khác (phần thiếu tự chuyển
+   sang ngày mai, dùng lại cơ chế _lsx_defer_core/lsx_defer_shortfall). */
+function lsxPauseFormHTML(r,remain,act){
+  return `<div class="card" style="margin-top:6px;padding:8px;max-width:380px;white-space:normal">
+   <div class="fld"><label for="pr_${r.id}">Lý do tạm dừng</label>
+    <select id="pr_${r.id}" data-pausereason="${r.id}">
+     <option value="defect">Hàng lỗi chờ xử lý — đã làm ${fmt(act)} tính đạt 100% KH, KHÔNG chuyển thiếu đi đâu</option>
+     <option value="switch">Đổi lệnh gấp cho lệnh khác — phần còn thiếu (${fmt(remain)}) chuyển sang lệnh ngày mai</option>
+    </select></div>
+   <div class="fld" style="margin-top:6px"><label for="pn_${r.id}">Ghi chú (tùy chọn)</label><textarea id="pn_${r.id}" data-pausenote="${r.id}" rows="2" style="width:100%;box-sizing:border-box" placeholder="vd: Lô lỗi tản nhiệt, chờ QC xử lý"></textarea></div>
+   <div style="display:flex;gap:8px;margin-top:6px"><button class="btn" type="button" data-pauseok="${r.id}">Xác nhận tạm dừng</button><button class="btn ghost" type="button" data-pauseclose>Hủy</button></div>
+  </div>`;
+}
+function bindLsxPause(){
+  document.querySelectorAll("[data-lsxpauseopen]").forEach(b=>b.onclick=()=>{KHF.pauseItem=KHF.pauseItem===+b.dataset.lsxpauseopen?null:+b.dataset.lsxpauseopen;render()});
+  document.querySelectorAll("[data-pauseclose]").forEach(b=>b.onclick=()=>{KHF.pauseItem=null;render()});
+  document.querySelectorAll("[data-pauseok]").forEach(btn=>btn.onclick=async()=>{
+    const id=btn.dataset.pauseok;
+    const reason=(document.querySelector(`[data-pausereason="${id}"]`)||{}).value;
+    const note=(document.querySelector(`[data-pausenote="${id}"]`)||{}).value||null;
+    btn.disabled=true;
+    try{await rpc("lsx_pause_order",{p_item_id:+id,p_reason:reason,p_note:note});toast(reason==="defect"?"Đã tạm dừng — tính đạt 100% KH theo SL đã làm":"Đã tạm dừng — phần thiếu đã chuyển sang ngày mai");KHF.pauseItem=null;render()}
+    catch(err){alert(sbErr(err));btn.disabled=false}
+  });
+}
+/* GĐ47: "Kéo lệnh từ line khác" — kéo nguyên 1 lệnh CHƯA sản xuất (chưa
+   có SL đạt nào) từ line khác (cùng ngày) về line đang chọn, đổi hẳn
+   line_id, giữ nguyên mã lệnh/ngày/số lượng. */
+function lsxPullXHTML(batches,actualMap){
+  const toLine=PULLX.toLine;
+  const eligible=toLine?batches.filter(b=>String(b.line_id)!==String(toLine)&&!(b.production_orders||[]).some(o=>(actualMap[b.id+"|"+o.item_code]||0)>0)):[];
+  return `<div class="card" style="margin:6px 0 10px;border-left:4px solid var(--accent)">
+   <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+    <h3 style="margin:0">Kéo lệnh từ line khác</h3>
+    <button class="btn ghost" type="button" id="pullxBtn" style="padding:2px 8px">${PULLX.open?"Đóng":"⇄ Kéo lệnh…"}</button>
+   </div>
+   ${PULLX.open?`<p class="small" style="margin:6px 0 8px">Chỉ kéo được lệnh <b>CHƯA sản xuất</b> (chưa có SL đạt nào ở bất kỳ mã nào). Lệnh sẽ chuyển HẲN sang line đã chọn — giữ nguyên mã lệnh, ngày, số lượng.</p>
+    <div class="fld" style="max-width:260px"><label for="pullxLine">Kéo về line</label><select id="pullxLine"><option value="">— Chọn line —</option>${(CFG.lines||[]).map((n,i)=>`<option value="${i+1}" ${String(toLine)===String(i+1)?"selected":""}>${esc(n)}</option>`).join("")}</select></div>
+    ${toLine?(eligible.length?`<div class="tbl" style="margin-top:8px"><table><tr><th>Lệnh</th><th>Line hiện tại</th><th class="num">Số mã</th><th class="num">Tổng KH</th><th></th></tr>
+      ${eligible.map(b=>`<tr><td class="mono">${esc(b.code)}</td><td>${esc(lineOptsName(b.line_id))}</td><td class="num">${fmt((b.production_orders||[]).length)}</td><td class="num">${fmt(b.qty_total)}</td>
+       <td><button class="btn ghost" type="button" data-pullx="${b.id}" style="padding:2px 8px">Kéo về ${esc(lineOptsName(+toLine))}</button></td></tr>`).join("")}
+      </table></div><div style="margin-top:8px"><button class="btn" type="button" id="pullxAll">Kéo tất cả (${fmt(eligible.length)} lệnh)</button></div>`
+     :`<div class="small" style="margin-top:8px">Không có lệnh nào ở line khác còn CHƯA sản xuất trong ngày này.</div>`):""}`:""}
+  </div>`;
+}
+function bindLsxPullX(){
+  const b=$("#pullxBtn");if(b)b.onclick=()=>{PULLX.open=!PULLX.open;if(!PULLX.open)PULLX.toLine=null;render()};
+  const sel=$("#pullxLine");if(sel)sel.onchange=()=>{PULLX.toLine=sel.value||null;render()};
+  document.querySelectorAll("[data-pullx]").forEach(btn=>btn.onclick=async()=>{
+    btn.disabled=true;
+    try{await rpc("lsx_pull_line",{p_batch_id:+btn.dataset.pullx,p_to_line_id:+PULLX.toLine});toast("Đã kéo lệnh về line này");render()}
+    catch(err){alert(sbErr(err));btn.disabled=false}
+  });
+  const all=$("#pullxAll");if(all)all.onclick=async()=>{
+    if(!confirm("Kéo TẤT CẢ các lệnh đang hiện về line này? Không thể hoàn tác."))return;
+    all.disabled=true;
+    const ids=[...document.querySelectorAll("[data-pullx]")].map(x=>+x.dataset.pullx);
+    let ok=0,fail=0;
+    for(const id of ids){try{await rpc("lsx_pull_line",{p_batch_id:id,p_to_line_id:+PULLX.toLine});ok++}catch(e){fail++}}
+    toast("Đã kéo "+ok+" lệnh"+(fail?", lỗi "+fail:""));render();
+  };
+}
 async function lsxTabHTML(){
   const C=await sxCache();const D=LSX.date=LSX.date||todayISO();const nLines=(CFG.lines||[]).length||10;
   const batches=await q(SB.from("production_order_batches").select("*,production_orders(*)").eq("order_date",D).order("line_id"));
@@ -3120,6 +3186,7 @@ async function lsxTabHTML(){
 Dây chuyền SXHN 01	LSX11/26-018(2026-11-03)	TLC-BML-40W-01	Đèn led búp MaxLight 40W ánh sáng trắng	Cái	600"></textarea>
    <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap"><button class="btn" type="button" id="lsxGo">Lưu lệnh SX ngày ${dmyS(D)}</button><span class="msg" id="lsxMsg"></span></div></div>`:""}
   </div>
+  ${lsxCanEdit()?lsxPullXHTML(batches,actualMap):""}
   <h2 class="sec">Lệnh sản xuất ngày ${dmyS(D)} <small>${fmt(batches.length)} lệnh · ${fmt(totalItems)} mã</small></h2>
   ${batches.length?batches.map(b=>{const canKind=ME.role==="admin"||ME.dept_code==="KHSX";
     return`<div class="card" style="margin-bottom:8px">
@@ -3135,8 +3202,9 @@ Dây chuyền SXHN 01	LSX11/26-018(2026-11-03)	TLC-BML-40W-01	Đèn led búp Max
     <div class="tbl" style="margin-top:6px"><table><tr><th>Mã sản phẩm</th><th>Tên</th><th class="num">SL kế hoạch</th><th class="num">SL đã làm</th>${canKind?"<th></th>":""}</tr>
     ${(b.production_orders||[]).filter(r=>+r.qty_planned>0).slice().sort((x,y)=>x.item_code<y.item_code?-1:x.item_code>y.item_code?1:0).map(r=>{
       const act=actualMap[b.id+"|"+r.item_code]||0,remain=Math.max(0,+r.qty_planned-act);
+      const pauseBadge=r.pause_reason?`<div style="margin-top:4px"><span class="pill p-warn" ${r.pause_note?`title="${esc(r.pause_note)}"`:""}>⏸ ${r.pause_reason==="defect"?"Tạm dừng – chờ xử lý lỗi":"Tạm dừng – đổi lệnh gấp"}</span>${r.orig_qty_planned!=null&&+r.orig_qty_planned!==+r.qty_planned?` <span class="small">(KH gốc ${fmt(r.orig_qty_planned)})</span>`:""}</div>`:"";
       return `<tr><td class="mono">${esc(r.item_code)}</td><td>${esc((C.byCode[r.item_code]||{}).name||"")}</td><td class="num">${fmt(r.qty_planned)}</td><td class="num">${fmt(act)}</td>
-     ${canKind?(remain>0?`<td style="white-space:nowrap"><input data-backqty="${r.id}" inputmode="decimal" style="width:70px;text-align:right" placeholder="${fmt(remain)}"> <button class="btn ghost" type="button" data-lsxback="${r.id}|${remain}" style="padding:2px 8px" title="Thiếu ${fmt(remain)} so với KH — chuyển sang lệnh ngày mai, giữ nguyên mã lệnh">Chuyển thiếu sang ngày mai</button></td>`:"<td></td>"):""}</tr>`}).join("")}
+     ${canKind?(remain>0?`<td style="white-space:nowrap"><input data-backqty="${r.id}" inputmode="decimal" style="width:70px;text-align:right" placeholder="${fmt(remain)}"> <button class="btn ghost" type="button" data-lsxback="${r.id}|${remain}" style="padding:2px 8px" title="Thiếu ${fmt(remain)} so với KH — chuyển sang lệnh ngày mai, giữ nguyên mã lệnh">Chuyển thiếu sang ngày mai</button> <button class="btn ghost" type="button" data-lsxpauseopen="${r.id}" style="padding:2px 8px">Tạm dừng lệnh</button>${KHF.pauseItem===r.id?lsxPauseFormHTML(r,remain,act):""}${pauseBadge}</td>`:`<td>${pauseBadge}</td>`):""}</tr>`}).join("")}
     </table></div></div>`}).join(""):`<div class="empty">Chưa có lệnh sản xuất ngày này</div>`}
   <p class="small" style="margin:8px 0 0">Lệnh <b>Tranh thủ ngoài KH</b> = line dư công suất, tự làm thêm lệnh mới trong ngày (không nằm trong kế hoạch chốt từ đầu) — được tính là "TP ngoài KH (làm vượt)" ở Báo cáo điều hành. Mã nào làm KHÔNG hết kế hoạch trong ngày (ví dụ KH 1.000, làm được 900) hệ thống <b>TỰ ĐỘNG</b> chuyển phần còn thiếu (100) sang lệnh NGÀY MAI vào rạng sáng hôm sau — giữ nguyên mã lệnh, tính là kế hoạch chính thức của ngày hôm sau, kèm ghi chú vàng trên lệnh đích; kế hoạch hôm nay tự giảm còn đúng số đã làm (900) nên không bị chấm thiếu hàng oan. Muốn chuyển ngay (không chờ tự động) thì bấm <b>"Chuyển thiếu sang ngày mai"</b> ở bảng mã hàng.</p>`;
 }
@@ -3156,6 +3224,8 @@ function bindLsx(){
   document.querySelectorAll("[data-lsxpullopen]").forEach(b=>b.onclick=()=>{PULL.batchId=PULL.batchId===+b.dataset.lsxpullopen?null:+b.dataset.lsxpullopen;render()});
   bindLsxPull(()=>{PULL.batchId=null;render()});
   bindLsxBack(()=>render());
+  bindLsxPause();
+  bindLsxPullX();
   if(SX_CACHE)bindLsxEdit(SX_CACHE);
   const ld=$("#lsxDelBtn");if(ld)ld.onclick=async()=>{
     if(!confirm("Xóa toàn bộ lệnh sản xuất ngày "+dmyS(LSX.date)+"? Không thể hoàn tác."))return;
