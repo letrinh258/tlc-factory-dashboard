@@ -5,7 +5,7 @@
      ISO) — dùng để tự phát hiện trình duyệt đang chạy bản cache cũ và
      nhắc tải lại, tránh lỗi kiểu "KB/KPW is not defined" sau khi đổi tên
      biến ở các giai đoạn trước (GĐ34). -->
-<meta name="app-build" content="2026-11-20T09:22:25Z">
+<meta name="app-build" content="2026-11-22T03:25:18Z">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#20409A">
@@ -1867,7 +1867,13 @@ async function viewSx(){
   const stCell=s=>s.n_rows?`<span class="pill p-ok">Đã nhập ${s.last_edit?new Date(s.last_edit).toLocaleTimeString("vi-VN",{hour:"2-digit",minute:"2-digit"}):""}</span>`:late?`<span class="pill p-bad">CHƯA NHẬP</span>`:`<span class="pill p-none">Chưa nhập</span>`;
   const visibleSt=manager||ME.dept_code!=="SX"?st:st.filter(s=>myL.includes(s.line_id));
   const lineRows=rows.filter(r=>r.line_id===L);const ed=SXF.edit==="new"?{}:lineRows.find(r=>r.id===SXF.edit);
-  const lsxBatchesAll=canEdit?await q(SB.from("production_order_batches").select("*,production_orders(*)").eq("order_date",D).eq("line_id",L).order("code")):[];
+  const lsxBatchesAll=await q(SB.from("production_order_batches").select("*,production_orders(*)").eq("order_date",D).eq("line_id",L).order("code"));
+  // GĐ43 (22/11): SL KH ở bảng chi tiết từng mã PHẢI lấy từ modul Kế hoạch
+  // (production_order_batches kind='planned'), không dùng production_reports
+  // .plan_qty (giá trị đóng băng lúc tạo dòng, không tự cập nhật khi lệnh
+  // KHSX thay đổi — đây là nguyên nhân gây lệch số với khung tổng hợp phía
+  // trên, vd 287 (đúng, theo Kế hoạch) vs 2.800 (cũ, theo Form A đóng băng)).
+  const khMap={};lsxBatchesAll.filter(b=>b.kind==="planned").forEach(b=>(b.production_orders||[]).forEach(o=>{khMap[o.item_code]=(khMap[o.item_code]||0)+(+o.qty_planned||0)}));
   const lsxBatches=SXF.edit==="new"?lsxBatchesAll:[];
   const lsxBatch=lsxBatches.length===1?lsxBatches[0]:lsxBatches.length>1?lsxBatches.find(b=>b.id===SXF.lsxPick)||null:null;
   SXF.curBatchId=lsxBatch?lsxBatch.id:null; // nhớ lệnh đang chọn để bindSx() biết gắn p_order_batch_id khi lưu
@@ -1918,8 +1924,8 @@ async function viewSx(){
     <div class="fld" style="flex:1;min-width:200px"><label for="sxUlR">Lý do</label><input id="sxUlR" placeholder="vd: tổ trưởng quên nhập"></div>
     <button class="btn" type="button" id="sxUlGo">Mở khóa</button><span class="msg" id="sxUlMsg"></span></div></div>`:""}
   <div class="tbl"><table><tr><th>Mã SP</th><th class="num">KH</th><th class="num">Đạt</th><th class="num">NG thao tác</th><th class="num">NG NCC</th><th class="num">Người × giờ</th><th class="num">NS thực / ĐM</th><th class="num">Dừng máy</th><th>Ghi chú</th>${canEdit?"<th></th>":""}</tr>
-  ${lineRows.map(r=>{const p=C.byCode[r.product_code]||{};const c=sxCalc(r,p.norm_per_hour);
-    return `<tr><td><b class="mono">${esc(r.product_code)}</b><br><span class="small">${esc(p.name||"")}</span>${dupCodes.has(r.product_code)?`<br><span class="pill p-none">${r.order_batch_id?esc(lineBatchCodes[r.order_batch_id]||"lệnh #"+r.order_batch_id):"ngoài lệnh"}</span>`:""}</td><td class="num">${r.plan_qty==null?"—":fmt(r.plan_qty)}</td><td class="num">${fmt(r.good_qty)}${c.kh!=null?"<br>"+sxPill("out",c.kh,1,fmt(c.kh,0)+"%"):""}</td>
+  ${lineRows.map(r=>{const p=C.byCode[r.product_code]||{};const c=sxCalc(r.product_code in khMap?{...r,plan_qty:khMap[r.product_code]}:r,p.norm_per_hour);
+    return `<tr><td><b class="mono">${esc(r.product_code)}</b><br><span class="small">${esc(p.name||"")}</span>${dupCodes.has(r.product_code)?`<br><span class="pill p-none">${r.order_batch_id?esc(lineBatchCodes[r.order_batch_id]||"lệnh #"+r.order_batch_id):"ngoài lệnh"}</span>`:""}</td><td class="num">${r.product_code in khMap?fmt(khMap[r.product_code]):"—"}</td><td class="num">${fmt(r.good_qty)}${c.kh!=null?"<br>"+sxPill("out",c.kh,1,fmt(c.kh,0)+"%"):""}</td>
       <td class="num">${fmt(r.ng_op)}${r.ng_op?`<br><span class="small">${esc(r.defect_op||"")}</span>`:""}</td><td class="num">${fmt(r.ng_sup)}${r.ng_sup?`<br><span class="small">${esc(r.defect_sup||"")}</span>`:""}</td>
       <td class="num">${fmt(r.headcount)} × ${fmt(+r.hours+ +r.ot_hours,1)}h${r.start_time&&r.end_time?`<br><span class="small">${esc(r.start_time.slice(0,5))}–${esc(r.end_time.slice(0,5))}${r.break_min?" (nghỉ "+fmt(r.break_min)+"p)":""}</span>`:+r.ot_hours?`<br><span class="small">TC ${fmt(r.ot_hours,1)}h</span>`:""}</td>
       <td class="num">${c.act==null?"—":fmt(c.act,1)+" / "+fmt(p.norm_per_hour||sxStd())}${c.ns!=null?"<br>"+sxPill("prod",c.ns,1,fmt(c.ns,0)+"%"):""}${c.noNorm?' <span class="pill p-warn">thiếu ĐM</span>':""}</td>

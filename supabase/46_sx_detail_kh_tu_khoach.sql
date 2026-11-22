@@ -1,0 +1,30 @@
+-- =====================================================================
+-- GĐ43 (22/11): Bảng chi tiết từng mã ở Form A (Sản xuất) – cột "KH"
+-- phải lấy từ modul KẾ HOẠCH (production_order_batches/production_orders,
+-- kind='planned'), KHÔNG dùng production_reports.plan_qty.
+--
+-- Lý do: plan_qty trong production_reports là giá trị ĐÓNG BĂNG lúc tổ
+-- trưởng tạo dòng báo cáo (copy 1 lần từ qty_planned của lệnh tại thời
+-- điểm đó) — không tự cập nhật khi lệnh KHSX sau đó thay đổi (bị kéo lên,
+-- bị chuyển thiếu/carry-over sang ngày khác, v.v.). Vì vậy khung tổng
+-- hợp phía trên (đã sửa ở GĐ40, lấy từ production_order_batches) và bảng
+-- chi tiết phía dưới (vẫn lấy production_reports.plan_qty cũ) có thể lệch
+-- số — ví dụ thực tế: SXHN01 ngày 18/11 khung trên hiện 287 (đúng, theo
+-- Kế hoạch hiện tại) nhưng bảng chi tiết hiện 2.800 (theo plan_qty đóng
+-- băng lúc tạo dòng, trước khi lệnh bị thay đổi).
+--
+-- Đây là thay đổi CHỈ Ở FRONTEND (index.html, hàm viewSx()):
+-- 1. lsxBatchesAll không còn giới hạn chỉ fetch khi canEdit — fetch luôn
+--    cho mọi người xem (để KH đúng cả khi xem line khác/ngày đã khóa).
+-- 2. Dựng khMap: tổng qty_planned theo item_code, chỉ tính lệnh
+--    kind='planned' (đúng nguyên tắc GĐ33/GĐ40 — lệnh "Tranh thủ ngoài
+--    KH" không tính vào KH).
+-- 3. Cột "KH" ở bảng chi tiết: lấy khMap[mã], không có trong khMap thì
+--    hiện "—" (mã ngoài lệnh KHSX, không phải kế hoạch chính thức — đúng
+--    nguyên tắc đã áp dụng cho khung tổng hợp ở GĐ40).
+-- 4. % KH (cột "Đạt") cũng tính lại theo khMap thay vì r.plan_qty đóng
+--    băng, cho nhất quán với số KH hiển thị.
+--
+-- Không có thay đổi schema/DB nào trong migration này — ghi lại để theo
+-- vết lịch sử thay đổi.
+-- =====================================================================
