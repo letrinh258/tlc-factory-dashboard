@@ -1,0 +1,25 @@
+-- =====================================================================
+-- GĐ44 (22/11): Sản xuất bắt buộc phải thừa kế lệnh của Kế hoạch — nếu
+-- không có lệnh, vẫn cho nhập nhưng cảnh báo rõ "Không có lệnh SX".
+--
+-- Phát hiện khi rà soát SXHN03 ngày 20/11: Kế hoạch (KHSX) chỉ lập 2 lệnh
+-- cho line này (084: TLC-OEC-VT-22W-01 320pcs kind=planned; 139: TLC-OEC-
+-- TT-22W-01 35pcs kind=overflow/"Tranh thủ"), nhưng Form A hiện 3 mã, vì
+-- có 1 dòng báo cáo (id=249, mã TLC-AECA-VV-08W-03) được tổ trưởng gõ tay
+-- qua "Mã khác (ngoài lệnh SX)" — order_batch_id = NULL, không thừa kế
+-- lệnh nào — mà trước đây không có cảnh báo rõ ràng nào, chỉ lặng lẽ hiện
+-- "—" ở cột KH, dễ gây hiểu lầm là lỗi hệ thống. Đây KHÔNG phải lỗi dữ
+-- liệu/code mà là 1 lượt nhập hợp lệ không gắn lệnh — nhưng theo yêu cầu
+-- mới, phải cảnh báo rõ cho GĐNM/KHSX/tổ trưởng biết dòng nào thiếu lệnh.
+--
+-- Thay đổi CHỈ Ở FRONTEND (index.html, hàm viewSx()), không đổi DB:
+-- 1. Bảng chi tiết từng mã: MỌI dòng có order_batch_id = NULL hiện pill
+--    đỏ "⚠ Không có lệnh SX" (trước đây chỉ hiện gợi ý "ngoài lệnh" khi
+--    mã đó bị trùng — nay hiện luôn, không cần trùng mã).
+-- 2. Form "Thêm/Sửa mã sản phẩm": khi tổ trưởng chọn "Mã khác (ngoài lệnh
+--    SX)" trong khi line/ngày này ĐÃ CÓ lệnh KHSX (tức chủ động bỏ qua
+--    lệnh có sẵn), hoặc khi sửa 1 dòng cũ vốn không gắn lệnh, hiện cảnh
+--    báo đỏ ngay trong form: "Mã này sẽ không thừa kế lệnh sản xuất nào
+--    của KHSX — vẫn lưu được, nhưng không tính vào SL KH...". Vẫn cho
+--    lưu bình thường (không chặn), đúng yêu cầu "vẫn cho nhập nhưng báo".
+-- =====================================================================
