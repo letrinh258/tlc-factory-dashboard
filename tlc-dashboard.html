@@ -5,7 +5,7 @@
      ISO) — dùng để tự phát hiện trình duyệt đang chạy bản cache cũ và
      nhắc tải lại, tránh lỗi kiểu "KB/KPW is not defined" sau khi đổi tên
      biến ở các giai đoạn trước (GĐ34). -->
-<meta name="app-build" content="2026-11-22T04:54:11Z">
+<meta name="app-build" content="2026-11-22T08:21:55Z">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#20409A">
@@ -1821,8 +1821,12 @@ async function loadAlertsLive(){
    GIAI ĐOẠN 5A – FORM A: BÁO CÁO SẢN XUẤT THEO LINE × MÃ SP × NGÀY
    Tổ trưởng nhập line mình · TBP SX / GĐNM nhập mọi line · khóa sau 23:59
    ============================================================ */
-const SXF={date:null,line:null,edit:null,assignOpen:false,unlockOpen:false,prodQ:"",manualProd:false,lsxPick:null,offOpen:false};
+const SXF={date:null,line:null,edit:null,assignOpen:false,unlockOpen:false,prodQ:"",manualProd:false,lsxPick:null,offOpen:false,tab:"day",histFrom:null,histTo:null};
 let SX_CACHE=null; // danh mục SP, loại lỗi, nguyên nhân dừng máy – tải 1 lần mỗi phiên
+// GĐ46 (22/11): Lịch sử KẾT QUẢ sản xuất (production_reports thực tế) nhóm
+// theo NGÀY → TỔ (line) → LỆNH — giống cấu trúc "Lịch sử lệnh SX" bên Kế
+// hoạch (GĐ36) nhưng hiện kết quả Form A đã nhập, không phải số kế hoạch.
+const SXTABS=[["day","Nhập báo cáo"],["hist","Lịch sử kết quả sản xuất"]];
 async function sxCache(){
   if(SX_CACHE)return SX_CACHE;
   const page=(a,b)=>q(SB.from("products").select("code,name,norm_per_hour,is_semi,norm_manual,norm_updated_at").eq("active",true).order("code").range(a,b));
@@ -1853,6 +1857,8 @@ function sxDeadlinePassed(D,today){if(D<today)return true;if(D>today)return fals
 
 async function viewSx(){
   if(RUN!=="LIVE")return liveOnly("Sản xuất – Báo cáo theo line");
+  const sxHead=`<div class="seg" role="tablist" style="margin-bottom:10px">${SXTABS.map(([k,n])=>`<button type="button" data-sxtab="${k}" aria-pressed="${SXF.tab===k}">${n}</button>`).join("")}</div>`;
+  if(SXF.tab==="hist")return sxHead+await sxHistTabHTML();
   const today=ME.today||todayISO();if(!SXF.date)SXF.date=today;const D=SXF.date;
   const[C,mine,st,rows,unl]=await Promise.all([sxCache(),rpc("my_lines"),rpc("prod_line_status",{d:D}),
     q(SB.from("production_reports").select("*").eq("report_date",D).order("line_id").order("id")),
@@ -1895,7 +1901,7 @@ async function viewSx(){
   const lineBatchCodes=lineBatchIds.length?Object.fromEntries((await q(SB.from("production_order_batches").select("id,code").in("id",lineBatchIds))).map(b=>[b.id,b.code])):{};
   const dupCodes=new Set(lineRows.map(r=>r.product_code).filter((c,i,a)=>a.indexOf(c)!==i));
   const NS=s=>s.man_hours?s.std_hours/s.man_hours*100:null;
-  return `<h2 class="sec" style="margin-top:0">Sản xuất – Báo cáo theo line <small>Form A · line × mã sản phẩm × ngày · tổ trưởng nhập cuối ca, trước ${esc(CFG.cutoff||"17:30")}</small></h2>
+  return sxHead+`<h2 class="sec" style="margin-top:0">Sản xuất – Báo cáo theo line <small>Form A · line × mã sản phẩm × ngày · tổ trưởng nhập cuối ca, trước ${esc(CFG.cutoff||"17:30")}</small></h2>
   <div class="fbar" style="position:static">
     <span class="flabel">Ngày</span><div class="datebox"><button type="button" id="sxPrev" aria-label="Ngày trước">‹</button><input type="date" id="sxDate" value="${D}" max="${today}"><button type="button" id="sxNext" aria-label="Ngày sau">›</button></div>
     ${D===today?`<span class="pill p-ok">Đang mở · tự khóa lúc 23:59</span>`:`<span class="pill p-none">Đã khóa</span>`}
@@ -1973,6 +1979,65 @@ async function viewSx(){
   ${(manager||ME.dept_code!=="SX")?await reconHTML(D):""}`;
 }
 
+/* ---------- GĐ46 (22/11): Lịch sử KẾT QUẢ sản xuất — nhóm theo NGÀY → TỔ (line) → LỆNH ---------- */
+async function sxHistTabHTML(){
+  const C=await sxCache();
+  const to=SXF.histTo=SXF.histTo||todayISO();
+  const from=SXF.histFrom=SXF.histFrom||addDays(to,-6);
+  const[reports,batches]=await Promise.all([
+    q(SB.from("production_reports").select("*").gte("report_date",from).lte("report_date",to).order("report_date",{ascending:false}).order("line_id").order("id")),
+    q(SB.from("production_order_batches").select("id,code,line_id,order_date,kind,production_orders(item_code,qty_planned)").gte("order_date",from).lte("order_date",to))
+  ]);
+  const batchById={};batches.forEach(b=>{const m={};(b.production_orders||[]).forEach(o=>m[o.item_code]=+o.qty_planned||0);batchById[b.id]={code:b.code,kind:b.kind,qtyMap:m}});
+  // Dòng báo cáo không gắn order_batch_id nhưng mã khớp đúng 1 lệnh của cùng
+  // line/ngày vẫn coi là CÓ lệnh (cùng nguyên tắc đã sửa ở GĐ45 cho Form A) —
+  // không chỉ dựa cột order_batch_id có thể bị thiếu liên kết.
+  const matchIndex={};batches.forEach(b=>(b.production_orders||[]).forEach(o=>{const k=b.line_id+"|"+b.order_date+"|"+o.item_code;(matchIndex[k]=matchIndex[k]||[]).push(b.id)}));
+  const byDate={};
+  reports.forEach(r=>{
+    let bid=r.order_batch_id;
+    if(!bid){const cands=matchIndex[r.line_id+"|"+r.report_date+"|"+r.product_code]||[];if(cands.length===1)bid=cands[0]}
+    const b=bid?batchById[bid]:null;const gk=b?"b"+bid:"none";
+    const d=byDate[r.report_date]=byDate[r.report_date]||{};const ln=d[r.line_id]=d[r.line_id]||{};
+    (ln[gk]=ln[gk]||{code:b?b.code:null,kind:b?b.kind:null,qtyMap:b?b.qtyMap:{},rows:[]}).rows.push(r);
+  });
+  const dates=Object.keys(byDate).sort((a,b)=>b<a?-1:b>a?1:0);
+  const sumG=rows=>rows.reduce((a,r)=>a+(+r.good_qty||0),0);
+  const grpCard=g=>{
+    const rows=g.rows.slice().sort((x,y)=>x.product_code<y.product_code?-1:x.product_code>y.product_code?1:0);
+    return `<div style="margin:6px 0"><div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+     <b class="mono">${g.code?esc(g.code):"Ngoài lệnh KHSX"}</b>
+     ${g.code?`<span class="pill p-${g.kind==="overflow"?"warn":"ok"}">${g.kind==="overflow"?"Tranh thủ ngoài KH":"Kế hoạch"}</span>`:`<span class="pill p-bad">⚠ Không có lệnh SX</span>`}
+     <span class="small">${fmt(rows.length)} dòng · tổng đạt ${fmt(sumG(rows))}</span></div>
+    <div class="tbl" style="margin-top:4px"><table><tr><th>Mã SP</th><th>Tên</th><th class="num">KH</th><th class="num">Đạt</th><th class="num">NG thao tác</th><th class="num">NG NCC</th><th class="num">Người × giờ</th><th class="num">NS thực/ĐM</th><th class="num">Dừng máy</th><th>Ghi chú</th></tr>
+    ${rows.map(r=>{const p=C.byCode[r.product_code]||{};const kh=g.qtyMap[r.product_code];const c=sxCalc(kh!=null?{...r,plan_qty:kh}:r,p.norm_per_hour);
+      return `<tr><td class="mono">${esc(r.product_code)}</td><td class="small">${esc(p.name||"")}</td><td class="num">${kh!=null?fmt(kh):"—"}</td><td class="num">${fmt(r.good_qty)}${c.kh!=null?"<br>"+sxPill("out",c.kh,1,fmt(c.kh,0)+"%"):""}</td>
+      <td class="num">${fmt(r.ng_op)}${r.ng_op?`<br><span class="small">${esc(r.defect_op||"")}</span>`:""}</td><td class="num">${fmt(r.ng_sup)}${r.ng_sup?`<br><span class="small">${esc(r.defect_sup||"")}</span>`:""}</td>
+      <td class="num">${fmt(r.headcount)} × ${fmt(+r.hours+ +r.ot_hours,1)}h</td>
+      <td class="num">${c.act==null?"—":fmt(c.act,1)+" / "+fmt(p.norm_per_hour||sxStd())}${c.ns!=null?"<br>"+sxPill("prod",c.ns,1,fmt(c.ns,0)+"%"):""}</td>
+      <td class="num">${r.downtime_min?fmt(r.downtime_min)+"'":"—"}</td><td class="small">${esc(r.note||"")}</td></tr>`}).join("")}
+    </table></div></div>`;
+  };
+  const lineCard=(ln,groups)=>{
+    const allRows=Object.values(groups).flatMap(g=>g.rows);
+    return `<div class="card" style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px"><b>${esc(lineOptsName(+ln))}</b><span class="small">${fmt(allRows.length)} dòng · tổng đạt ${fmt(sumG(allRows))}</span></div>
+     ${Object.values(groups).sort((a,b)=>(a.code||"￿")<(b.code||"￿")?-1:1).map(grpCard).join("")}</div>`;
+  };
+  return `<p class="small" style="margin:0 0 10px">Lịch sử KẾT QUẢ sản xuất (Form A) đã nhập, nhóm theo Ngày → Tổ (line) → Lệnh sản xuất, để đối chiếu với kế hoạch KHSX theo từng lệnh.</p>
+  <div class="card" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+   <div class="fld" style="max-width:180px"><label for="sxHistFrom">Từ ngày</label><input id="sxHistFrom" type="date" value="${from}" max="${to}"></div>
+   <div class="fld" style="max-width:180px"><label for="sxHistTo">Đến ngày</label><input id="sxHistTo" type="date" value="${to}" max="${todayISO()}"></div>
+  </div>
+  <h2 class="sec">${fmt(dates.length)} ngày có báo cáo</h2>
+  ${dates.length?dates.map(d=>{const lns=Object.keys(byDate[d]).sort((a,b)=>a-b);
+    return `<div style="margin-bottom:16px"><h3 style="margin:0 0 6px">${dmyS(d)} <small>${fmt(lns.length)} tổ</small></h3>
+    ${lns.map(l=>lineCard(l,byDate[d][l])).join("")}</div>`}).join(""):`<div class="empty">Không có báo cáo sản xuất nào trong khoảng ngày này</div>`}`;
+}
+function bindSxHist(){
+  const f=$("#sxHistFrom");if(f)f.onchange=()=>{SXF.histFrom=f.value;render()};
+  const t=$("#sxHistTo");if(t)t.onchange=()=>{SXF.histTo=t.value;render()};
+}
+
 async function sxAssignHTML(){
   const[ul,ps]=await Promise.all([q(SB.from("user_lines").select("profile_id,line_id")),api.profiles()]);
   const ttIds=new Set(REF.positions.filter(p=>p.code==="TT-SX"||p.code.startsWith("TT-SX")).map(p=>p.id));const leaders=ps.filter(p=>p.status==="active"&&ttIds.has(p.position_id));
@@ -1984,6 +2049,8 @@ async function sxAssignHTML(){
 }
 
 function bindSx(){
+  document.querySelectorAll("[data-sxtab]").forEach(b=>b.onclick=()=>{SXF.tab=b.dataset.sxtab;render()});
+  if(SXF.tab==="hist")return bindSxHist();
   const today=ME.today||todayISO();const sh=n=>{const s=addDays(SXF.date,n);return s>today?today:s};
   const go=()=>{SXF.edit=null;SXF.del=null;SXF.unlockOpen=false;SXF.manualProd=false;SXF.lsxPick=null;render()};
   const dt=$("#sxDate");if(dt)dt.onchange=e=>{SXF.date=e.target.value||today;go()};

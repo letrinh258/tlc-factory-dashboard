@@ -1,0 +1,25 @@
+-- =====================================================================
+-- GĐ46 (22/11): Thêm tab "Lịch sử kết quả sản xuất" trong phân hệ Sản
+-- xuất (Form A) — nhóm theo NGÀY → TỔ (line) → LỆNH sản xuất, cùng cấu
+-- trúc với "Lịch sử lệnh SX" bên Kế hoạch (GĐ36), nhưng hiện SỐ LIỆU
+-- KẾT QUẢ thực tế (good_qty, NG, năng suất, dừng máy...) đã nhập ở Form A
+-- thay vì số kế hoạch.
+--
+-- Chỉ thay đổi FRONTEND (index.html):
+-- 1. SXTABS = [["day","Nhập báo cáo"],["hist","Lịch sử kết quả sản
+--    xuất"]] — thêm thanh tab ở đầu trang Sản xuất (giống KHTABS).
+-- 2. sxHistTabHTML(): lọc theo khoảng ngày (mặc định 7 ngày gần nhất),
+--    lấy production_reports + production_order_batches (kèm production_
+--    orders) trong khoảng, nhóm theo report_date → line_id → lệnh (theo
+--    order_batch_id, hoặc nếu NULL thì đối chiếu lại theo mã sản phẩm
+--    trùng khớp DUY NHẤT 1 lệnh cùng line/ngày — cùng nguyên tắc chống
+--    báo sai đã sửa ở GĐ45). Mỗi lệnh hiện bảng chi tiết từng mã: KH (từ
+--    lệnh), Đạt, NG thao tác, NG NCC, Người×giờ, NS thực/ĐM, Dừng máy,
+--    Ghi chú — cùng cột với bảng Form A hằng ngày.
+-- 3. Dòng không khớp lệnh nào gộp vào nhóm "Ngoài lệnh KHSX" (pill cảnh
+--    báo đỏ), để GĐNM/KHSX dễ thấy phần sản xuất ngoài kế hoạch.
+-- 4. bindSxHist(): xử lý đổi khoảng ngày; bindSx() thêm xử lý chuyển tab
+--    data-sxtab.
+--
+-- Không có thay đổi schema/DB.
+-- =====================================================================
