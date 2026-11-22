@@ -1,0 +1,50 @@
+-- =====================================================================
+-- GĐ45 (22/11): SỬA CẢNH BÁO SAI "Không có lệnh SX" (báo lỗi dù có lệnh
+-- thật) + backfill order_batch_id còn thiếu cho các dòng Form A có thể
+-- đối chiếu chắc chắn với đúng 1 lệnh.
+--
+-- Phát hiện khi anh Trình báo sai: SXHN07 ngày 18/11 có đủ lệnh KHSX
+-- (LSX11/26-154 TLC-TOV-62W-01 696pcs, LSX11/26-161 TLC-TOV-20W-01
+-- 180pcs) nhưng Form A vẫn báo "⚠ Không có lệnh SX" cho cả 3 dòng. Lý
+-- do: cảnh báo (thêm ở GĐ44) dựa vào cột order_batch_id — nhưng cột này
+-- NULL ở các dòng đó dù đúng mã khớp lệnh thật (rà soát toàn bộ DB:
+-- 222 dòng production_reports có order_batch_id NULL, trong đó 32 dòng
+-- thực ra khớp đúng mã với 1 lệnh KHSX cùng line/ngày — order_batch_id
+-- bị thiếu/không gắn, không phải do không có lệnh).
+--
+-- SỬA (frontend, index.html viewSx()):
+-- 1. Cảnh báo "Không có lệnh SX" nay đối chiếu theo MÃ SẢN PHẨM với toàn
+--    bộ lệnh (mọi loại) của line/ngày (lsxItemCodes), không chỉ dựa vào
+--    order_batch_id — đúng mã thì coi là CÓ lệnh dù dòng báo cáo cũ chưa
+--    gắn order_batch_id.
+--
+-- SỬA (dữ liệu, 1 lần, đã chạy):
+-- 2. Backfill order_batch_id cho 27/32 dòng orphan khớp CHẮC CHẮN (chỉ
+--    khớp đúng 1 lệnh — an toàn, không đoán). 5 dòng còn lại khớp ≥2 lệnh
+--    (trùng mã ở nhiều lệnh cùng line/ngày) nên KHÔNG tự gán — các dòng
+--    này vẫn hiện pill "mã bị trùng" ở bảng chi tiết, cần người dùng bấm
+--    Sửa để gắn đúng lệnh nếu cần. 190 dòng còn lại thực sự KHÔNG khớp
+--    lệnh nào (nhập ngoài lệnh KHSX thật) — vẫn cảnh báo đúng như cũ.
+--
+-- Lý do cần backfill (không chỉ sửa hiển thị): order_batch_id còn được
+-- dùng để tính "đã làm" (actual) trong lsx_defer_shortfall/
+-- lsx_auto_defer_day (GĐ41/42) — dòng không gắn order_batch_id dù có
+-- lệnh thật sẽ khiến hệ thống tính thiếu sản lượng đã làm, tự động
+-- chuyển THỪA phần "thiếu" sang lệnh ngày mai một cách sai lệch.
+-- =====================================================================
+
+-- Đã chạy (ghi lại để biết chính xác 27 dòng nào đã được gán):
+-- with matches as (
+--   select r.id as report_id, b.id as batch_id
+--   from production_reports r
+--   join production_order_batches b on b.line_id=r.line_id and b.order_date=r.report_date
+--   join production_orders o on o.batch_id=b.id and o.item_code=r.product_code
+--   where r.order_batch_id is null
+-- ),
+-- unambig as (
+--   select report_id, min(batch_id) as batch_id from matches group by report_id having count(*)=1
+-- )
+-- update production_reports r set order_batch_id = u.batch_id
+-- from unambig u where r.id = u.report_id;
+-- → 27 dòng được cập nhật (id: 43,50,53,54,60,72,133,150,153,164,193,194,
+--   212,214,217,218,219,220,221,222,225,231,232,234,236,237,239).
