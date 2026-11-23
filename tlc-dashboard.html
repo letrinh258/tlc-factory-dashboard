@@ -5,7 +5,7 @@
      ISO) — dùng để tự phát hiện trình duyệt đang chạy bản cache cũ và
      nhắc tải lại, tránh lỗi kiểu "KB/KPW is not defined" sau khi đổi tên
      biến ở các giai đoạn trước (GĐ34). -->
-<meta name="app-build" content="2026-11-23T01:36:40Z">
+<meta name="app-build" content="2026-11-23T03:28:15Z">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#20409A">
@@ -2680,7 +2680,7 @@ function bindBH(){
    GĐ34: BÁO CÁO ĐIỀU HÀNH TLC (thay toàn bộ Báo cáo KPI GĐ30–32)
    25 chỉ tiêu · 5 nhóm · Tuần / Tháng · số liệu từ báo cáo hằng ngày
    ============================================================ */
-const DH={mode:"week",date:null,charts:[],x:null,tgOpen:false,wkOpen:false};
+const DH={mode:"week",date:null,charts:[],x:null,tgOpen:false,wkOpen:false,issOpen:false};
 const DH_SECS=[[1,"Sản lượng & giao hàng"],[2,"Năng suất & con người"],[3,"Chất lượng"],[4,"Chi phí & tài sản"],[5,"Cung ứng & điều độ sản xuất"]];
 const DH_KEYS=["kh_sl","tp_kh","tp_kh_pl","tp_ngoai_pl","tp_ngoai","don_cham","don_cham_ck","ton_kh","sl_sx","sx_tong","std_h","gio_cong","dung_tb","dung_loi","dung_vt","dung_line","vt_dung","ld_bq","ld_nghi","tai_nan","iqc_kiem","iqc_kd","iqc_ton","pqc_loi","fpy_kiem","fpy_dat","bh_quahan","kk_ma","kk_lech","kk_gt","cp_yc","cp_dung","vt_thieu","phe_pham_ngay"];
 /* ô nhập trong Báo cáo hằng ngày (lưu vào daily_reports.metrics, khóa dh_*) */
@@ -2875,11 +2875,7 @@ async function viewKPIBC(){
      <div class="dh-charts">${DH_CH[sid].map((c,j)=>`<div class="dh-chart"><h4>${esc(c[0])}</h4><div class="dh-cv"><canvas id="dhc${sid}_${j}"></canvas></div></div>`).join("")}</div>
      ${sid===3?`<h3 class="dh-tt">Danh sách lỗi nghiêm trọng</h3><div class="tbl"><table><tr>${DH.mode==="month"?"<th>Tuần</th>":""}<th>Ngày</th><th>Mã lỗi</th><th>Mô tả lỗi</th><th>Công đoạn / Sản phẩm</th><th class="num">SL</th><th>Tái diễn</th></tr>
        ${X.defs.length?X.defs.map(d=>`<tr>${DH.mode==="month"?`<td>${dm(mondayOf(d.report_date))}</td>`:""}<td>${dmy(d.report_date)}</td><td>${esc(d.ma_loi||"")}</td><td>${esc(d.mo_ta)}</td><td>${esc(d.cong_doan||"")}</td><td class="num">${fmt(d.so_luong)}</td><td>${d.tai_dien?'<span class="pill p-bad">Có</span>':'<span class="pill p-none">Không</span>'}</td></tr>`).join(""):`<tr><td colspan="7" class="empty">Không có lỗi nghiêm trọng</td></tr>`}</table></div>`:""}
-     <h3 class="dh-tt">Vấn đề phát sinh & hành động khắc phục</h3>
-     <div class="tbl"><table><tr><th>Mã VĐ</th><th>Chỉ tiêu</th><th>Vấn đề phát sinh</th><th>Nguyên nhân</th><th>Bộ phận chủ trì</th><th>Hành động khắc phục</th><th>Người phụ trách</th><th>Hạn hoàn thành</th><th>Trạng thái</th></tr>
-      ${iss.length?iss.map(issRow).join(""):`<tr><td colspan="9" class="empty">Chưa ghi nhận vấn đề cho mục này</td></tr>`}</table></div>
     </div></section>`};
-  const noSec=X.iss.filter(i=>!i._sec);
   return `<style>${DH_CSS}</style>
   <h2 class="sec" style="margin-top:0">Báo cáo điều hành TLC – ${DH.mode==="week"?"Tuần":"Tháng"}</h2>
   <div class="fbar" role="region" aria-label="Bộ lọc"><span class="flabel">Kỳ</span>
@@ -2897,7 +2893,7 @@ async function viewKPIBC(){
   </div>
   <div class="dh-subm"><b>Báo cáo ngày đã nhập (${wd} ngày làm việc):</b> ${subm}</div>
   ${DH_SECS.map(sec).join("")}
-  ${noSec.length?`<section class="dh-sec"><div class="dh-sech"><h2>Vấn đề khác (chưa xếp nhóm)</h2></div><div class="dh-secb"><div class="tbl"><table><tr><th>Mã VĐ</th><th>Chỉ tiêu</th><th>Vấn đề phát sinh</th><th>Nguyên nhân</th><th>Bộ phận chủ trì</th><th>Hành động khắc phục</th><th>Người phụ trách</th><th>Hạn hoàn thành</th><th>Trạng thái</th></tr>${noSec.map(issRow).join("")}</table></div></div></section>`:""}
+  ${dhIssuesSection(X,isAdmin,issRow)}
   </div>
   <p class="small">Nguồn số liệu: Báo cáo hằng ngày của các vị trí, Lệnh SX, Kho TP (nhập kho), Form A Sản xuất (sản lượng, giờ công, dừng chuyền theo nguyên nhân), Form B QAC, Form E HCNS. ${DH.mode==="month"?"Báo cáo tháng: chỉ tiêu theo ngày tính lại từ dữ liệu ngày trong tháng; chỉ tiêu tuần (phế phẩm, VT vượt ĐM, chi phí ngoài KH) lấy theo tuần có ngày kết thúc trong tháng; “cuối kỳ” lấy ngày cuối có số liệu. ":""}Vấn đề lấy từ mục 2 Báo cáo hằng ngày; vấn đề chưa đóng tự chuyển sang kỳ sau. Sửa vấn đề ở Báo cáo hằng ngày hoặc màn Vấn đề và cải tiến.</p>`;
 }
@@ -2915,6 +2911,28 @@ function dhWeeklyForm(X){
    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;margin-top:8px">${f("phe_pham","Giá trị phế phẩm / hàng lỗi")}${f("vt_vuot","Giá trị VT xuất vượt định mức")}${f("cp_ngoai","Chi phí ngoài kế hoạch")}</div>
    <p class="small" style="margin:6px 0">Phế phẩm: nếu để trống, hệ thống lấy tổng "Giá trị hàng lỗi" trong báo cáo ngày của Kế toán giá thành.</p>
    <div style="display:flex;gap:8px;align-items:center"><button class="btn" type="button" id="dhWkSave">Lưu số tuần</button><span class="msg" id="dhWkMsg"></span></div></details>`;
+}
+function dhIssuesSection(X,isAdmin,issRow){
+  const iss=X.iss;
+  const posOpts=(X.submits||[]).filter(s=>!["vacant","off"].includes(s.status)).map(s=>[s.code,s.code+" – "+s.name]);
+  return `<section class="dh-sec" id="dhsIss"><div class="dh-sech"><h2>Vấn đề phát sinh & hành động khắc phục</h2><span class="small">Đang mở ${iss.filter(i=>!dhDone(i.status)).length} · Tổng ${iss.length}</span></div><div class="dh-secb">
+   <div class="tbl"><table><tr><th>Mã VĐ</th><th>Chỉ tiêu</th><th>Vấn đề phát sinh</th><th>Nguyên nhân</th><th>Bộ phận chủ trì</th><th>Hành động khắc phục</th><th>Người phụ trách</th><th>Hạn hoàn thành</th><th>Trạng thái</th></tr>
+    ${iss.length?iss.map(issRow).join(""):`<tr><td colspan="9" class="empty">Chưa ghi nhận vấn đề nào trong kỳ</td></tr>`}</table></div>
+   ${isAdmin?`<details class="card" style="margin-top:12px" ${DH.issOpen?"open":""} id="dhIss"><summary style="cursor:pointer;font-weight:600">Thêm vấn đề (tự nhập tay — tự động giao việc cho vị trí phụ trách)</summary>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;margin-top:8px">
+     <div class="fld" style="grid-column:1/-1"><label for="di_desc">Vấn đề phát sinh *</label><textarea id="di_desc" rows="2"></textarea></div>
+     <div class="fld" style="grid-column:span 2"><label for="di_kpi">Chỉ tiêu liên quan</label><select id="di_kpi">${opt(DH_IND.map(x=>[x.s,DH_SECS[x.sec-1][0]+". "+x.n]),"","— Không gắn chỉ tiêu —")}</select></div>
+     <div class="fld" style="grid-column:span 2"><label for="di_cause">Nguyên nhân</label><input id="di_cause"></div>
+     <div class="fld"><label for="di_to">Giao cho vị trí (Bộ phận chủ trì) *</label><select id="di_to">${opt(posOpts,"","— Chọn vị trí —")}</select></div>
+     <div class="fld"><label for="di_own">Người phụ trách (tên, nếu có)</label><input id="di_own"></div>
+     <div class="fld" style="grid-column:span 2"><label for="di_fix">Hành động khắc phục *</label><input id="di_fix"></div>
+     <div class="fld"><label for="di_due">Hạn hoàn thành *</label><input id="di_due" type="date"></div>
+     <div class="fld"><label for="di_st">Trạng thái</label><select id="di_st">${opt(L4.vdTT.filter(x=>x[0]!=="closed"),"open")}</select></div>
+    </div>
+    <p class="small" style="margin:6px 0">Khi lưu, hệ thống tự tạo 1 việc giao (Giao việc) cho đúng vị trí đã chọn, hạn và nội dung lấy theo "Hành động khắc phục".</p>
+    <div style="display:flex;gap:8px;margin-top:8px;align-items:center"><button class="btn" type="button" id="diSave">Thêm vấn đề & giao việc</button><span class="msg" id="diMsg" role="status"></span></div>
+   </details>`:""}
+  </div></section>`;
 }
 function bindKPIBC(){
   DH.charts.forEach(c=>{try{c.destroy()}catch(e){}});DH.charts=[];
@@ -2943,6 +2961,23 @@ function bindKPIBC(){
     if(bad)return setMsg("dhWkMsg","Ô đỏ: chỉ nhập số ≥ 0","bad");
     ws.disabled=true;setMsg("dhWkMsg","Đang lưu…");
     try{await q(SB.from("bcdh_weekly").upsert(rows,{onConflict:"week_start,key"}).select("key"));toast("Đã lưu số tuần");render()}catch(e){setMsg("dhWkMsg",sbErr(e),"bad");ws.disabled=false}};
+  const di=$("#dhIss");if(di)di.ontoggle=()=>{DH.issOpen=di.open};
+  const ds=$("#diSave");if(ds)ds.onclick=async()=>{
+    document.querySelectorAll("#dhIss .err").forEach(x=>x.classList.remove("err"));
+    const desc=$("#di_desc").value.trim(),cause=$("#di_cause").value.trim(),to=$("#di_to").value,own=$("#di_own").value.trim(),fix=$("#di_fix").value.trim(),due=$("#di_due").value,st=$("#di_st").value,kpi=$("#di_kpi").value;
+    const bad=[];if(desc.length<5)bad.push("di_desc");if(!to)bad.push("di_to");if(fix.length<3)bad.push("di_fix");if(!due)bad.push("di_due");
+    if(bad.length){markErr(bad);return setMsg("diMsg","Ô đỏ: mô tả vấn đề (≥5 ký tự), chọn vị trí phụ trách, hành động khắc phục, và hạn hoàn thành.","bad")}
+    ds.disabled=true;setMsg("diMsg","Đang lưu…");
+    try{
+      const tdy=ME.today||todayISO();const pos=REF.positions.find(p=>p.report_code===to);
+      const icode=await rpc("next_code",{p_prefix:"BCDH"+ddmm(tdy)+"-"});
+      const irows=await q(SB.from("issues").insert({code:icode,report_code:to,open_date:tdy,dept_id:pos?pos.dept_id:null,description:desc,severity:"yellow",initial_cause:cause||null,root_fix:fix,owner_name:own||null,due_date:due,status:st,kpi_stt:kpi?+kpi:null,created_by:ME.id}).select("id"));
+      const tcode=await rpc("next_code",{p_prefix:"GV"+ddmm(tdy)+"-"});
+      const trows=await q(SB.from("tasks").insert({code:tcode,kind:"GV",source:"Báo cáo điều hành",title:desc.slice(0,120),content:fix,objective:desc,report_code:to,dept_id:pos?pos.dept_id:null,assigner_id:ME.id,due_date:due,original_due:due,priority:"normal",scope:"person"}).select("id"));
+      const iid=irows&&irows[0]&&irows[0].id,tid=trows&&trows[0]&&trows[0].id;
+      if(iid&&tid)await q(SB.from("issues").update({task_id:tid}).eq("id",iid));
+      toast("Đã thêm vấn đề "+icode+" & giao việc "+tcode);DH.issOpen=false;render()
+    }catch(e){setMsg("diMsg",sbErr(e),"bad");ds.disabled=false}};
 }
 /* ---------- Xuất PDF: chụp từng khối, ngắt trang theo khối ---------- */
 async function dhPdf(){

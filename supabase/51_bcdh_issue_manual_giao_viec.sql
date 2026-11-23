@@ -1,0 +1,25 @@
+-- =====================================================================
+-- GĐ49 (23/11): Báo cáo điều hành — gộp "Vấn đề phát sinh & hành động
+-- khắc phục" thành 1 bảng DUY NHẤT ở CUỐI báo cáo (bỏ bảng riêng lặp lại
+-- ở từng mục lớn 1–5 + bỏ khối "Vấn đề khác chưa xếp nhóm"), và cho GĐNM
+-- TỰ NHẬP TAY trực tiếp trên trang Báo cáo điều hành (không chỉ lấy tự
+-- động từ mục 2 Báo cáo hằng ngày như trước).
+--
+-- Giữ NGUYÊN các trường nội dung hiện có của 1 "vấn đề" (vẫn dùng đúng
+-- bảng issues, đúng cột: description, initial_cause, dept_id/report_code,
+-- root_fix, owner_name, due_date, status, kpi_stt...) — chỉ thêm 1 điểm
+-- nhập tay mới ở cuối Báo cáo điều hành, dành cho GĐNM/trợ lý.
+--
+-- MỚI: khi nhập 1 vấn đề ở đây, hệ thống TỰ ĐỘNG "giao việc" (tạo 1 dòng
+-- trong bảng tasks, đúng cơ chế màn Giao việc) cho vị trí được chọn ở ô
+-- "Giao cho vị trí (Bộ phận chủ trì)" — nội dung việc = Hành động khắc
+-- phục, hạn = Hạn hoàn thành đã nhập. Cột issues.task_id lưu lại liên kết
+-- để truy vết (không hiển thị lên bảng, chỉ để tra cứu sau này nếu cần).
+--
+-- Chỉ thay đổi FRONTEND (index.html, viewKPIBC/sec/dhIssuesSection) +
+-- 1 cột mới trên bảng issues đã có sẵn (không đổi cấu trúc/chính sách gì
+-- khác — insert/update vẫn qua đúng policy issue_insert/issue_update,
+-- task_insert hiện có, vì người nhập luôn là GĐNM/is_admin()).
+-- =====================================================================
+
+alter table public.issues add column if not exists task_id bigint references public.tasks(id);
