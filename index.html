@@ -5,7 +5,7 @@
      ISO) — dùng để tự phát hiện trình duyệt đang chạy bản cache cũ và
      nhắc tải lại, tránh lỗi kiểu "KB/KPW is not defined" sau khi đổi tên
      biến ở các giai đoạn trước (GĐ34). -->
-<meta name="app-build" content="2026-11-22T11:52:38Z">
+<meta name="app-build" content="2026-11-23T01:36:40Z">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#20409A">
@@ -1980,6 +1980,7 @@ async function viewSx(){
 }
 
 /* ---------- GĐ46 (22/11): Lịch sử KẾT QUẢ sản xuất — nhóm theo NGÀY → TỔ (line) → LỆNH ---------- */
+const SXH={_x:null}; // cache dữ liệu lần render gần nhất, để xuất Excel không phải truy vấn lại
 async function sxHistTabHTML(){
   const C=await sxCache();
   const to=SXF.histTo=SXF.histTo||todayISO();
@@ -2002,6 +2003,7 @@ async function sxHistTabHTML(){
     (ln[gk]=ln[gk]||{code:b?b.code:null,kind:b?b.kind:null,qtyMap:b?b.qtyMap:{},rows:[]}).rows.push(r);
   });
   const dates=Object.keys(byDate).sort((a,b)=>b<a?-1:b>a?1:0);
+  SXH._x={byDate,dates,C,from,to};
   const sumG=rows=>rows.reduce((a,r)=>a+(+r.good_qty||0),0);
   const grpCard=g=>{
     const rows=g.rows.slice().sort((x,y)=>x.product_code<y.product_code?-1:x.product_code>y.product_code?1:0);
@@ -2027,6 +2029,7 @@ async function sxHistTabHTML(){
   <div class="card" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
    <div class="fld" style="max-width:180px"><label for="sxHistFrom">Từ ngày</label><input id="sxHistFrom" type="date" value="${from}" max="${to}"></div>
    <div class="fld" style="max-width:180px"><label for="sxHistTo">Đến ngày</label><input id="sxHistTo" type="date" value="${to}" max="${todayISO()}"></div>
+   <button class="btn ghost" type="button" id="sxHistExportBtn" ${dates.length?"":"disabled"}>⬇ Xuất Excel</button>
   </div>
   <h2 class="sec">${fmt(dates.length)} ngày có báo cáo</h2>
   ${dates.length?dates.map(d=>{const lns=Object.keys(byDate[d]).sort((a,b)=>a-b);
@@ -2036,6 +2039,49 @@ async function sxHistTabHTML(){
 function bindSxHist(){
   const f=$("#sxHistFrom");if(f)f.onchange=()=>{SXF.histFrom=f.value;render()};
   const t=$("#sxHistTo");if(t)t.onchange=()=>{SXF.histTo=t.value;render()};
+  const ex=$("#sxHistExportBtn");if(ex)ex.onclick=()=>{sxHistExport();toast("Đã xuất Excel")};
+}
+// GĐ48 (23/11): Xuất Excel lịch sử KẾT QUẢ sản xuất — 1 dòng/mã sản phẩm
+// trong 1 lệnh của 1 ngày, đủ cột để lọc/pivot lại trong Excel. Dùng lại
+// dữ liệu vừa render (SXH._x), không truy vấn lại DB.
+function sxHistExport(){
+  const x=SXH._x;if(!x||!x.dates.length)return;
+  const{byDate,dates,C,from,to}=x;
+  const rows=[];
+  dates.slice().reverse().forEach(d=>{
+    Object.keys(byDate[d]).sort((a,b)=>a-b).forEach(l=>{
+      Object.values(byDate[d][l]).sort((a,b)=>(a.code||"￿")<(b.code||"￿")?-1:1).forEach(g=>{
+        g.rows.slice().sort((a,b)=>a.product_code<b.product_code?-1:a.product_code>b.product_code?1:0).forEach(r=>{
+          const p=C.byCode[r.product_code]||{};
+          const kh=g.qtyMap[r.product_code];
+          rows.push({
+            "Ngày":dmyS(d),
+            "Line":lineOptsName(+l),
+            "Mã lệnh":g.code||"Ngoài lệnh KHSX",
+            "Loại lệnh":g.code?(g.kind==="overflow"?"Tranh thủ ngoài KH":"Kế hoạch"):"Không có lệnh SX",
+            "Mã SP":r.product_code,
+            "Tên SP":p.name||"",
+            "KH":kh!=null?kh:"",
+            "Đạt":+r.good_qty||0,
+            "% KH":kh?Math.round((+r.good_qty||0)/kh*1000)/10:"",
+            "NG thao tác":+r.ng_op||0,
+            "Mô tả NG thao tác":r.defect_op||"",
+            "NG NCC":+r.ng_sup||0,
+            "Mô tả NG NCC":r.defect_sup||"",
+            "Số người":r.headcount||"",
+            "Giờ công":(+r.hours||0)+(+r.ot_hours||0),
+            "Dừng máy (phút)":+r.downtime_min||0,
+            "Ghi chú":r.note||""
+          });
+        });
+      });
+    });
+  });
+  const wb=XLSX.utils.book_new();
+  const ws=XLSX.utils.json_to_sheet(rows);
+  ws["!cols"]=[12,16,16,18,16,30,8,8,8,12,24,10,20,10,10,14,30].map(w=>({wch:w}));
+  XLSX.utils.book_append_sheet(wb,ws,"Lich su SX");
+  XLSX.writeFile(wb,`LichSuKetQuaSanXuat_${from}_${to}_${yymmdd(todayISO())}.xlsx`);
 }
 
 async function sxAssignHTML(){
