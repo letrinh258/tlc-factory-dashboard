@@ -1,0 +1,12 @@
+-- =====================================================================
+-- GĐ51 (23/11): Thêm nút "Xuất Excel" ở tab "Lịch sử lệnh SX" (phân hệ
+-- Kế hoạch) — xuất đúng khoảng ngày đang lọc (Từ ngày/Đến ngày) ra file
+-- .xlsx, 1 dòng/mã sản phẩm/lệnh/ngày (Ngày, Line, Mã lệnh, Loại lệnh,
+-- Mã SP, Tên SP, SL kế hoạch) — cùng kiểu với nút Xuất Excel đã làm cho
+-- tab "Lịch sử kết quả sản xuất" bên Sản xuất (GĐ48).
+--
+-- Dùng lại dữ liệu vừa render (KHF._histBatches/_histC), không truy vấn
+-- lại DB. Dùng lại thư viện SheetJS (XLSX) đã có sẵn trong trang.
+--
+-- Chỉ thay đổi FRONTEND (index.html). Không có thay đổi DB.
+-- =====================================================================

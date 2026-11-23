@@ -5,7 +5,7 @@
      ISO) — dùng để tự phát hiện trình duyệt đang chạy bản cache cũ và
      nhắc tải lại, tránh lỗi kiểu "KB/KPW is not defined" sau khi đổi tên
      biến ở các giai đoạn trước (GĐ34). -->
-<meta name="app-build" content="2026-11-23T03:36:08Z">
+<meta name="app-build" content="2026-11-23T06:40:42Z">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#20409A">
@@ -3372,7 +3372,7 @@ async function lsxHistTabHTML(){
   const to=KHF.histTo=KHF.histTo||todayISO();
   const from=KHF.histFrom=KHF.histFrom||addDays(to,-6);
   const batches=await q(SB.from("production_order_batches").select("*,production_orders(*)").gte("order_date",from).lte("order_date",to).order("order_date",{ascending:false}).order("line_id").order("code"));
-  KHF._histBatches=batches;
+  KHF._histBatches=batches;KHF._histC=C;KHF._histRange={from,to};
   const byDate={};batches.forEach(b=>{((byDate[b.order_date]=byDate[b.order_date]||{})[b.line_id]=byDate[b.order_date][b.line_id]||[]).push(b)});
   const dates=Object.keys(byDate).sort((a,b)=>b<a?-1:b>a?1:0);
   const totalItems=batches.reduce((a,b)=>a+(b.production_orders||[]).length,0);
@@ -3390,15 +3390,40 @@ async function lsxHistTabHTML(){
   <div class="card" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
    <div class="fld" style="max-width:180px"><label for="histFrom">Từ ngày</label><input id="histFrom" type="date" value="${from}" max="${to}"></div>
    <div class="fld" style="max-width:180px"><label for="histTo">Đến ngày</label><input id="histTo" type="date" value="${to}"></div>
+   <button class="btn ghost" type="button" id="lsxHistExportBtn" ${batches.length?"":"disabled"}>⬇ Xuất Excel</button>
   </div>
   <h2 class="sec">${fmt(dates.length)} ngày có lệnh · ${fmt(batches.length)} lệnh · ${fmt(totalItems)} mã</h2>
   ${dates.length?dates.map(d=>{const lines=Object.keys(byDate[d]).sort((a,b)=>a-b);const all=lines.flatMap(l=>byDate[d][l]);
     return `<div style="margin-bottom:16px"><h3 style="margin:0 0 6px">${dmyS(d)} <small>${fmt(lines.length)} tổ · ${fmt(all.length)} lệnh · ${fmt(cntI(all))} mã · tổng KH ${fmt(sumQ(all))}</small></h3>
     ${lines.map(l=>lineCard(l,byDate[d][l])).join("")}</div>`}).join(""):`<div class="empty">Không có lệnh sản xuất nào trong khoảng ngày này</div>`}`;
 }
+function lsxHistExport(){
+  const batches=KHF._histBatches,C=KHF._histC,rg=KHF._histRange;if(!batches||!batches.length)return;
+  const rows=[];
+  batches.slice().sort((a,b)=>a.order_date<b.order_date?1:a.order_date>b.order_date?-1:a.line_id-b.line_id).forEach(b=>{
+    const its=(b.production_orders||[]).slice().sort((x,y)=>x.item_code<y.item_code?-1:1);
+    (its.length?its:[{}]).forEach(it=>{
+      rows.push({
+        "Ngày":dmyS(b.order_date),
+        "Line":lineOptsName(+b.line_id),
+        "Mã lệnh":b.code,
+        "Loại lệnh":b.kind==="overflow"?"Tranh thủ":"Kế hoạch",
+        "Mã SP":it.item_code||"",
+        "Tên SP":(C.byCode[it.item_code]||{}).name||"",
+        "SL kế hoạch":it.qty_planned!=null?+it.qty_planned:""
+      });
+    });
+  });
+  const wb=XLSX.utils.book_new();
+  const ws=XLSX.utils.json_to_sheet(rows);
+  ws["!cols"]=[12,16,16,14,16,30,12].map(w=>({wch:w}));
+  XLSX.utils.book_append_sheet(wb,ws,"Lich su lenh SX");
+  XLSX.writeFile(wb,`LichSuLenhSX_${rg.from}_${rg.to}_${yymmdd(todayISO())}.xlsx`);
+}
 function bindLsxHist(){
   const f=$("#histFrom");if(f)f.onchange=()=>{KHF.histFrom=f.value;render()};
   const t=$("#histTo");if(t)t.onchange=()=>{KHF.histTo=t.value;render()};
+  const ex=$("#lsxHistExportBtn");if(ex)ex.onclick=()=>{lsxHistExport();toast("Đã xuất Excel")};
   document.querySelectorAll("[data-lsxedit]").forEach(b=>b.onclick=()=>{KHF.editBatch=+b.dataset.lsxedit;render()});
   document.querySelectorAll("[data-lsxdel]").forEach(btn=>btn.onclick=async()=>{
     if(!confirm("Xóa lệnh này? Không thể hoàn tác."))return;btn.disabled=true;
