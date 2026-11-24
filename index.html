@@ -5,7 +5,7 @@
      ISO) — dùng để tự phát hiện trình duyệt đang chạy bản cache cũ và
      nhắc tải lại, tránh lỗi kiểu "KB/KPW is not defined" sau khi đổi tên
      biến ở các giai đoạn trước (GĐ34). -->
-<meta name="app-build" content="2026-11-24T15:52:31Z">
+<meta name="app-build" content="2026-11-24T16:03:48Z">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#20409A">
@@ -907,7 +907,7 @@ const api={
     if(data){const r=await SB.from("user_roles").select("module").eq("profile_id",data.id).eq("module","overview").eq("can_view",true);data.overview=!!(r.data&&r.data.length)}
     return data},
   async ref(){if(RUN==="DEMO")return{depts:DEMO_DB.depts,positions:DEMO_DB.positions};
-    const[a,b]=await Promise.all([SB.from("departments").select("id,code,name,sort").order("sort"),SB.from("positions").select("id,code,name,dept_id,kind,report_code,status,status_from,status_to,acting_profile_id").order("dept_id").order("id")]);
+    const[a,b]=await Promise.all([SB.from("departments").select("id,code,name,sort").order("sort"),SB.from("positions").select("id,code,name,dept_id,kind,report_code,status,status_from,status_to,acting_profile_id,active").order("dept_id").order("id")]);
     if(a.error)throw a.error;if(b.error)throw b.error;return{depts:a.data,positions:b.data}},
   async profiles(){if(RUN==="DEMO")return DEMO_DB.profiles.slice();
     const{data,error}=await SB.from("profiles").select("id,username,full_name,dept_id,position_id,manager_id,role,status,must_change_pw,created_at").order("dept_id").order("full_name");if(error)throw error;return data},

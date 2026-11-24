@@ -1,0 +1,16 @@
+-- =====================================================================
+-- GĐ56 (24/11): Sửa lỗi dropdown "Giao cho vị trí" (Giao việc + mục
+-- "Thêm vấn đề" cuối Báo cáo điều hành, thêm ở GĐ54) không hiện danh
+-- sách vị trí nào cả.
+--
+-- Nguyên nhân: hàm api.ref() (tải danh mục phòng ban/vị trí dùng chung
+-- toàn app) chỉ select các cột
+-- "id,code,name,dept_id,kind,report_code,status,status_from,status_to,
+--  acting_profile_id" — THIẾU cột "active". assignablePositions() lọc
+-- theo "p.active" nên p.active luôn undefined → lọc rỗng toàn bộ 29 vị
+-- trí, dropdown trống.
+--
+-- SỬA (chỉ frontend, index.html): thêm "active" vào select() của
+-- api.ref(). Không có thay đổi DB (cột active đã có sẵn trong bảng
+-- positions từ trước).
+-- =====================================================================
