@@ -1,0 +1,39 @@
+-- =====================================================================
+-- GĐ54 (24/11): Dropdown "Giao cho vị trí" (Giao việc + mục "Thêm vấn đề"
+-- cuối Báo cáo điều hành) trước đây CHỈ liệt kê các vị trí có report_code
+-- (~14-15 vị trí báo cáo hằng ngày) — thiếu PGĐ nhà máy và nhiều vị trí
+-- thật khác (Trưởng kho, Tổ trưởng, các nhân viên không báo cáo ngày...).
+-- Nay hiển thị ĐẦY ĐỦ toàn bộ vị trí đang hoạt động, nhóm theo bộ phận.
+--
+-- DB: KHÔNG có migration mới. tasks.owner_id và issues.owner_id đã có sẵn
+-- trong supabase/01_tlc_schema.sql, và RLS can_see_task() (02_gd4.sql) đã
+-- hỗ trợ sẵn điều kiện "t.owner_id = auth.uid()" — chỉ cần frontend dùng
+-- đến, không cần sửa schema/RLS.
+--
+-- SỬA (chỉ frontend, index.html):
+-- 1. Thêm 3 hàm dùng chung: assignablePositions() (lọc vị trí active, bỏ
+--    vị trí trống/vacant/off và 2 tài khoản demo "KHACH-..."),
+--    posSelectHTML() (render <select> nhóm theo bộ phận bằng <optgroup>),
+--    posHolder(posId) (tìm người đang giữ 1 vị trí, qua api.profiles()).
+-- 2. viewTasks() (Giao việc): #t_to dùng posSelectHTML(assignablePositions
+--    lọc theo quyền duyệt bộ phận của người giao). Khi lưu, resolve vị trí
+--    theo id (không theo report_code), set thêm owner_id = người đang giữ
+--    vị trí đó (nếu có) bên cạnh report_code/dept_id (có thể null nếu vị
+--    trí không có report_code). Cột hiển thị: nếu còn report_code hiện
+--    mã, kèm thêm tên người phụ trách / tên bộ phận bên dưới.
+-- 3. dhIssuesSection() (mục "Thêm vấn đề" cuối Báo cáo điều hành): #di_to
+--    cũng đổi sang posSelectHTML(assignablePositions()) thay vì chỉ lấy
+--    từ X.submits (danh sách vị trí có báo cáo ngày trong kỳ xem).
+-- 4. diSave: cùng cách resolve vị trí theo id + owner_id như trên, áp
+--    dụng cho cả bản ghi issues và tasks (Giao việc) được tạo cùng lúc.
+-- 5. viewMineLive() ("Công việc của tôi"): trước đây CHỈ lọc tasks theo
+--    report_code (my_report_codes) — người giữ vị trí không có
+--    report_code (vd PGĐ nhà máy) sẽ KHÔNG thấy việc được giao cho mình
+--    dù đã set owner_id. Sửa truy vấn dùng .or() để lấy cả
+--    report_code.in.(...) LẪN owner_id.eq.<mình>, bỏ điều kiện chỉ chạy
+--    khi có report_code.
+--
+-- Kết quả: có thể giao việc / giao vấn đề trực tiếp cho bất kỳ vị trí nào
+-- từ PGĐ nhà máy trở xuống, kể cả vị trí không có báo cáo ngày riêng;
+-- người được giao vẫn thấy việc của mình ở "Công việc của tôi".
+-- =====================================================================
