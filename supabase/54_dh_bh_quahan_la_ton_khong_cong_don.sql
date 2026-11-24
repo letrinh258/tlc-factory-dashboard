@@ -1,0 +1,20 @@
+-- =====================================================================
+-- GĐ52 (24/11): Sửa biểu đồ "Ca bảo hành tại nhà quá cam kết" (Báo cáo
+-- điều hành, mục 3) — cột "Tổng tuần"/"Tổng tháng" đang CỘNG DỒN tất cả
+-- các ngày trong kỳ (vd 17+24+18+16+12=87), trong khi chỉ tiêu này là
+-- SỐ TỒN cuối kỳ (BHN báo mỗi ngày là số ca ĐANG tồn, không phải số ca
+-- phát sinh thêm) — đúng ra cột tổng phải lấy đúng số của NGÀY CUỐI
+-- CÙNG có báo cáo trong kỳ (vd tuần 16-21/11 không có báo cáo ngày 21/11
+-- thì lấy đúng số của 20/11 = 12), giống hệt cách thẻ chỉ tiêu (KPI tile)
+-- đã tính đúng từ trước (dhAgg().v[21] = last("bh_quahan")).
+--
+-- Nguyên nhân: biểu đồ dùng dhQ("bh_quahan") (hàm cộng tổng S[key]) cho
+-- CẢ cột ngày lẫn cột tổng kỳ — từng ngày không sai (1 ngày = chính nó)
+-- nhưng cột tổng kỳ bị cộng dồn sai. Thẻ KPI (DH_IND s:21) vẫn đúng vì
+-- dùng riêng công thức last().
+--
+-- SỬA (chỉ frontend, index.html, DH_CH mục 3): đổi series "Ca quá hạn"
+-- từ f:dhQ("bh_quahan") sang f:A=>A.v[21] — dùng lại ĐÚNG công thức
+-- last() đã có sẵn trong dhAgg(), áp dụng nhất quán cho cả cột ngày và
+-- cột tổng kỳ. Không đổi dữ liệu nguồn, không đổi DB.
+-- =====================================================================
