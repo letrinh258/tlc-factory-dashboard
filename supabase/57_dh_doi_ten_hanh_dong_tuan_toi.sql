@@ -1,0 +1,13 @@
+-- =====================================================================
+-- GĐ55 (24/11): Đổi tiêu đề mục vấn đề/hành động cuối Báo cáo điều hành
+-- từ "Vấn đề phát sinh & hành động khắc phục" thành "Hành động tuần tới".
+--
+-- Lưu ý: dữ liệu KHÔNG bị mất — 4 vấn đề GĐNM đã nhập tay trong ngày
+-- 24/11 (mã BCDH2411-01..04) vẫn còn nguyên trong bảng issues với
+-- source='bcdh', sẽ hiện đủ khi xem đúng kỳ (tuần/tháng) có chứa ngày
+-- mở vấn đề. Ảnh chụp màn hình trống là do đang xem một kỳ khác (trước
+-- khi nhập, hoặc đã bấm chuyển kỳ trước đó) — không phải lỗi mất dữ liệu.
+--
+-- SỬA (chỉ frontend, index.html): đổi <h2> của #dhsIss. Không đổi logic
+-- lọc/hiển thị, không có thay đổi DB.
+-- =====================================================================
