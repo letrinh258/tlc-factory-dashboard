@@ -1,0 +1,19 @@
+-- =====================================================================
+-- GĐ53 (24/11): Bỏ thẻ KPI "Số mã VT thiếu ảnh hưởng SX" (mục 5 Báo cáo
+-- điều hành) — chỉ tiêu này luôn "Chưa có SL" (KHVT không nhập), và
+-- series "Mã VT thiếu (lượt)" trong biểu đồ bên dưới cũng toàn 0, không
+-- phản ánh gì thực tế → bỏ theo yêu cầu, chỉ giữ lại "Số lần dừng chuyền
+-- do thiếu VT" (có dữ liệu thật từ Form A, nguyên nhân dừng = Thiếu vật
+-- tư) và "Tỷ lệ cấp phát VT đúng KH".
+--
+-- SỬA (chỉ frontend, index.html):
+-- 1. Bỏ chỉ tiêu s:27 khỏi DH_IND (mục 5 còn lại 2 thẻ: Số lần dừng
+--    chuyền do thiếu VT, Tỷ lệ cấp phát VT đúng KH).
+-- 2. Biểu đồ mục 5 đầu tiên đổi tên "Mã VT thiếu & lần dừng chuyền do
+--    thiếu VT" → "Số lần dừng chuyền do thiếu VT", bỏ series "Mã VT
+--    thiếu (lượt)", chỉ còn "Lần dừng chuyền".
+--
+-- Không xóa cột dữ liệu/ô nhập "Mã vật tư thiếu ảnh hưởng sản xuất"
+-- (dh_vt_thieu) của KHVT trong Báo cáo hằng ngày — chỉ ẩn khỏi Báo cáo
+-- điều hành, không có thay đổi DB.
+-- =====================================================================
