@@ -1,0 +1,21 @@
+-- =====================================================================
+-- GĐ57 (25/11): Sửa lỗi biểu đồ "Số lô IQC – Kiểm tra / Lỗi / % không
+-- đạt" (Báo cáo điều hành, mục 3) luôn trống dù QAC đã nhập đủ số liệu
+-- hằng ngày.
+--
+-- Nguyên nhân: hàm bcdh_data() lấy "Số lô IQC kiểm tra"/"Số lô IQC lỗi"
+-- từ bảng phiếu kiểm chi tiết Form B (quality_reports, stage='IQC') —
+-- bảng này KHÔNG được QAC dùng để ghi nhận IQC (chỉ dùng cho PQC) —
+-- thay vì lấy từ chính 2 ô "Số lô IQC kiểm tra (lô)" / "Số lô IQC lỗi
+-- (không đạt) (lô)" mà QAC nhập tay mỗi ngày ở mục "Số liệu Báo cáo
+-- điều hành" (daily_reports.metrics, khóa QAC.dh_iqc_kiem/QAC.dh_iqc_kd)
+-- — giống hệt ô "Lô IQC tồn chưa kiểm" (QAC.dh_iqc_ton) vốn đã đúng từ
+-- trước. Hai nguồn lệch nhau nên nhập đủ vẫn không hiện.
+--
+-- SỬA: đổi 2 cột iqc_kiem/iqc_kd trong rows CTE của bcdh_data() sang
+-- lấy từ (m.j->>'QAC.dh_iqc_kiem')::numeric / (m.j->>'QAC.dh_iqc_kd')
+-- ::numeric — nhất quán với QAC.dh_iqc_ton. CTE qc/qcd giữ lại chỉ để
+-- tính pqc_kiem/pqc_loi (từ Form B, vẫn đúng vì QAC có dùng Form B cho
+-- PQC). Áp dụng trực tiếp qua Supabase MCP (migration
+-- gd57_fix_bcdh_iqc_tu_metrics) — không có thay đổi frontend.
+-- =====================================================================

@@ -1,0 +1,29 @@
+-- =====================================================================
+-- GĐ58 (25/11): Thêm nút "Lỗi linh kiện" ở Kế hoạch → tab "Lệnh sản
+-- xuất" (bảng mã hàng của từng lệnh ngày).
+--
+-- Mục đích: khi biết TRƯỚC khi sản xuất là linh kiện chỉ đủ cho MỘT
+-- PHẦN kế hoạch (vd lệnh 01 lên KH 1.000pcs nhưng linh kiện chỉ đủ
+-- 500pcs OK) — bấm "Lỗi linh kiện", nhập 500, hệ thống đổi luôn kế
+-- hoạch của lệnh đó thành 500pcs. Phần 500pcs còn lại coi như không
+-- còn (không chuyển sang ngày mai, không chấm thiếu hàng) — % đạt kế
+-- hoạch tính theo đúng 500pcs mới.
+--
+-- DB: KHÔNG có migration mới. Dùng lại đúng RPC lsx_pause_order() đã
+-- có sẵn từ GĐ47 — hàm này vốn đã nhận tham số tùy chọn p_qty_actual:
+-- khi p_reason='defect' và truyền p_qty_actual=<số>, hàm SET THẲNG
+-- qty_planned = p_qty_actual (bỏ qua số đã sản xuất thực tế), đúng cơ
+-- chế cần dùng — chỉ là trước đây frontend chưa có chỗ nhập số này
+-- cho tình huống "biết trước khi sản xuất", chỉ dùng được qua "Tạm
+-- dừng lệnh" (vốn mặc định lấy SL đã làm thực tế).
+--
+-- SỬA (chỉ frontend, index.html):
+-- 1. Thêm KHF.cdItem (item đang mở form "Lỗi linh kiện").
+-- 2. Thêm lsxCompDefectFormHTML(r) — form 1 ô nhập "SL linh kiện OK".
+-- 3. Thêm bindLsxCompDefect() — gọi lsx_pause_order(p_reason:'defect',
+--    p_qty_actual:<số nhập>, p_note:'Lỗi linh kiện — chỉ đủ N linh
+--    kiện OK').
+-- 4. Thêm nút "Lỗi linh kiện" cạnh "Tạm dừng lệnh" / "Chuyển thiếu
+--    sang ngày mai" ở bảng mã hàng (chỉ hiện khi còn remain > 0, cùng
+--    điều kiện quyền canKind như các nút khác).
+-- =====================================================================
