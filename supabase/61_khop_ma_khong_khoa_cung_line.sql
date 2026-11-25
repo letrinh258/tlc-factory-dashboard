@@ -1,0 +1,30 @@
+-- =====================================================================
+-- GĐ59 (25/11): Lệnh sản xuất (KHSX lập) khóa cứng theo 1 line — nhưng
+-- THỰC TẾ sản xuất lại làm ở line khác (đổi line gấp, mượn line, line
+-- rảnh làm hộ...). Trước đây Form A (Sản xuất) chỉ đối chiếu "có lệnh
+-- sản xuất cho mã này không" và "SL kế hoạch (KH) của mã này" trong
+-- đúng LỆNH CỦA LINE ĐANG XEM — nên nếu KHSX lập KH cho Line 01 nhưng
+-- Line 02 mới là line thực tế sản xuất, Form A của Line 02 sẽ:
+--   • Hiện cảnh báo sai "⚠ Không có lệnh SX" dù lệnh vẫn tồn tại (chỉ
+--     là của line khác).
+--   • Cột "SL KH" của mã đó hiện "—" (không tính), nên không tính được
+--     % đạt KH cho dòng báo cáo đó.
+--
+-- Theo yêu cầu: mã hàng KHÔNG bị khóa cứng vào đúng line đã lập kế
+-- hoạch — line nào THỰC TẾ làm thì mã đó vẫn được coi là CÓ lệnh sản
+-- xuất, SL KH lấy đúng theo lệnh đã lập (dù lệnh đó thuộc line khác).
+--
+-- SỬA (chỉ frontend, index.html, viewSx()): thêm truy vấn
+-- lsxBatchesDate (lấy TẤT CẢ lệnh sản xuất của NGÀY đang xem, không lọc
+-- theo line_id). khMap (SL kế hoạch từng mã) và lsxItemCodes (tập mã có
+-- lệnh — dùng để quyết định hiện cảnh báo "Không có lệnh SX") nay tính
+-- từ lsxBatchesDate thay vì lsxBatchesAll (vẫn giữ lsxBatchesAll lọc
+-- theo line — chỉ dùng để hiển thị thẻ "Lệnh sản xuất hôm nay của line
+-- này" và bảng chọn lệnh/mã khi thêm dòng báo cáo mới, không đổi).
+--
+-- Không có thay đổi DB. Lưu ý: bảng tổng hợp theo LINE ở đầu trang
+-- Form A ("SL KH" theo từng line, từ RPC prod_line_status) vẫn tính
+-- theo đúng line đã lập kế hoạch như cũ — đây là tổng KH được giao cho
+-- line đó, khác với việc đối chiếu "mã này có lệnh hay không" ở bảng
+-- chi tiết từng mã đã sửa ở trên.
+-- =====================================================================
