@@ -5,7 +5,7 @@
      ISO) — dùng để tự phát hiện trình duyệt đang chạy bản cache cũ và
      nhắc tải lại, tránh lỗi kiểu "KB/KPW is not defined" sau khi đổi tên
      biến ở các giai đoạn trước (GĐ34). -->
-<meta name="app-build" content="2026-11-26T07:15:37Z">
+<meta name="app-build" content="2026-11-26T09:23:34Z">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#20409A">
@@ -3109,7 +3109,7 @@ function bindDhDaily(C,D,mv){
 
 /* ---------- KẾ HOẠCH – LỆNH SẢN XUẤT + THEO DÕI MUA HÀNG (PO) ---------- */
 const KHF={date:null,open:false,view:null,viewRows:null,tab:"lsx",pauseItem:null,cdItem:null};
-const LSX={date:null,open:false};
+const LSX={date:null,open:false,q:""};
 // GĐ47 (22/11): "Kéo lệnh từ line khác" — line rảnh kéo nguyên 1 lệnh
 // CHƯA sản xuất của line khác (cùng ngày) về làm, giữ nguyên mã lệnh.
 const PULLX={open:false,toLine:null};
@@ -3320,9 +3320,17 @@ async function lsxTabHTML(){
   const batchIds=batches.map(b=>b.id);
   const prRows=batchIds.length?await q(SB.from("production_reports").select("order_batch_id,product_code,good_qty").in("order_batch_id",batchIds)):[];
   const actualMap={};prRows.forEach(r=>{const k=r.order_batch_id+"|"+r.product_code;actualMap[k]=(actualMap[k]||0)+(+r.good_qty||0)});
+  // GĐ65 (26/11): tìm theo đầu lệnh (mã lệnh) — lọc danh sách lệnh của
+  // ngày đang xem theo chuỗi gõ vào (không phân biệt hoa/thường, so khớp
+  // 1 phần — gõ "155" tìm ra "LSX11/26-155").
+  const lsxQv=(LSX.q||"").trim().toUpperCase();
+  const lsxBatchesShown=lsxQv?batches.filter(b=>(b.code||"").toUpperCase().includes(lsxQv)):batches;
   return `<p class="small" style="margin:0 0 10px">Mỗi lần dán chỉ <b>THÊM MỚI hoặc CẬP NHẬT</b> đúng các lệnh có trong lượt dán — các lệnh đã lưu khác giữ nguyên (dán từng lệnh một cũng không mất lệnh trước). Muốn bỏ 1 lệnh: bấm Xóa ở lệnh đó. <b>Mã lệnh do anh tự điền</b> (lấy theo số lệnh thật của Bravo, hoặc tự đặt) — hệ thống KHÔNG tự sinh mã. Nhiều dòng cùng 1 Mã lệnh sẽ gộp vào CÙNG 1 lệnh đó. Tổ trưởng sẽ CHỌN LỆNH này khi nhập Form A (Sản xuất), mã hàng + SL kế hoạch lấy thẳng từ đây.</p>
   <div class="card">
-   <div class="fld" style="max-width:220px"><label for="lsxDate">Ngày sản xuất</label><input id="lsxDate" type="date" value="${D}"></div>
+   <div style="display:flex;gap:10px;flex-wrap:wrap">
+    <div class="fld" style="max-width:220px"><label for="lsxDate">Ngày sản xuất</label><input id="lsxDate" type="date" value="${D}"></div>
+    <div class="fld" style="flex:1;min-width:200px;max-width:280px"><label for="lsxQ">Tìm theo đầu lệnh</label><input id="lsxQ" type="search" placeholder="vd: LSX11/26-2 hoặc 155" value="${esc(LSX.q||"")}"></div>
+   </div>
    <p class="small" style="margin:8px 0">Dán THẲNG nguyên 6 cột từ file Bravo (kể cả dòng tổng phụ, dòng tiêu đề — hệ thống tự bỏ qua): <b>Tên chuyền</b> (phải đúng tên line ở Cấu hình → Line & quy tắc) · <b>Số lệnh sản xuất</b> · <b>Vật tư</b> (phải có trong danh mục) · Tên vật tư (chỉ để đối chiếu, không lưu) · Đvt (không lưu) · <b>Số lượng</b>.</p>
    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn ghost" type="button" id="lsxBtn">${LSX.open?"Đóng":batches.length?"Dán lại / cập nhật":"Dán lệnh sản xuất"}</button>
    ${batches.length&&ME.role==="admin"?`<button class="btn ghost" type="button" id="lsxDelBtn" style="color:var(--bad)">Xóa lệnh SX ngày này</button>`:""}</div>
@@ -3331,8 +3339,8 @@ Dây chuyền SXHN 01	LSX11/26-018(2026-11-03)	TLC-BML-40W-01	Đèn led búp Max
    <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap"><button class="btn" type="button" id="lsxGo">Lưu lệnh SX ngày ${dmyS(D)}</button><span class="msg" id="lsxMsg"></span></div></div>`:""}
   </div>
   ${lsxCanEdit()?lsxPullXHTML(batches,actualMap):""}
-  <h2 class="sec">Lệnh sản xuất ngày ${dmyS(D)} <small>${fmt(batches.length)} lệnh · ${fmt(totalItems)} mã</small></h2>
-  ${batches.length?batches.map(b=>{const canKind=ME.role==="admin"||ME.dept_code==="KHSX";
+  <h2 class="sec">Lệnh sản xuất ngày ${dmyS(D)} <small>${lsxQv?fmt(lsxBatchesShown.length)+"/"+fmt(batches.length)+" lệnh (đang lọc \""+esc(LSX.q)+"\")":fmt(batches.length)+" lệnh · "+fmt(totalItems)+" mã"}</small></h2>
+  ${lsxBatchesShown.length?lsxBatchesShown.map(b=>{const canKind=ME.role==="admin"||ME.dept_code==="KHSX";
     // GĐ63 (26/11): tổng SL đã làm thực tế của CẢ lệnh (cộng actualMap theo
     // từng mã trong lệnh) — để thấy ngay tiến độ lệnh mà không phải mở
     // từng dòng mã; lệnh coi là Hoàn thành khi SL đã làm >= tổng KH.
@@ -3355,12 +3363,13 @@ Dây chuyền SXHN 01	LSX11/26-018(2026-11-03)	TLC-BML-40W-01	Đèn led búp Max
       const pauseBadge=r.pause_reason?`<div style="margin-top:4px"><span class="pill p-warn" ${r.pause_note?`title="${esc(r.pause_note)}"`:""}>⏸ ${r.pause_reason==="defect"?"Tạm dừng – chờ xử lý lỗi":"Tạm dừng – đổi lệnh gấp"}</span>${r.orig_qty_planned!=null&&+r.orig_qty_planned!==+r.qty_planned?` <span class="small">(KH gốc ${fmt(r.orig_qty_planned)})</span>`:""}</div>`:"";
       return `<tr><td class="mono">${esc(r.item_code)}</td><td>${esc((C.byCode[r.item_code]||{}).name||"")}</td><td class="num">${fmt(r.qty_planned)}</td><td class="num">${fmt(act)}</td>
      ${canKind?(remain>0?`<td style="white-space:nowrap"><input data-backqty="${r.id}" inputmode="decimal" style="width:70px;text-align:right" placeholder="${fmt(remain)}"> <button class="btn ghost" type="button" data-lsxback="${r.id}|${remain}" style="padding:2px 8px" title="Thiếu ${fmt(remain)} so với KH — chuyển sang lệnh ngày mai, giữ nguyên mã lệnh">Chuyển thiếu sang ngày mai</button> <button class="btn ghost" type="button" data-lsxpauseopen="${r.id}" style="padding:2px 8px">Tạm dừng lệnh</button> <button class="btn ghost" type="button" data-lsxcdopen="${r.id}" style="padding:2px 8px" title="Linh kiện chỉ đủ 1 phần KH — nhập số lượng thực có, kế hoạch đổi luôn thành số đó">Lỗi linh kiện</button>${KHF.pauseItem===r.id?lsxPauseFormHTML(r,remain,act):""}${KHF.cdItem===r.id?lsxCompDefectFormHTML(r):""}${pauseBadge}</td>`:`<td>${pauseBadge}</td>`):""}</tr>`}).join("")}
-    </table></div></div>`}).join(""):`<div class="empty">Chưa có lệnh sản xuất ngày này</div>`}
+    </table></div></div>`}).join(""):`<div class="empty">${lsxQv?"Không tìm thấy lệnh nào khớp \""+esc(LSX.q)+"\"":"Chưa có lệnh sản xuất ngày này"}</div>`}
   <p class="small" style="margin:8px 0 0">Lệnh <b>Tranh thủ ngoài KH</b> = line dư công suất, tự làm thêm lệnh mới trong ngày (không nằm trong kế hoạch chốt từ đầu) — được tính là "TP ngoài KH (làm vượt)" ở Báo cáo điều hành. Mã nào làm KHÔNG hết kế hoạch trong ngày (ví dụ KH 1.000, làm được 900) hệ thống <b>TỰ ĐỘNG</b> chuyển phần còn thiếu (100) sang lệnh NGÀY MAI vào rạng sáng hôm sau — giữ nguyên mã lệnh, tính là kế hoạch chính thức của ngày hôm sau, kèm ghi chú vàng trên lệnh đích; kế hoạch hôm nay tự giảm còn đúng số đã làm (900) nên không bị chấm thiếu hàng oan. Muốn chuyển ngay (không chờ tự động) thì bấm <b>"Chuyển thiếu sang ngày mai"</b> ở bảng mã hàng.</p>`;
 }
 function lineOptsName(id){return (CFG.lines||[])[id-1]||("Line "+id)}
 function bindLsx(){
   const d=$("#lsxDate");if(d)d.onchange=()=>{LSX.date=d.value;render()};
+  const lq=$("#lsxQ");if(lq)lq.oninput=e=>{LSX.q=e.target.value;const pos=e.target.selectionStart;render().then(()=>{const n=$("#lsxQ");if(n){n.focus();n.setSelectionRange(pos,pos)}})};
   const b=$("#lsxBtn");if(b)b.onclick=()=>{LSX.open=!LSX.open;render()};
   document.querySelectorAll("[data-lsxkind]").forEach(btn=>btn.onclick=async()=>{
     const[id,kind]=btn.dataset.lsxkind.split("|");btn.disabled=true;

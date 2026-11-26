@@ -1,0 +1,22 @@
+-- =====================================================================
+-- GĐ65 (26/11): Trang Kế hoạch → Lệnh sản xuất ngày D — ngày nào nhiều
+-- lệnh (10-20+ lệnh/ngày) rất khó dò bằng mắt để tìm đúng 1 lệnh cụ thể.
+-- Thêm ô "Tìm theo đầu lệnh" để lọc nhanh.
+--
+-- SỬA (chỉ frontend, index.html, lsxTabHTML()/bindLsx()):
+-- 1. Thêm state LSX.q (chuỗi tìm kiếm, mặc định rỗng).
+-- 2. Thêm ô input "Tìm theo đầu lệnh" cạnh ô chọn ngày — gõ 1 phần mã
+--    lệnh (không phân biệt hoa/thường, so khớp CHỨA chuỗi gõ vào, vd
+--    gõ "155" ra "LSX11/26-155", gõ "LSX11/26-2" ra mọi lệnh có "-2"
+--    phía sau).
+-- 3. Danh sách lệnh hiển thị bên dưới được lọc theo ô tìm kiếm này;
+--    tiêu đề đổi thành "X/Y lệnh (đang lọc "...")" khi có lọc. Không
+--    lọc vẫn hiện như cũ ("Y lệnh · Z mã").
+-- 4. Khung "Kéo lệnh từ line khác" (lsxPullXHTML) vẫn dùng TOÀN BỘ danh
+--    sách lệnh của ngày (không bị ảnh hưởng bởi ô tìm kiếm) — vì đó là
+--    thao tác khác, cần thấy đủ lệnh của mọi line.
+-- 5. Khi không tìm thấy lệnh nào khớp, hiện rõ "Không tìm thấy lệnh nào
+--    khớp "..."" thay vì nhầm với "Chưa có lệnh sản xuất ngày này".
+--
+-- Không có thay đổi DB.
+-- =====================================================================
