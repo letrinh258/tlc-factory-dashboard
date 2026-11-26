@@ -1,0 +1,24 @@
+-- =====================================================================
+-- GĐ63 (26/11): Trang Kế hoạch → Lệnh sản xuất ngày D — mỗi lệnh ở dòng
+-- tiêu đề chỉ hiện "tổng KH" (tổng SL kế hoạch), chưa hiện tổng SL ĐÃ
+-- LÀM thực tế của cả lệnh (dù bảng chi tiết từng mã bên dưới đã có cột
+-- "SL đã làm" theo từng dòng mã từ GĐ41 — chỉ thiếu con số TỔNG ở đầu).
+--
+-- SỬA (chỉ frontend, index.html, lsxTabHTML()): tính actTotal = tổng
+-- actualMap (SL đã làm, lấy từ production_reports.good_qty theo
+-- order_batch_id+product_code, đã có sẵn) của tất cả các mã trong lệnh,
+-- hiện thêm "· đã làm X (Y%)" ngay cạnh "tổng KH" ở dòng tiêu đề mỗi
+-- lệnh. Khi SL đã làm >= tổng KH, hiện thêm nhãn "✓ Hoàn thành".
+--
+-- Nhân tiện rà soát lại cơ chế "chuyển phần thiếu sang ngày hôm sau"
+-- (yêu cầu trong cùng lượt): xác nhận cơ chế hiện tại (lsx_auto_defer_day,
+-- chạy tự động mỗi đêm qua pg_cron lúc 00:05 giờ VN cho dữ liệu của
+-- ngày hôm trước) đã đúng như mong muốn — GIỮ NGUYÊN mã lệnh, tự động
+-- cập nhật đúng số lượng còn thiếu (KH − đã làm) sang lệnh cùng mã của
+-- ngày kế tiếp, kèm ghi chú lý do. Khi SL đã làm đã bằng/vượt KH thì cơ
+-- chế này tự bỏ qua mã đó (không còn gì để chuyển) — tức lệnh coi như
+-- đã "kết thúc" một cách tự nhiên; nhãn "✓ Hoàn thành" thêm ở trên chỉ
+-- là hiển thị trực quan cho đúng trạng thái này, KHÔNG có cột
+-- status/closed riêng trong DB (không cần thiết vì tổng KH = tổng đã
+-- làm đã đủ phản ánh lệnh xong hay chưa). Không có thay đổi DB.
+-- =====================================================================
