@@ -1,0 +1,36 @@
+-- =====================================================================
+-- GĐ62 (26/11): Form A (Sản xuất) — khi bấm "+ Thêm mã sản phẩm", trước
+-- đây chỉ cho chọn lệnh sản xuất ĐÃ LẬP CHO ĐÚNG LINE ĐANG XEM
+-- (lsxBatchesAll lọc theo line_id). Nếu line đang xem chưa có lệnh nào
+-- (vd SXHN 01 ngày 26/11 chưa có kế hoạch) thì chỉ còn cách gõ tay mã,
+-- không tự nhảy SL kế hoạch.
+--
+-- Theo yêu cầu: cho chọn LỆNH BẤT KỲ của ngày đang nhập (không giới hạn
+-- line) — chọn lệnh xong, các mục SL kế hoạch và Dây chuyền tự nhảy
+-- theo đúng lệnh đó.
+--
+-- SỬA (chỉ frontend, index.html, viewSx()):
+-- 1. Thêm truy vấn lsxBatchesAllLines (chỉ chạy khi SXF.edit==="new"):
+--    lấy TẤT CẢ lệnh sản xuất (mọi line) của đúng NGÀY đang nhập, sắp
+--    theo line_id rồi code — thay cho lsxBatchesAll (vẫn giữ nguyên,
+--    lọc theo line, chỉ dùng cho thẻ "Lệnh sản xuất hôm nay của line
+--    này" hiển thị phía trên).
+-- 2. Dropdown "Chọn lệnh sản xuất" hiện tên line kèm mỗi lệnh
+--    (vd "SXHN02-01 — Line 02 — 5 mã, tổng KH 1.200") và đếm theo TẤT
+--    CẢ line thay vì chỉ line đang xem.
+-- 3. Dropdown "Chọn mã trong lệnh ..." hiện thêm tên line của lệnh đó
+--    để tổ trưởng biết lệnh đang chọn thuộc line nào.
+-- 4. Ô "Dây chuyền" khi thêm mới: nếu đã chọn 1 lệnh cụ thể (tự động
+--    khi chỉ có 1 lệnh, hoặc do chọn ở dropdown), mặc định nhảy theo
+--    ĐÚNG line của lệnh đó (lsxBatch.line_id) thay vì luôn mặc định
+--    theo line đang xem (L) — vẫn có thể đổi line khác thủ công nếu
+--    cần (ví dụ cố tình gắn sai, RPC sẽ báo lỗi khớp line/lệnh nếu
+--    không khớp).
+-- 5. Câu thông báo "Chưa có lệnh sản xuất..." khi không có lệnh nào đổi
+--    thành "...cho ngày D (mọi line)" cho đúng phạm vi tìm kiếm mới.
+--
+-- Không có thay đổi DB — RPC save_prod_row() đã có sẵn validate
+-- "order_batch_id phải khớp đúng line_id + order_date" (từ GĐ60), nên
+-- nếu người dùng cố tình đổi Dây chuyền khác line của lệnh đã chọn,
+-- backend tự chặn với thông báo rõ ràng.
+-- =====================================================================
