@@ -1,0 +1,45 @@
+-- =====================================================================
+-- GĐ68 (26/11): Anh gửi ảnh dòng Form A mã TLPO/18W3030C05 (KH 2.194,
+-- Đạt 860, 39%) và yêu cầu: "Ví dụ lệnh này, sẽ chỉ hiển thị KH còn lại
+-- của lệnh, chứ không phải kế hoạch của lệnh đó. Và áp dụng cho cấu
+-- trúc" — tức cột KH ở bảng chi tiết từng mã KHÔNG được hiện tổng gộp
+-- KH của mọi line cùng làm mã này trong ngày, mà phải hiện ĐÚNG PHẦN
+-- (lệnh/line) mà dòng báo cáo đó thuộc về.
+--
+-- Đã hỏi lại và anh xác nhận cách tính cụ thể qua ví dụ thực tế của
+-- chính lệnh TLPO/18W3030C05 (LSX11/26-160):
+-- "Lệnh này có kế hoạch tổng là 2.194pcs ở ngày 25/11 sản xuất 560pcs.
+-- Vậy sang ngày 26/11 thì chỉ hiển thị 2194-560=1634pcs ở cột kế
+-- hoạch... nếu có 2 line làm lệnh này hãy chia lệnh đó làm 2 kế hoạch.
+-- Thì phân hệ sản xuất kéo lệnh 1634pcs những điền kế hoạch muốn làm là
+-- bao nhiêu. Ví dụ line SXHN06 kéo 860pcs thì kế hoạch sẽ hiển thị
+-- 860pcs" — nghĩa là: KH hiển thị cho 1 dòng Form A = đúng số lượng
+-- được PHÂN BỔ (qty_planned) cho ĐÚNG lệnh/line mà dòng đó gắn vào
+-- (order_batch_id), KHÔNG PHẢI tổng gộp mọi line cùng làm mã này
+-- (khMap cũ). Cơ chế "Kéo lệnh tồn…"/carry-forward đã tự động tạo ra
+-- đúng con số phân bổ riêng này ở production_orders.qty_planned của
+-- từng lệnh/line rồi — chỉ cần Form A đọc đúng giá trị RIÊNG đó thay
+-- vì cộng gộp.
+--
+-- Cũng xác nhận: cột "% KH" (tỷ lệ đạt) so sánh theo KH MỚI (riêng
+-- từng dòng) này; còn Báo cáo điều hành (BCDH) vẫn tính theo đầu lệnh
+-- và tổng mã hàng hoàn thiện như cũ — KHÔNG đổi gì ở BCDH.
+--
+-- Áp dụng ở: Form A - bảng chi tiết từng mã (viewSx()). Đã kiểm tra
+-- bảng Kế hoạch - chi tiết từng mã trong mỗi lệnh (lsxTabHTML()) — cột
+-- "SL kế hoạch" ở đó ĐÃ SẴN hiển thị đúng qty_planned riêng của từng
+-- lệnh (không gộp), nên không cần sửa gì thêm ở đó.
+--
+-- SỬA (chỉ frontend, index.html, viewSx()):
+-- 1. lsxBatchesDate: thêm "id" vào select (trước chỉ có kind +
+--    production_orders) để có thể khóa theo đúng batch.
+-- 2. Thêm ownKhMap: khóa "batchId|item_code" → qty_planned RIÊNG của
+--    đúng lệnh đó (không cộng gộp qua các lệnh/line khác).
+-- 3. Mỗi dòng báo cáo: nếu có order_batch_id và khớp đúng 1 mục trong
+--    ownKhMap → dùng giá trị RIÊNG đó cho cả cột "KH" hiển thị lẫn %KH
+--    (sxCalc plan_qty). Nếu dòng KHÔNG gắn lệnh cụ thể (nhập tay/dữ
+--    liệu cũ, order_batch_id null) → vẫn dùng khMap (tổng gộp) như cũ,
+--    vì không có cách nào biết phần nào thuộc riêng về dòng đó.
+--
+-- Không có thay đổi DB nào (chỉ frontend).
+-- =====================================================================
