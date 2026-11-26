@@ -1,0 +1,56 @@
+-- =====================================================================
+-- GĐ70 (26/11): Anh kéo 860 cho line SXHN06 nhưng cột KH vẫn hiện 2.194
+-- — dò ra nguyên nhân THẬT SỰ: hệ thống trước đây quy định 1 MÃ LỆNH
+-- chỉ được gắn với ĐÚNG 1 LINE mỗi ngày (ràng buộc UNIQUE (code,
+-- order_date) trong DB — không phân biệt line). Vì vậy không có cách
+-- nào để lệnh LSX11/26-160 vừa có 860 ở line SXHN06 vừa có phần còn
+-- lại ở 1 line khác CÙNG 1 MÃ LỆNH, CÙNG NGÀY — đây chính là lỗi "trùng
+-- lệnh khác line" đã gặp trước đây ở lệnh LK-TOV-TNML-62W-02.
+--
+-- Đã hỏi anh và anh chọn hướng "Nới ràng buộc, làm tới nơi":
+--
+-- 1. ĐỔI RÀNG BUỘC: UNIQUE (code, order_date) → UNIQUE (code,
+--    order_date, line_id). 1 mã lệnh vẫn KHÔNG được trùng trong CÙNG 1
+--    line/ngày (như cũ), nhưng NAY ĐƯỢC PHÉP tồn tại song song ở NHIỀU
+--    LINE khác nhau cùng ngày — mỗi line giữ SL kế hoạch RIÊNG của
+--    mình.
+--
+-- 2. SỬA LẠI mọi hàm backend đang tra cứu/khóa theo (code, order_date)
+--    MÀ KHÔNG kèm line_id (nếu không sửa sẽ tự ý gộp/ghi đè nhầm giữa 2
+--    lệnh của 2 line chỉ vì trùng mã+ngày):
+--    • lsx_save (dán lệnh): khớp theo (code, order_date, line_id) —
+--      dán lại 1 mã cho ĐÚNG line nào chỉ cập nhật đúng dòng của line
+--      đó, không còn tự động đổi line của lệnh đã có ở line khác.
+--    • lsx_edit (sửa lệnh): kiểm tra trùng mã lệnh cùng ngày giờ chỉ
+--      tính trong CÙNG LINE.
+--    • _lsx_defer_core (lõi carry-forward, dùng bởi cron đêm + nút
+--      "Chuyển thiếu sang ngày mai"): tìm lệnh đích ngày mai theo
+--      ĐÚNG line nguồn — carry-forward luôn ở lại đúng line, không bị
+--      lẫn sang line khác dùng chung mã.
+--    • lsx_move_qty (nút "Kéo lệnh tồn…"): tương tự, tìm lệnh đích ở
+--      ngày khác theo ĐÚNG line nguồn.
+--    • lsx_pull_line (nút "Kéo lệnh từ line khác" — chuyển NGUYÊN 1
+--      lệnh chưa sản xuất sang line khác): thêm kiểm tra nếu line đích
+--      đã có sẵn 1 lệnh khác cùng mã+ngày thì báo lỗi rõ, hướng dẫn
+--      dùng "Chia sang line khác…" thay vì chuyển nguyên lệnh.
+--
+-- 3. HÀM MỚI lsx_split_line(p_item_id, p_qty, p_to_line_id): chia SL kế
+--    hoạch của 1 mã trong 1 lệnh sang 1 LINE KHÁC, CÙNG NGÀY — dùng
+--    được cả khi line nguồn ĐÃ bắt đầu sản xuất (chỉ cho chia tối đa
+--    phần CHƯA giao, = KH hiện tại trừ đã làm thật của ĐÚNG line
+--    nguồn, để không làm KH tụt dưới số đã làm thật).
+--
+-- 4. UI (frontend, lsxTabHTML()): thêm nút "Chia sang line khác…" ở
+--    mỗi dòng mã trong bảng chi tiết lệnh (Kế hoạch) — mở form chọn
+--    line đích + nhập số lượng, gọi lsx_split_line.
+--
+-- 5. ĐÃ SỬA DỮ LIỆU THỰC TẾ cho đúng lệnh LSX11/26-160 (mã
+--    TLPO/18W3030C05): gọi lsx_split_line(item_id=512, qty=1334,
+--    to_line=8) — line SXHN06 (line 6) giữ lại đúng 860 (khớp đã làm),
+--    line 8 nhận 1.334 (khớp 2.194 tổng lệnh trừ 860 đã chia cho line
+--    6; line 8 mới làm 774/1.334 — phần còn thiếu 560 sẽ tự carry sang
+--    27/11 như bình thường nếu không làm kịp).
+--
+-- Cùng với frontend GĐ68/69 (cột KH Form A hiện đúng phần riêng của
+-- line), nay lệnh chia cho 2 line sẽ hiện ĐÚNG số của từng line.
+-- =====================================================================
