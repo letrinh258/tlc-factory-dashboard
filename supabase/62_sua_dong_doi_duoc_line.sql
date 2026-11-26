@@ -1,0 +1,26 @@
+-- =====================================================================
+-- GĐ60 (26/11): Form A (Sản xuất) — khi bấm "Sửa" 1 dòng báo cáo, thêm
+-- được ô "Dây chuyền" để ĐỔI LINE cho dòng đó (trước đây không chuyển
+-- line được — dòng báo cáo khóa cứng theo line đang xem).
+--
+-- Nguyên nhân: RPC save_prod_row() khi sửa (p_row_id khác NULL) tìm
+-- dòng cần sửa bằng "where id = p_row_id and line_id = p_line" — nếu
+-- đổi p_line sang line khác thì luôn KHÔNG tìm thấy dòng (vì line_id
+-- cũ khác p_line mới), báo lỗi "Không tìm thấy dòng báo cáo".
+--
+-- SỬA:
+-- 1. DB (áp dụng trực tiếp qua Supabase MCP, migration
+--    gd60_save_prod_row_doi_line): sửa save_prod_row() — khi sửa, chỉ
+--    khớp theo (id, report_date), rồi SET line_id = p_line (line đích),
+--    đồng thời bắt buộc người sửa phải có quyền sửa CẢ line gốc của
+--    dòng báo cáo (không chỉ line đích) để tránh tự ý "cướp" dòng của
+--    line khác. order_batch_id cũng được ghi lại theo giá trị
+--    frontend gửi lên (trước đây giữ nguyên, không đổi).
+-- 2. Frontend (index.html, viewSx()/bindSx()): thêm ô chọn "Dây
+--    chuyền" trong form thêm/sửa dòng; khi lưu, nếu đổi sang line
+--    khác line đang xem thì bỏ liên kết order_batch_id cũ (không khớp
+--    line mới) — vẫn tính đúng "có lệnh SX"/SL KH theo mã sản phẩm
+--    nhờ GĐ59 (không khóa cứng theo line). Sau khi lưu, nếu đổi line
+--    thì tự chuyển màn hình sang đúng line mới để thấy dòng vừa
+--    chuyển.
+-- =====================================================================

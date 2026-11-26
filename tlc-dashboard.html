@@ -5,7 +5,7 @@
      ISO) — dùng để tự phát hiện trình duyệt đang chạy bản cache cũ và
      nhắc tải lại, tránh lỗi kiểu "KB/KPW is not defined" sau khi đổi tên
      biến ở các giai đoạn trước (GĐ34). -->
-<meta name="app-build" content="2026-11-25T05:02:41Z">
+<meta name="app-build" content="2026-11-26T03:27:32Z">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#20409A">
@@ -1979,6 +1979,7 @@ async function viewSx(){
      :`<div class="fld" style="grid-column:1/-1"><label for="f_prod">Mã sản phẩm (gõ mã hoặc tên)</label><input id="f_prod" list="prodList" value="${esc(ed.product_code||"")}" autocomplete="off" ${SXF.edit!=="new"?"readonly":""}>
       <span class="small" id="f_prodInfo"></span>${SXF.edit==="new"&&ordRows.length?` <button type="button" id="f_backBtn" class="btn ghost" style="padding:2px 8px;margin-top:4px">← Chọn theo lệnh sản xuất</button>`:SXF.edit==="new"&&!lsxBatches.length?`<div class="small" style="margin-top:4px;color:var(--muted)">Chưa có lệnh sản xuất của KHSX cho line này ngày ${dmyS(D)} — Kế hoạch chưa lập, hoặc đã dùng hết mã trong lệnh.</div>`:""}
       ${(SXF.edit==="new"&&SXF.manualProd&&lsxBatches.length)||(SXF.edit!=="new"&&!hasLenh(ed))?`<div class="small" style="margin-top:4px;color:var(--bad)">⚠ Mã này sẽ không thừa kế lệnh sản xuất nào của KHSX — vẫn lưu được, nhưng không tính vào SL KH và bảng chi tiết sẽ hiện cảnh báo "Không có lệnh SX".</div>`:""}</div>`}
+    <div class="fld"><label for="f_line">Dây chuyền</label><select id="f_line">${lineOpts(ed.line_id??L,null)}</select></div>
     <div class="fld"><label for="f_plan">SL kế hoạch</label><input id="f_plan" inputmode="numeric" value="${ed.plan_qty??""}" placeholder="theo KHSX"></div>
     <div class="fld"><label for="f_good">SL đạt</label><input id="f_good" inputmode="numeric" value="${ed.good_qty??""}"></div>
     <div class="fld"><label for="f_hc">Số người</label><input id="f_hc" inputmode="decimal" value="${ed.headcount??""}"></div>
@@ -2184,12 +2185,16 @@ function bindSx(){
     const newObid=SXF.manualProd?null:SXF.curBatchId??null;
     $("#f_save").disabled=true;setMsg(m,"Đang lưu…");
     const obidVal=$("#f_obid").value;
-    try{await rpc("save_prod_row",{d:SXF.date,p_line:SXF.line,p_product:code,p_plan:nums.f_plan,p_good:nums.f_good,p_ng_op:nums.f_op||0,p_ng_sup:nums.f_sup||0,
+    const curLine=SXF.line;const pLine=+(($("#f_line")||{}).value||curLine);
+    try{await rpc("save_prod_row",{d:SXF.date,p_line:pLine,p_product:code,p_plan:nums.f_plan,p_good:nums.f_good,p_ng_op:nums.f_op||0,p_ng_sup:nums.f_sup||0,
         p_defect_op:$("#f_dop").value.trim()||null,p_defect_sup:$("#f_dsup").value.trim()||null,p_headcount:nums.f_hc||0,
         p_start_time:startV,p_end_time:endV,p_break_min:nums.f_break||0,
         p_downtime:nums.f_dt||0,p_dt_reason:$("#f_dtr").value||null,p_note:$("#f_note").value.trim()||null,
-        p_order_batch_id:SXF.edit==="new"?newObid:(obidVal?+obidVal:null),p_row_id:SXF.edit==="new"?null:SXF.edit});
-      SXF.edit=null;toast("Đã lưu "+code);render()}
+        // GĐ60 (26/11): đổi sang line khác thì bỏ liên kết order_batch_id cũ
+        // (lệnh của line cũ, không khớp line mới) — vẫn khớp "có lệnh SX" /
+        // SL KH theo đúng MÃ sản phẩm nhờ GĐ59, không cần giữ liên kết cứng.
+        p_order_batch_id:SXF.edit==="new"?newObid:(pLine!==curLine?null:(obidVal?+obidVal:null)),p_row_id:SXF.edit==="new"?null:SXF.edit});
+      SXF.edit=null;if(pLine!==curLine)SXF.line=pLine;toast(pLine!==curLine?"Đã chuyển "+code+" sang "+lineOptsName(pLine):"Đã lưu "+code);render()}
     catch(err){setMsg(m,sbErr(err),"bad");$("#f_save").disabled=false}});
 }
 /* ============================================================
