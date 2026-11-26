@@ -1,0 +1,44 @@
+-- =====================================================================
+-- GĐ64 (26/11): Ngày 26/11 không thấy lệnh nào "chưa hoàn thành từ hôm
+-- trước chuyển sang" — kiểm tra lại phát hiện 2 việc:
+--
+-- 1. NGUYÊN NHÂN GỐC: job tự động lsx_auto_defer_day (chạy mỗi đêm lúc
+--    00:05 giờ VN, xử lý shortfall của NGÀY HÔM TRƯỚC) đã chạy đúng giờ
+--    lúc 00:05 ngày 26/11 — xử lý ngày 25/11. NHƯNG tại đúng thời điểm
+--    đó, KHSX CHƯA dán lệnh sản xuất ngày 25/11 vào hệ thống (toàn bộ
+--    23 lệnh ngày 25/11 được dán SAU, vào khoảng 10h30–12h40 sáng
+--    26/11 — tức sau khi job tự động đã chạy xong và không còn chạy
+--    lại cho ngày 25/11 nữa). Vì vậy job "chạy đúng giờ nhưng chạy vào
+--    lúc chưa có dữ liệu để xử lý" — không phải lỗi code.
+--
+-- 2. LỖI THẬT (đã sửa): hàm lsx_auto_defer_day() xử lý TỪNG MÃ trong 1
+--    vòng lặp, nhưng KHÔNG bắt lỗi riêng từng mã — nếu 1 mã gặp lỗi
+--    (vd mã lệnh trùng tên nhưng khác line giữa 2 ngày, _lsx_defer_core
+--    sẽ raise exception "Lệnh ... đã tồn tại ở ngày ... nhưng khác
+--    line") thì TOÀN BỘ lượt chạy đêm đó sẽ bị HỦY — kể cả các mã khác
+--    không liên quan cũng không được chuyển. Đây chính là rủi ro thực
+--    sự khiến việc chuyển lệnh thiếu có thể âm thầm không chạy được
+--    cho CẢ NHÀ MÁY chỉ vì 1 lệnh lỗi dữ liệu.
+--
+-- SỬA (áp dụng trực tiếp qua Supabase MCP, migration
+-- gd64_lsx_auto_defer_day_an_toan_tung_ma): bọc riêng từng mã trong
+-- BEGIN...EXCEPTION WHEN OTHERS — mã nào lỗi thì GHI CẢNH BÁO (RAISE
+-- WARNING) và bỏ qua riêng mã đó, các mã khác vẫn chạy tiếp bình
+-- thường. Không đổi logic chuyển số lượng/giữ nguyên mã lệnh.
+--
+-- CHẠY BÙ THỦ CÔNG: sau khi sửa, đã chạy tay
+-- "select lsx_auto_defer_day('2026-11-25')" để xử lý bù phần dữ liệu
+-- 25/11 KHSX mới dán sáng nay (cron đêm qua đã bỏ lỡ) — kết quả: 21/22
+-- mã thiếu 100% (đã làm 0, KH giữ nguyên) được tự động chuyển sang
+-- lệnh CÙNG MÃ của ngày 26/11, kèm ghi chú vàng. 1 mã KHÔNG chuyển được
+-- do xung đột dữ liệu thật:
+--   • Lệnh "LSX11/26-210", mã LK-TOV-TNML-62W-02, KH 200 — ngày 25/11
+--     được dán vào LINE 8, nhưng ngày 26/11 đã có sẵn 1 lệnh KHÁC cũng
+--     tên "LSX11/26-210" nhưng ở LINE 7 (2 mã, tổng KH 400) — do 2 lệnh
+--     trùng tên nhưng khác line nên hệ thống không tự gộp được (tránh
+--     gộp nhầm sản lượng của 2 line khác nhau vào làm 1).
+--   → Cần KHSX xác nhận: lệnh "LSX11/26-210" đúng ra là LINE 7 hay LINE
+--     8? Sau khi xác nhận, sửa lại đúng line ở 1 trong 2 ngày (nút "Sửa
+--     lệnh") rồi chạy lại/chuyển tay mã LK-TOV-TNML-62W-02 (200 sp)
+--     bằng nút "Chuyển thiếu sang ngày mai" ở lệnh ngày 25/11.
+-- =====================================================================
