@@ -1,0 +1,21 @@
+-- =====================================================================
+-- GĐ67 (26/11): Anh phát hiện lệnh LSX11/26-160 hiện 2 con số KH khác
+-- nhau cho cùng mã TLPO/18W3030C05 — Form A hiện KH 2.194 (đúng, hiện
+-- hành), nhưng ghi chú vàng trên lệnh vẫn ghi "KH 1.860, đã làm 560".
+--
+-- NGUYÊN NHÂN: ghi chú vàng là chữ TĨNH được ghi 1 lần lúc hệ thống tự
+-- chuyển lệnh thiếu (carry-forward) hoặc lúc tôi sửa dữ liệu lúc trước.
+-- Sau đó lệnh này đã được SỬA LẠI qua nút "Sửa lệnh" (RPC lsx_edit) —
+-- KHSX tăng kế hoạch mã TLPO/18W3030C05 từ 1.300 lên 2.194 — nhưng
+-- lsx_edit() chỉ thay số lượng các mã, KHÔNG xóa ghi chú cũ, nên ghi
+-- chú trở thành chữ CŨ không còn khớp với số liệu hiện tại, gây hiểu
+-- nhầm thành "2 nơi tính khác nhau" (thực ra chỉ có 1 số đúng — 2.194).
+--
+-- SỬA (áp dụng qua Supabase MCP, trực tiếp CREATE OR REPLACE FUNCTION):
+-- lsx_edit() nay LUÔN xóa ghi chú (note = null) mỗi khi lệnh được sửa
+-- tay — vì sau khi sửa, ghi chú mô tả nguồn gốc carry-forward cũ không
+-- còn phản ánh đúng thực tế của lệnh nữa.
+--
+-- Đã xóa luôn ghi chú cũ đang sai ở lệnh id 333 (LSX11/26-160) cho khớp
+-- với số liệu hiện tại (KH 2.958 tổng lệnh, gồm TLPO 2.194).
+-- =====================================================================
