@@ -1,0 +1,30 @@
+-- =====================================================================
+-- GĐ61 (26/11): "Kéo lệnh tồn lên làm hôm nay" (Form A/Sản xuất và trang
+-- Kế hoạch/Lệnh sản xuất) trước đây CHỈ cho kéo đúng NGÀY MAI
+-- (baseDate+1), cùng line. Theo yêu cầu: cho phép kéo từ TẤT CẢ lệnh
+-- còn tồn (SL kế hoạch > 0) của line này, không giới hạn số ngày — có
+-- thể kéo lệnh của cả tuần sau hay lệnh cuối tháng.
+--
+-- Backend (RPC lsx_move_qty) vốn KHÔNG giới hạn khoảng cách ngày giữa
+-- order_date nguồn và p_to_date đích (chỉ chặn p_to_date = order_date
+-- nguồn và p_qty vượt SL còn lại) — nên không cần sửa DB, chỉ sửa
+-- frontend (index.html):
+--
+-- 1. lsxTomorrowItems(lineId, baseDate): đổi truy vấn từ
+--    .eq("order_date", baseDate+1) sang .gt("order_date", baseDate) —
+--    lấy mọi lệnh còn SL kế hoạch > 0 của line này ở MỌI ngày sau ngày
+--    đang xem, sắp theo order_date rồi theo code. Trả thêm field
+--    orderDate cho từng dòng.
+-- 2. lsxPullPanelHTML(items, C, toDate): thêm cột "Ngày lệnh" hiển thị
+--    orderDate từng dòng (vì giờ có thể có nhiều ngày khác nhau trong
+--    cùng bảng), đổi tiêu đề/chú thích/nhãn nút cho đúng ngữ nghĩa mới
+--    ("Kéo lệnh tồn lên làm hôm nay" thay vì "...ngày mai").
+-- 3. Đổi nhãn nút "Kéo từ ngày mai…" → "Kéo lệnh tồn…" ở cả 2 nơi gọi
+--    (viewSx() - Form A, và lsxTabHTML() - Kế hoạch/Lệnh sản xuất).
+-- 4. Sửa lại các câu thông báo còn nhắc cứng "ngày mai" trong
+--    bindLsxPull() cho đúng với việc nguồn có thể là bất kỳ ngày nào.
+--
+-- Không có thay đổi DB. lsx_move_qty, PULL state, bindLsxPull giữ
+-- nguyên cơ chế cũ (tách lệnh riêng cho hôm nay, giữ nguyên mã lệnh
+-- gốc, không chấm thiếu hàng) — chỉ mở rộng phạm vi NGÀY được phép kéo.
+-- =====================================================================
