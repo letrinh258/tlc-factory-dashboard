@@ -1,0 +1,26 @@
+-- =====================================================================
+-- GĐ69 (26/11): Anh test ngay fix GĐ68 — kéo 860pcs cho line SXHN06
+-- (xác nhận đúng ở form "Sửa": SL kế hoạch = 860) nhưng cột KH ở bảng
+-- trên vẫn hiện 2.194 (sai, chưa theo đúng phần riêng của line).
+--
+-- NGUYÊN NHÂN: fix GĐ68 tra "KH riêng" theo order_batch_id gắn trên
+-- từng dòng production_reports (ownKhMap, khóa "batchId|mã"). Nhưng
+-- "Kéo lệnh tồn…" (RPC lsx_move_qty) CHỈ chuyển SL giữa các lệnh/line ở
+-- production_order_batches/production_orders — KHÔNG hề đụng đến hay
+-- cập nhật lại production_reports.order_batch_id của các dòng báo cáo
+-- đã nhập trước đó. Dòng Form A đang xem vẫn mang order_batch_id cũ
+-- (hoặc null), nên tra ownKhMap không khớp lệnh mới vừa kéo 860, rơi về
+-- khMap gộp (2.194) — CÙNG LOẠI LỖI với order_batch_id không đáng tin
+-- cậy đã phát hiện ở GĐ66 (migration 68_...), chỉ là xuất hiện ở chỗ
+-- khác (cột hiển thị, không phải tính "đã làm").
+--
+-- SỬA ĐÚNG (chỉ frontend, index.html, viewSx()): bỏ hẳn cách tra theo
+-- order_batch_id. Thay bằng lineKhMap — vì trang Form A (viewSx) LUÔN
+-- chỉ xem ĐÚNG 1 LINE CỤ THỂ tại 1 thời điểm (biến L), nên chỉ cần cộng
+-- qty_planned của các lệnh thuộc ĐÚNG LINE L đó cho từng mã (không cần
+-- biết đến order_batch_id của từng dòng báo cáo nữa). Mã nào line L
+-- không có lệnh riêng thì vẫn dùng khMap (tổng gộp) như cũ.
+--
+-- lsxBatchesDate: thêm "line_id" vào select để lọc đúng lệnh của line
+-- L. Không có thay đổi DB nào (chỉ frontend).
+-- =====================================================================
