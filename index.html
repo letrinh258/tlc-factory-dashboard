@@ -5,7 +5,7 @@
      ISO) — dùng để tự phát hiện trình duyệt đang chạy bản cache cũ và
      nhắc tải lại, tránh lỗi kiểu "KB/KPW is not defined" sau khi đổi tên
      biến ở các giai đoạn trước (GĐ34). -->
-<meta name="app-build" content="2026-11-26T09:23:34Z">
+<meta name="app-build" content="2026-11-26T09:48:16Z">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#20409A">
@@ -3277,7 +3277,7 @@ function bindLsxPause(){
    line_id, giữ nguyên mã lệnh/ngày/số lượng. */
 function lsxPullXHTML(batches,actualMap){
   const toLine=PULLX.toLine;
-  const eligible=toLine?batches.filter(b=>String(b.line_id)!==String(toLine)&&!(b.production_orders||[]).some(o=>(actualMap[b.id+"|"+o.item_code]||0)>0)):[];
+  const eligible=toLine?batches.filter(b=>String(b.line_id)!==String(toLine)&&!(b.production_orders||[]).some(o=>(actualMap[o.item_code]||0)>0)):[];
   return `<div class="card" style="margin:6px 0 10px;border-left:4px solid var(--accent)">
    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
     <h3 style="margin:0">Kéo lệnh từ line khác</h3>
@@ -3314,12 +3314,21 @@ async function lsxTabHTML(){
   const batches=await q(SB.from("production_order_batches").select("*,production_orders(*)").eq("order_date",D).order("line_id"));
   const totalItems=batches.reduce((a,b)=>a+(b.production_orders||[]).length,0);
   const pullItems=PULL.batchId&&batches.find(b=>b.id===PULL.batchId)?await lsxTomorrowItems(batches.find(b=>b.id===PULL.batchId).line_id,D):null;
-  // GĐ41: SL đã làm thực tế theo từng mã của lệnh — để biết còn THIẾU bao
-  // nhiêu so với KH, cho phép chuyển phần thiếu sang lệnh ngày mai (giữ
-  // nguyên mã lệnh, tính là kế hoạch ngày hôm sau).
-  const batchIds=batches.map(b=>b.id);
-  const prRows=batchIds.length?await q(SB.from("production_reports").select("order_batch_id,product_code,good_qty").in("order_batch_id",batchIds)):[];
-  const actualMap={};prRows.forEach(r=>{const k=r.order_batch_id+"|"+r.product_code;actualMap[k]=(actualMap[k]||0)+(+r.good_qty||0)});
+  // GĐ41 (sửa GĐ66 — 26/11): SL đã làm thực tế theo từng mã của lệnh —
+  // để biết còn THIẾU bao nhiêu so với KH, cho phép chuyển phần thiếu
+  // sang lệnh ngày mai (giữ nguyên mã lệnh, tính là kế hoạch ngày hôm
+  // sau).
+  // LỖI CŨ: chỉ cộng production_reports có order_batch_id KHỚP ĐÚNG id
+  // của lệnh đang xem — nhưng rất nhiều dòng báo cáo (Form A) được nhập
+  // KHI CHƯA CÓ LỆNH (KHSX lập lệnh muộn, sau khi tổ trưởng đã báo cáo)
+  // nên order_batch_id bị để NULL mãi mãi, không bao giờ được gắn lại dù
+  // sau đó lệnh đã tồn tại — hiển thị "đã làm 0" SAI dù thực tế đã sản
+  // xuất một phần (kéo theo ghi chú chuyển lệnh cũng sai số).
+  // SỬA: tính SL đã làm theo ĐÚNG NGÀY (report_date = D) + MÃ SẢN PHẨM —
+  // không đòi hỏi order_batch_id phải khớp lệnh, và không giới hạn
+  // theo line (nhất quán với GĐ59: mã không khóa cứng theo line/lệnh).
+  const prRows=await q(SB.from("production_reports").select("product_code,good_qty").eq("report_date",D));
+  const actualMap={};prRows.forEach(r=>{actualMap[r.product_code]=(actualMap[r.product_code]||0)+(+r.good_qty||0)});
   // GĐ65 (26/11): tìm theo đầu lệnh (mã lệnh) — lọc danh sách lệnh của
   // ngày đang xem theo chuỗi gõ vào (không phân biệt hoa/thường, so khớp
   // 1 phần — gõ "155" tìm ra "LSX11/26-155").
@@ -3344,7 +3353,7 @@ Dây chuyền SXHN 01	LSX11/26-018(2026-11-03)	TLC-BML-40W-01	Đèn led búp Max
     // GĐ63 (26/11): tổng SL đã làm thực tế của CẢ lệnh (cộng actualMap theo
     // từng mã trong lệnh) — để thấy ngay tiến độ lệnh mà không phải mở
     // từng dòng mã; lệnh coi là Hoàn thành khi SL đã làm >= tổng KH.
-    const actTotal=(b.production_orders||[]).reduce((a,r)=>a+(actualMap[b.id+"|"+r.item_code]||0),0);
+    const actTotal=(b.production_orders||[]).reduce((a,r)=>a+(actualMap[r.item_code]||0),0);
     const batchDone=+b.qty_total>0&&actTotal>=+b.qty_total;
     return`<div class="card" style="margin-bottom:8px">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px"><b class="mono">${esc(b.code)}</b>
@@ -3359,7 +3368,7 @@ Dây chuyền SXHN 01	LSX11/26-018(2026-11-03)	TLC-BML-40W-01	Đèn led búp Max
     ${b.note?`<div class="small" style="margin-top:6px;padding:5px 8px;border-radius:6px;background:var(--warn-bg,rgba(234,179,8,.12));color:var(--warn-fg,#92620a)">⚠ ${esc(b.note)}</div>`:""}
     <div class="tbl" style="margin-top:6px"><table><tr><th>Mã sản phẩm</th><th>Tên</th><th class="num">SL kế hoạch</th><th class="num">SL đã làm</th>${canKind?"<th></th>":""}</tr>
     ${(b.production_orders||[]).filter(r=>+r.qty_planned>0).slice().sort((x,y)=>x.item_code<y.item_code?-1:x.item_code>y.item_code?1:0).map(r=>{
-      const act=actualMap[b.id+"|"+r.item_code]||0,remain=Math.max(0,+r.qty_planned-act);
+      const act=actualMap[r.item_code]||0,remain=Math.max(0,+r.qty_planned-act);
       const pauseBadge=r.pause_reason?`<div style="margin-top:4px"><span class="pill p-warn" ${r.pause_note?`title="${esc(r.pause_note)}"`:""}>⏸ ${r.pause_reason==="defect"?"Tạm dừng – chờ xử lý lỗi":"Tạm dừng – đổi lệnh gấp"}</span>${r.orig_qty_planned!=null&&+r.orig_qty_planned!==+r.qty_planned?` <span class="small">(KH gốc ${fmt(r.orig_qty_planned)})</span>`:""}</div>`:"";
       return `<tr><td class="mono">${esc(r.item_code)}</td><td>${esc((C.byCode[r.item_code]||{}).name||"")}</td><td class="num">${fmt(r.qty_planned)}</td><td class="num">${fmt(act)}</td>
      ${canKind?(remain>0?`<td style="white-space:nowrap"><input data-backqty="${r.id}" inputmode="decimal" style="width:70px;text-align:right" placeholder="${fmt(remain)}"> <button class="btn ghost" type="button" data-lsxback="${r.id}|${remain}" style="padding:2px 8px" title="Thiếu ${fmt(remain)} so với KH — chuyển sang lệnh ngày mai, giữ nguyên mã lệnh">Chuyển thiếu sang ngày mai</button> <button class="btn ghost" type="button" data-lsxpauseopen="${r.id}" style="padding:2px 8px">Tạm dừng lệnh</button> <button class="btn ghost" type="button" data-lsxcdopen="${r.id}" style="padding:2px 8px" title="Linh kiện chỉ đủ 1 phần KH — nhập số lượng thực có, kế hoạch đổi luôn thành số đó">Lỗi linh kiện</button>${KHF.pauseItem===r.id?lsxPauseFormHTML(r,remain,act):""}${KHF.cdItem===r.id?lsxCompDefectFormHTML(r):""}${pauseBadge}</td>`:`<td>${pauseBadge}</td>`):""}</tr>`}).join("")}

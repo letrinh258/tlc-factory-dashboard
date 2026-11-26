@@ -1,0 +1,61 @@
+-- =====================================================================
+-- GĐ66 (26/11): Anh phát hiện lệnh LSX11/26-160 (mã TLPO/18W3030C05)
+-- ghi chú "đã làm 0" dù thực tế đã sản xuất một phần — yêu cầu kiểm tra
+-- toàn bộ và so sánh "tham chiếu theo đầu lệnh".
+--
+-- NGUYÊN NHÂN GỐC (RẤT NGHIÊM TRỌNG — ảnh hưởng gần như TOÀN BỘ lệnh
+-- vừa chuyển bù sáng nay): hàm tính "SL đã làm" (cả backend
+-- lsx_auto_defer_day/lsx_defer_shortfall lẫn frontend actualMap ở
+-- lsxTabHTML) chỉ cộng production_reports có order_batch_id KHỚP ĐÚNG
+-- id của đúng lệnh đang xem. Nhưng rất nhiều dòng báo cáo Form A được tổ
+-- trưởng nhập KHI CHƯA CÓ LỆNH (vì KHSX lập lệnh muộn, sau khi sản xuất
+-- đã xảy ra — đúng tình huống ngày 25/11 vừa qua) nên order_batch_id bị
+-- lưu NULL vĩnh viễn, không có cách nào tự gắn lại dù sau đó lệnh đã
+-- tồn tại. Kết quả: hệ thống tưởng "đã làm 0" trong khi đã sản xuất.
+--
+-- KIỂM TRA TOÀN BỘ phát hiện: 19/21 mã vừa chuyển bù sáng nay (từ sự cố
+-- trước) đều bị tính sai theo kiểu này — 14 mã thực ra đã làm ĐỦ/VƯỢT
+-- 100% KH ngày 25/11 (không cần chuyển gì cả) nhưng vẫn bị chuyển
+-- nguyên 100% KH sang 26/11; 3 mã (TLC-BML-20W-01, TLC-TT5-18W-02,
+-- TLPO/18W3030C05) làm được MỘT PHẦN nhưng bị chuyển SAI SỐ (chuyển cả
+-- phần đã làm, đáng lẽ chỉ chuyển đúng phần còn thiếu).
+--
+-- SỬA (áp dụng qua Supabase MCP, migration
+-- gd66_tinh_da_lam_theo_ngay_ma_khong_theo_batch_id — ĐÚNG như yêu cầu
+-- "so sánh tham chiếu theo đầu lệnh"):
+-- 1. lsx_auto_defer_day(), lsx_defer_shortfall(): tính "đã làm" theo
+--    (report_date = đúng ngày lệnh, product_code = đúng mã) — KHÔNG đòi
+--    hỏi order_batch_id phải khớp, và không giới hạn theo line (nhất
+--    quán với GĐ59: mã không khóa cứng theo line/lệnh).
+-- 2. Frontend (lsxTabHTML()): actualMap đổi từ truy vấn theo
+--    order_batch_id IN (...) sang theo report_date = ngày đang xem, và
+--    đổi khóa từ "batchId|item_code" thành chỉ "item_code" (vì đã tính
+--    theo ngày, không cần phân biệt theo lệnh nữa) — áp dụng cho cả ô
+--    "SL đã làm" từng mã, tổng SL đã làm của lệnh (GĐ63), và điều kiện
+--    "Kéo lệnh từ line khác" (lsxPullXHTML).
+--
+-- SỬA DỮ LIỆU ĐÃ SAI (thực hiện trực tiếp qua Supabase MCP sau khi sửa
+-- hàm, rà từng mã theo số liệu thật từ production_reports):
+-- • 14 mã carry sai 100% (đã làm đủ/vượt KH 25/11): trả lại nguồn 25/11
+--   đúng số đã làm, XÓA HẲN lệnh/dòng mã sai đã tạo nhầm ở 26/11 (các
+--   lệnh LSX11/26-155,172,190,195,197,204,226,139,174(,143,188,189,
+--   227,158 dạng F — toàn bộ là lệnh MỚI TẠO RIÊNG do carry sai, không
+--   có báo cáo nào gắn vào nên xóa an toàn).
+--   ⚠ Lưu ý khi sửa: LSX11/26-215 (TLC-AECA-VV-10W-03) và LSX11/26-214
+--   (TLC-OEC-TD-12W-03) là 2 lệnh ĐÃ CÓ SẴN kế hoạch hợp lệ từ trước ở
+--   26/11 (không phải lệnh carry tạo mới) — ĐÃ CÓ báo cáo (nháp) sản
+--   lượng hôm nay gắn đúng order_batch_id. Phải CHỈ xóa phần carry sai
+--   cộng thêm vào (750 và 510), giữ nguyên đúng KH gốc (250 và 190) của
+--   những lệnh này — không được xóa nhầm cả lệnh.
+-- • 3 mã carry sai một phần: sửa lại đúng số thiếu thực tế —
+--   TLC-BML-20W-01 (KH 3.000, đã làm 2.430) → chuyển đúng 570 (không
+--   phải 3.000); TLC-TT5-18W-02 (KH 200, đã làm 180) → chuyển đúng 20;
+--   TLPO/18W3030C05 (KH 1.860, đã làm 560) → chuyển đúng 1.300. Cập
+--   nhật lại đúng ghi chú vàng trên các lệnh này.
+-- • 1 mã chưa chuyển được do xung đột line (LK-TOV-TNML-62W-02, lệnh
+--   "LSX11/26-210" trùng tên nhưng khác line 7/8 giữa 2 ngày) — GIỮ
+--   NGUYÊN, chưa đổi gì, đang chờ KHSX xác nhận đúng line (đã báo ở
+--   lượt trước).
+--
+-- Không có thay đổi cấu trúc DB nào khác ngoài 2 hàm trên.
+-- =====================================================================
