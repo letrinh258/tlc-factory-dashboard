@@ -5,7 +5,7 @@
      ISO) — dùng để tự phát hiện trình duyệt đang chạy bản cache cũ và
      nhắc tải lại, tránh lỗi kiểu "KB/KPW is not defined" sau khi đổi tên
      biến ở các giai đoạn trước (GĐ34). -->
-<meta name="app-build" content="2026-11-27T06:47:00Z">
+<meta name="app-build" content="2026-11-27T07:03:03Z">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#20409A">
@@ -1394,7 +1394,9 @@ async function viewDaily(){
 
   <h2 class="sec">1. Kế hoạch & kết quả hôm nay <small>Số liệu chốt cuối ngày · người báo cáo chịu trách nhiệm</small></h2>
   ${C==="KHSX"?khsxMuc1HTML(khsxData.risk,khsxData.due,khsxData.missing,khsxData.prodC,khsxData.matC,ed):
-  `<div class="card">${metrics.length?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px">${metrics.map(([k,n,u])=>`<div class="fld"><label for="m_${k}">${esc(n)} <span class="small">(${esc(u)})</span></label><input id="m_${k}" data-m="${k}" value="${mv[k]??""}" inputmode="decimal" ${ro}></div>`).join("")}</div>
+  `<div class="card">${metrics.length?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:10px">${metrics.map(([k,n,u,ty])=>ty==="text"?
+    `<div class="fld"><label for="m_${k}">${esc(n)} <span class="small">(${esc(u)})</span></label><input id="m_${k}" data-m="${k}" data-mtype="text" value="${esc(mv[k]??"")}" ${ro}></div>`:
+    `<div class="fld"><label for="m_${k}">${esc(n)} <span class="small">(${esc(u)})</span></label><input id="m_${k}" data-m="${k}" value="${mv[k]??""}" inputmode="decimal" ${ro}></div>`).join("")}</div>
    <div class="fld" style="margin-top:10px"><label for="m_note">Ghi chú số liệu / chênh lệch</label><input id="m_note" value="${esc(mv._note||"")}" ${ro}></div>
    ${ed?`<div style="margin-top:10px;display:flex;gap:8px;align-items:center"><button class="btn" type="button" id="m_save">Lưu mục 1</button><span class="msg" id="m_msg" role="status"></span></div>`:""}`:`<p class="small" style="margin:0">Chưa cấu hình chỉ số cho vị trí này.</p>`}
    <p class="small" style="margin:8px 0 0">Bảng chuyên môn đầy đủ (theo line, đơn hàng, vật tư thiếu…) và tự đối chiếu với bộ phận khác: Giai đoạn 5.</p></div>`}
@@ -1536,7 +1538,11 @@ function bindDaily(){
     try{await rpc("unlock_report",{p_code:C,p_date:D,p_hours:h,p_reason:r});RP.unlockOpen=false;toast("Đã mở khóa");render()}catch(e){setMsg("ulMsg",sbErr(e),"bad")}};
   // mục 1
   bindDhDaily(C,D,(RP.data&&RP.data.rep&&RP.data.rep.metrics)||{});
-  const ms=$("#m_save");if(ms)ms.onclick=async()=>{const vals={};Object.entries((RP.data&&RP.data.rep&&RP.data.rep.metrics)||{}).forEach(([k,v])=>{if(k.startsWith("dh_"))vals[k]=v});let bad=[];document.querySelectorAll("[data-m]").forEach(el=>{el.classList.remove("err");const n=numOrNull(el.value);if(Number.isNaN(n)||(n!=null&&n<0))bad.push(el.id);else if(n!=null)vals[el.dataset.m]=n});
+  const ms=$("#m_save");if(ms)ms.onclick=async()=>{const vals={};Object.entries((RP.data&&RP.data.rep&&RP.data.rep.metrics)||{}).forEach(([k,v])=>{if(k.startsWith("dh_"))vals[k]=v});let bad=[];document.querySelectorAll("[data-m]").forEach(el=>{el.classList.remove("err");
+    // GĐ72 (27/11): chỉ số kiểu "text" (vd "Thay đổi BOM (mã)" ở KTSP) cho
+    // nhập tay chuỗi tự do (mã sản phẩm…) — KHÔNG ép phải là số ≥ 0.
+    if(el.dataset.mtype==="text"){const t=(el.value||"").trim();if(t)vals[el.dataset.m]=t;return}
+    const n=numOrNull(el.value);if(Number.isNaN(n)||(n!=null&&n<0))bad.push(el.id);else if(n!=null)vals[el.dataset.m]=n});
     if(bad.length){markErr(bad);return setMsg("m_msg","Ô đỏ: chỉ nhập số ≥ 0","bad")}
     const note=$("#m_note").value.trim();if(note)vals._note=note;
     ms.disabled=true;setMsg("m_msg","Đang lưu…");

@@ -1,0 +1,40 @@
+-- =====================================================================
+-- GĐ71 (27/11): báo cáo lệnh LSX11/26-220 (mã TLC-BOS-10W-01, line
+-- SXHN01) ngày 26/11 hiện "tổng KH 0" dù thực tế đã sản xuất 2.500 —
+-- anh phản ánh "mất dữ liệu".
+--
+-- RÀ SOÁT TOÀN BỘ 6 lệnh "tổng KH 0" của ngày 26/11:
+-- • 5/6 lệnh (LSX11/26-141, LSX11/26-196, LSX11/26-205, LSX11/26-224,
+--   LSX11/26-229 và 1 phần LSX11/26-160) — ĐÚNG THIẾT KẾ, KHÔNG MẤT GÌ:
+--   job tự động lsx_auto_defer_day chạy 00:05 mỗi đêm đã chuyển đúng
+--   phần CHƯA sản xuất hết của 26/11 sang lệnh CÙNG MÃ của 27/11 (kèm
+--   ghi chú vàng rõ ràng) — cơ chế này anh đã yêu cầu từ trước.
+-- • 1/6 lệnh (LSX11/26-220, TLC-BOS-10W-01) — LỖI THẬT, cùng loại lỗi
+--   "khoảng trống thời gian" đã gặp ở GĐ64: tổ trưởng nhập Form A sản
+--   xuất 2.500 SAU KHI job 00:05 đã chạy — lúc job chạy actual vẫn = 0
+--   nên đã chuyển NGUYÊN kế hoạch gốc sang 27/11, khiến 26/11 còn lại
+--   0. Đã KHÔI PHỤC: sửa lại production_orders.qty_planned = 2.500 cho
+--   đúng lệnh 26/11 (khớp đã làm, 100%, không mất gì). Lệnh 27/11 cùng
+--   mã (hiện KH 2.800, không có ghi chú chuyển) được giữ nguyên — cần
+--   anh xác nhận 2.800 có đúng là kế hoạch KHSX chủ động nhập cho hôm
+--   nay hay không.
+--
+-- Không có thay đổi DB/hàm nào cho phần này (chỉ sửa dữ liệu 1 dòng).
+-- =====================================================================
+
+-- GĐ72 (27/11): phân hệ Báo cáo hằng ngày (viewDaily/bindDaily) — vị
+-- trí KTSP (Kỹ thuật sản phẩm), chỉ số "Thay đổi BOM (mã)" trước đây bị
+-- ép kiểu SỐ (inputmode="decimal", validate "chỉ nhập số ≥ 0") giống
+-- mọi chỉ số khác, nhưng nội dung thực tế là MÃ SẢN PHẨM (chuỗi, vd
+-- "TLC-BOS-13W-01") — anh yêu cầu cho nhập tay (chữ) và lưu được.
+--
+-- SỬA:
+-- 1. app_settings (key='report_metrics'): thêm phần tử thứ 4 ="text"
+--    vào định nghĩa chỉ số "doi_bom" của vị trí KTSP — đánh dấu đây là
+--    chỉ số kiểu CHUỖI, không phải số.
+-- 2. Frontend (index.html, viewDaily()/bindDaily()): ô nhập của chỉ số
+--    có cờ "text" bỏ inputmode="decimal", thêm data-mtype="text"; lúc
+--    lưu (nút "Lưu mục 1") các ô này được lưu NGUYÊN VĂN (trim chuỗi),
+--    KHÔNG ép qua numOrNull/validate "chỉ nhập số ≥ 0" như các chỉ số
+--    số khác. Các vị trí/chỉ số khác không đổi gì (vẫn là số như cũ).
+-- =====================================================================
