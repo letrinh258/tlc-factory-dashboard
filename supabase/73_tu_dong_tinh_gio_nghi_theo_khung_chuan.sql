@@ -1,0 +1,23 @@
+-- =====================================================================
+-- GĐ71 (27/11): "Mặc định giờ nghỉ gồm: 10h-10h10, 11h30-12h30,
+-- 15h-15h10, 18h-18h15. Nếu thời gian bắt đầu tới kết thúc mà nằm
+-- trong khung giờ này thì mặc định trừ đi giờ nghỉ để tính năng suất.
+-- Mà không cần phải nhập tay vào ô giờ nghỉ."
+--
+-- SỬA (chỉ frontend, index.html, viewSx()/bindSx()):
+-- 1. Hàm mới sxAutoBreakMin(sm,em)/sxAutoBreakFromStr(): tính tổng số
+--    phút GIAO NHAU giữa khung "giờ bắt đầu → giờ kết thúc" của dòng
+--    báo cáo với 4 khung nghỉ chuẩn (10:00–10:10, 11:30–12:30,
+--    15:00–15:10, 18:00–18:15) — chỉ trừ đúng phần giao nhau, không
+--    trừ nguyên cả khung nếu ca làm chỉ chạm 1 phần (vd bắt đầu 11:00,
+--    kết thúc 12:00 chỉ giao 30p với khung trưa, không phải 60p). Có
+--    xét cả trường hợp ca làm qua đêm (khung nghỉ +24h).
+-- 2. Ô "Giờ nghỉ (phút)" trong Form A đổi thành READONLY, tự động tính
+--    lại mỗi khi đổi "Giờ bắt đầu"/"Giờ kết thúc" — tổ trưởng KHÔNG cần
+--    gõ tay nữa. Giá trị này vẫn được lưu vào production_reports.
+--    break_min như trước (dùng để tính năng suất thực/ĐM qua workMin()
+--    = kết thúc − bắt đầu − giờ nghỉ tự động).
+--
+-- Không có thay đổi DB nào (chỉ frontend, không đổi cấu trúc dữ liệu
+-- hay RPC).
+-- =====================================================================

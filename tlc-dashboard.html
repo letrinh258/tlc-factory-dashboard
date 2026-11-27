@@ -5,7 +5,7 @@
      ISO) — dùng để tự phát hiện trình duyệt đang chạy bản cache cũ và
      nhắc tải lại, tránh lỗi kiểu "KB/KPW is not defined" sau khi đổi tên
      biến ở các giai đoạn trước (GĐ34). -->
-<meta name="app-build" content="2026-11-26T11:43:03Z">
+<meta name="app-build" content="2026-11-27T06:47:00Z">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#20409A">
@@ -1857,6 +1857,29 @@ async function matCache(){
   return MAT_CACHE;
 }
 const sxStd=()=>Number(CFG.stdProd)||32;
+// GĐ71 (27/11): giờ nghỉ KHÔNG còn nhập tay — tự động trừ theo khung giờ
+// nghỉ CHUẨN của nhà máy (áp dụng mọi line): 10:00–10:10, 11:30–12:30,
+// 15:00–15:10, 18:00–18:15. Nếu khung "giờ bắt đầu → giờ kết thúc" của
+// dòng báo cáo giao nhau với khung nghỉ nào thì tự cộng đúng phần giao
+// nhau đó vào giờ nghỉ (vd bắt đầu 11:00, kết thúc 12:00 → chỉ giao 30p
+// với khung 11:30-12:30, không phải trừ nguyên 60p của cả khung nghỉ).
+// sm/em tính bằng phút từ 0h; em có thể > 1440 nếu ca làm qua đêm (GĐ
+// workMin() đã +1440 khi kết thúc <= bắt đầu) — nên mỗi khung nghỉ được
+// xét cả bản sao +1440 (phòng ca qua đêm chạm khung nghỉ của ngày sau).
+const SX_BREAK_WINDOWS=[[600,610],[690,750],[900,910],[1080,1095]];
+function sxAutoBreakMin(sm,em){
+  if(sm==null||em==null)return 0;
+  let t=0;
+  SX_BREAK_WINDOWS.forEach(([a,b])=>{[0,1440].forEach(off=>{const ov=Math.min(em,b+off)-Math.max(sm,a+off);if(ov>0)t+=ov})});
+  return t;
+}
+function sxToMin(t){if(!t||!/^\d{1,2}:\d{2}/.test(t))return null;const[h,mi]=t.split(":").map(Number);return h*60+mi}
+function sxAutoBreakFromStr(startStr,endStr){
+  const sm=sxToMin((startStr||"").slice(0,5)),em0=sxToMin((endStr||"").slice(0,5));
+  if(sm==null||em0==null)return 0;
+  let em=em0;if(em<=sm)em+=24*60;
+  return sxAutoBreakMin(sm,em);
+}
 function sxCalc(r,norm){ // r: dòng báo cáo
   const mh=(+r.headcount||0)*((+r.hours||0)+(+r.ot_hours||0));const out=(+r.good_qty||0)+(+r.ng_op||0)+(+r.ng_sup||0);
   const n=norm||sxStd();const act=mh?(+r.good_qty||0)/mh:null;
@@ -2016,7 +2039,7 @@ async function viewSx(){
     <div class="fld"><label for="f_hc">Số người</label><input id="f_hc" inputmode="decimal" value="${ed.headcount??""}"></div>
     <div class="fld"><label for="f_start">Giờ bắt đầu</label><input id="f_start" type="time" value="${esc((ed.start_time||"").slice(0,5))}"></div>
     <div class="fld"><label for="f_end">Giờ kết thúc</label><input id="f_end" type="time" value="${esc((ed.end_time||"").slice(0,5))}"></div>
-    <div class="fld"><label for="f_break">Giờ nghỉ (phút)</label><input id="f_break" inputmode="numeric" value="${ed.break_min??0}"></div>
+    <div class="fld"><label for="f_break">Giờ nghỉ (phút) — tự động theo khung nghỉ chuẩn</label><input id="f_break" inputmode="numeric" value="${sxAutoBreakFromStr(ed.start_time,ed.end_time)}" readonly style="background:var(--muted-bg,#f3f4f6)" title="Tự động trừ theo khung nghỉ chuẩn: 10:00–10:10, 11:30–12:30, 15:00–15:10, 18:00–18:15 — không cần nhập tay"></div>
     <div class="fld"><label for="f_op">NG thao tác</label><input id="f_op" inputmode="numeric" value="${ed.ng_op??0}"></div>
     <div class="fld"><label for="f_dop">Loại lỗi thao tác</label><input id="f_dop" value="${esc(ed.defect_op||"")}" placeholder="Gõ loại lỗi" autocomplete="off"></div>
     <div class="fld"><label for="f_sup">NG nhà cung cấp</label><input id="f_sup" inputmode="numeric" value="${ed.ng_sup??0}"></div>
@@ -2189,7 +2212,11 @@ function bindSx(){
     const k=sxCalc(r,p&&p.norm_per_hour);
     const ghi=wm!=null?(wm>0?` · giờ công <b>${fmt(wm/60,1)}h</b> (kết thúc − bắt đầu − nghỉ)`:wm<=0?' · <span style="color:var(--bad)">Giờ nghỉ ≥ thời gian làm việc</span>':""):"";
     $("#f_calc").innerHTML=(k.mh?`Tự tính: năng suất <b>${fmt(k.act,1)}</b> sp/người/giờ = <b>${fmt(k.ns,0)}%</b> định mức${k.kh!=null?` · đạt <b>${fmt(k.kh,0)}%</b> kế hoạch`:""}${k.op!=null?` · NG thao tác <b>${fmt(k.op,2)}%</b> · NG NCC <b>${fmt(k.sup,2)}%</b>`:""}`:"Nhập giờ bắt đầu/kết thúc và số người để tự tính năng suất.")+ghi};
+  // GĐ71: mỗi khi đổi giờ bắt đầu/kết thúc, tự tính lại giờ nghỉ theo
+  // khung nghỉ chuẩn (ô "Giờ nghỉ" là readonly, không còn cho nhập tay).
+  const autoBreak=()=>{const sm=toMin($("#f_start")?.value),em0=toMin($("#f_end")?.value);if(sm==null||em0==null)return;let em=em0;if(em<=sm)em+=24*60;const fb=$("#f_break");if(fb)fb.value=sxAutoBreakMin(sm,em)};
   f.querySelectorAll("input").forEach(i=>i.addEventListener("input",info));
+  ["f_start","f_end"].forEach(id=>{const el=$("#"+id);if(el)el.addEventListener("input",()=>{autoBreak();info()})});
   const fpSel=$("#f_prod");
   if(fpSel&&fpSel.tagName==="SELECT")fpSel.addEventListener("change",()=>{const o=fpSel.selectedOptions[0];if(o&&o.dataset.plan!=null)$("#f_plan").value=o.dataset.plan;info()});
   info();
