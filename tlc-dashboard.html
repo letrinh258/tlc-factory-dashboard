@@ -5,7 +5,7 @@
      ISO) — dùng để tự phát hiện trình duyệt đang chạy bản cache cũ và
      nhắc tải lại, tránh lỗi kiểu "KB/KPW is not defined" sau khi đổi tên
      biến ở các giai đoạn trước (GĐ34). -->
-<meta name="app-build" content="2026-11-27T07:03:03Z">
+<meta name="app-build" content="2026-11-27T07:19:27Z">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#20409A">
@@ -1524,6 +1524,27 @@ function formSr(){
 function setMsg(id,t,cls){const m=$("#"+id);if(m){m.className="msg "+(cls||"");m.textContent=t}}
 function markErr(ids){ids.forEach(i=>{const e=$("#"+i);if(e)e.classList.add("err")})}
 function numOrNull(v){v=String(v??"").trim().replace(",",".");if(v==="")return null;const n=Number(v);return isFinite(n)?n:NaN}
+// GĐ73 (27/11): input type="time" của trình duyệt hiện theo múi giờ của
+// HỆ ĐIỀU HÀNH/trình duyệt (vd Windows ở chế độ 12h sẽ hiện AM/PM), chứ
+// KHÔNG theo thuộc tính lang="vi" của trang — không có cách ép buộc
+// 24h đáng tin cậy với type="time". Đổi sang ô nhập chữ thường (text)
+// + tự thêm dấu ":" khi gõ số, để LUÔN hiện và nhập theo đúng định
+// dạng 24h (HH:MM), không bao giờ có AM/PM.
+function bindTimeMask(id){
+  const el=document.getElementById(id);if(!el)return;
+  el.addEventListener("input",()=>{
+    const d=el.value.replace(/\D/g,"").slice(0,4);
+    el.value=d.length>=3?d.slice(0,2)+":"+d.slice(2):d;
+  });
+  el.addEventListener("blur",()=>{
+    const raw=el.value.replace(/\D/g,"");
+    if(!raw){el.value="";return}
+    if(raw.length<=2){el.value=String(Math.min(23,+raw)).padStart(2,"0")+":00";return}
+    const d=raw.padEnd(4,"0").slice(0,4);
+    const h=Math.min(23,+d.slice(0,2)),m=Math.min(59,+d.slice(2,4));
+    el.value=String(h).padStart(2,"0")+":"+String(m).padStart(2,"0");
+  });
+}
 
 function bindDaily(){
   if(RUN!=="LIVE"||!RP.code)return;
@@ -2043,8 +2064,8 @@ async function viewSx(){
     <div class="fld"><label for="f_plan">SL kế hoạch</label><input id="f_plan" inputmode="numeric" value="${ed.plan_qty??""}" placeholder="theo KHSX"></div>
     <div class="fld"><label for="f_good">SL đạt</label><input id="f_good" inputmode="numeric" value="${ed.good_qty??""}"></div>
     <div class="fld"><label for="f_hc">Số người</label><input id="f_hc" inputmode="decimal" value="${ed.headcount??""}"></div>
-    <div class="fld"><label for="f_start">Giờ bắt đầu</label><input id="f_start" type="time" value="${esc((ed.start_time||"").slice(0,5))}"></div>
-    <div class="fld"><label for="f_end">Giờ kết thúc</label><input id="f_end" type="time" value="${esc((ed.end_time||"").slice(0,5))}"></div>
+    <div class="fld"><label for="f_start">Giờ bắt đầu (24h)</label><input id="f_start" type="text" inputmode="numeric" placeholder="HH:MM" maxlength="5" value="${esc((ed.start_time||"").slice(0,5))}"></div>
+    <div class="fld"><label for="f_end">Giờ kết thúc (24h)</label><input id="f_end" type="text" inputmode="numeric" placeholder="HH:MM" maxlength="5" value="${esc((ed.end_time||"").slice(0,5))}"></div>
     <div class="fld"><label for="f_break">Giờ nghỉ (phút) — tự động theo khung nghỉ chuẩn</label><input id="f_break" inputmode="numeric" value="${sxAutoBreakFromStr(ed.start_time,ed.end_time)}" readonly style="background:var(--muted-bg,#f3f4f6)" title="Tự động trừ theo khung nghỉ chuẩn: 10:00–10:10, 11:30–12:30, 15:00–15:10, 18:00–18:15 — không cần nhập tay"></div>
     <div class="fld"><label for="f_op">NG thao tác</label><input id="f_op" inputmode="numeric" value="${ed.ng_op??0}"></div>
     <div class="fld"><label for="f_dop">Loại lỗi thao tác</label><input id="f_dop" value="${esc(ed.defect_op||"")}" placeholder="Gõ loại lỗi" autocomplete="off"></div>
@@ -2222,7 +2243,7 @@ function bindSx(){
   // khung nghỉ chuẩn (ô "Giờ nghỉ" là readonly, không còn cho nhập tay).
   const autoBreak=()=>{const sm=toMin($("#f_start")?.value),em0=toMin($("#f_end")?.value);if(sm==null||em0==null)return;let em=em0;if(em<=sm)em+=24*60;const fb=$("#f_break");if(fb)fb.value=sxAutoBreakMin(sm,em)};
   f.querySelectorAll("input").forEach(i=>i.addEventListener("input",info));
-  ["f_start","f_end"].forEach(id=>{const el=$("#"+id);if(el)el.addEventListener("input",()=>{autoBreak();info()})});
+  ["f_start","f_end"].forEach(id=>{bindTimeMask(id);const el=$("#"+id);if(el)el.addEventListener("input",()=>{autoBreak();info()})});
   const fpSel=$("#f_prod");
   if(fpSel&&fpSel.tagName==="SELECT")fpSel.addEventListener("change",()=>{const o=fpSel.selectedOptions[0];if(o&&o.dataset.plan!=null)$("#f_plan").value=o.dataset.plan;info()});
   info();
@@ -2567,8 +2588,8 @@ async function viewMt(){
    <div class="fld"><label for="m_kind">Loại</label><select id="m_kind">${opt(MTK,ed.kind)}</select></div>
    <div class="fld"><label for="m_line">Line</label><select id="m_line">${lineOpts(ed.line_id,"Chung / không thuộc line")}</select></div>
    <div class="fld" style="grid-column:span 2"><label for="m_eq">Máy / thiết bị</label><input id="m_eq" value="${esc(ed.equipment_name||"")}" placeholder="vd: Máy hàn sóng"></div>
-   <div class="fld"><label for="m_s">Bắt đầu (HH:MM)</label><input id="m_s" type="time" value="${hhmm(ed.start_at)}"></div>
-   <div class="fld"><label for="m_e">Kết thúc (HH:MM)</label><input id="m_e" type="time" value="${hhmm(ed.end_at)}"><span class="small">Để trống nếu chưa sửa xong</span></div>
+   <div class="fld"><label for="m_s">Bắt đầu (HH:MM, 24h)</label><input id="m_s" type="text" inputmode="numeric" placeholder="HH:MM" maxlength="5" value="${hhmm(ed.start_at)}"></div>
+   <div class="fld"><label for="m_e">Kết thúc (HH:MM, 24h)</label><input id="m_e" type="text" inputmode="numeric" placeholder="HH:MM" maxlength="5" value="${hhmm(ed.end_at)}"><span class="small">Để trống nếu chưa sửa xong</span></div>
    <div class="fld" style="grid-column:1/-1"><label for="m_c">Nguyên nhân</label><input id="m_c" value="${esc(ed.cause||"")}"></div>
    <div class="fld" style="grid-column:span 2"><label for="m_a">Cách xử lý</label><input id="m_a" value="${esc(ed.action||"")}"></div>
    <div class="fld" style="grid-column:span 2"><label for="m_p">Vật tư / phụ tùng thay</label><input id="m_p" value="${esc(ed.parts||"")}"></div>
@@ -2576,6 +2597,7 @@ async function viewMt(){
   ${await reconHTML(D,["Dừng máy"])}`;
 }
 function bindMt(){bindFormHead("bt");bindDelete("bt","delete_mt");const f=$("#fForm");if(!f)return;
+  bindTimeMask("m_s");bindTimeMask("m_e");
   f.addEventListener("submit",async e=>{e.preventDefault();f.querySelectorAll(".err").forEach(x=>x.classList.remove("err"));
     const k=$("#m_kind").value,s=$("#m_s").value,en=$("#m_e").value;
     if(!$("#m_eq").value.trim())return fErr("m_eq","Nhập tên máy / thiết bị.");if(!s)return fErr("m_s","Nhập giờ bắt đầu.");

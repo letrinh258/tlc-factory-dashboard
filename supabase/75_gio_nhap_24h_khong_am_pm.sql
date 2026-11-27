@@ -1,0 +1,22 @@
+-- =====================================================================
+-- GĐ73 (27/11): anh phản ánh ô "Giờ bắt đầu"/"Giờ kết thúc" hiện theo
+-- định dạng 12h (AM/PM) thay vì 24h — yêu cầu luôn nhập/hiện theo 24h.
+--
+-- NGUYÊN NHÂN: <input type="time"> của trình duyệt hiển thị 12h hay 24h
+-- theo LOCALE của HỆ ĐIỀU HÀNH/trình duyệt (Windows ở chế độ định dạng
+-- giờ 12h sẽ luôn hiện AM/PM cho control này), KHÔNG theo thuộc tính
+-- lang="vi" của trang web — không có cách nào ép type="time" luôn hiện
+-- 24h một cách đáng tin cậy trên mọi máy.
+--
+-- SỬA (chỉ frontend, index.html): đổi toàn bộ 4 ô giờ (Form A: "Giờ bắt
+-- đầu"/"Giờ kết thúc"; phiếu Bảo trì: "Bắt đầu"/"Kết thúc") từ
+-- type="time" sang ô chữ thường (type="text", inputmode="numeric",
+-- placeholder "HH:MM") + hàm bindTimeMask() tự thêm dấu ":" khi gõ 2
+-- chữ số đầu và chuẩn hóa khi rời ô (bù số 0, giới hạn giờ 0-23/phút
+-- 0-59) — LUÔN theo định dạng 24 giờ, không có AM/PM, không phụ thuộc
+-- hệ điều hành máy đang dùng.
+--
+-- Không đổi logic tính toán hay cấu trúc dữ liệu — giá trị lưu xuống
+-- (start_time/end_time, start_at/end_at) vẫn đúng định dạng "HH:MM"
+-- như trước.
+-- =====================================================================
