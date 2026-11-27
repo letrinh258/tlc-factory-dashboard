@@ -5,7 +5,7 @@
      ISO) — dùng để tự phát hiện trình duyệt đang chạy bản cache cũ và
      nhắc tải lại, tránh lỗi kiểu "KB/KPW is not defined" sau khi đổi tên
      biến ở các giai đoạn trước (GĐ34). -->
-<meta name="app-build" content="2026-11-27T07:19:27Z">
+<meta name="app-build" content="2026-11-27T08:33:38Z">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#20409A">
@@ -1943,7 +1943,7 @@ async function viewSx(){
   // line), không chỉ lệnh của đúng line đang xem (lsxBatchesAll ở trên vẫn
   // giữ nguyên lọc theo line — chỉ dùng để hiển thị thẻ "Lệnh sản xuất hôm
   // nay của line này" và bảng chọn lệnh khi thêm dòng mới).
-  const lsxBatchesDate=await q(SB.from("production_order_batches").select("id,line_id,kind,production_orders(item_code,qty_planned)").eq("order_date",D));
+  const lsxBatchesDate=await q(SB.from("production_order_batches").select("id,line_id,kind,production_orders(item_code,qty_planned,pulled_qty)").eq("order_date",D));
   // GĐ43 (22/11): SL KH ở bảng chi tiết từng mã PHẢI lấy từ modul Kế hoạch
   // (production_order_batches kind='planned'), không dùng production_reports
   // .plan_qty (giá trị đóng băng lúc tạo dòng, không tự cập nhật khi lệnh
@@ -1970,6 +1970,11 @@ async function viewSx(){
   // vẫn dùng khMap (tổng gộp) như cũ, vì không biết phần nào thuộc
   // riêng line này.
   const lineKhMap={};lsxBatchesDate.filter(b=>b.line_id===L).forEach(b=>(b.production_orders||[]).forEach(o=>{lineKhMap[o.item_code]=(lineKhMap[o.item_code]||0)+(+o.qty_planned||0)}));
+  // GĐ76 (27/11): đánh dấu "Sản xuất ngoài lệnh ngày" cho mã nào đã được
+  // KÉO (lsx_move_qty/lsx_pull_tomorrow) vào lệnh của ĐÚNG line đang xem,
+  // hôm nay — linePulledMap cộng dồn pulled_qty theo item_code, chỉ trong
+  // phạm vi line L (không gồm lệnh của line khác dùng chung mã).
+  const linePulledMap={};lsxBatchesDate.filter(b=>b.line_id===L).forEach(b=>(b.production_orders||[]).forEach(o=>{linePulledMap[o.item_code]=(linePulledMap[o.item_code]||0)+(+o.pulled_qty||0)}));
   // GĐ45 (22/11): cảnh báo "Không có lệnh SX" KHÔNG được chỉ dựa vào cột
   // order_batch_id (có thể null dù lệnh thực sự tồn tại — vd dòng Form A
   // nhập trước khi KHSX gắn lệnh, hoặc nhập tay trùng đúng mã của 1 lệnh
@@ -2040,8 +2045,9 @@ async function viewSx(){
     // nhận (860), không hiện tổng gộp mọi line (2.194). Chỉ dùng khMap
     // (tổng) khi line này KHÔNG có lệnh riêng cho mã đó.
     const rowKh=r.product_code in lineKhMap?lineKhMap[r.product_code]:(r.product_code in khMap?khMap[r.product_code]:null);
+    const rowPulled=linePulledMap[r.product_code]||0;
     const c=sxCalc(rowKh!=null?{...r,plan_qty:rowKh}:r,p.norm_per_hour);
-    return `<tr><td><b class="mono">${esc(r.product_code)}</b><br><span class="small">${esc(p.name||"")}</span>${r.order_batch_id?(dupCodes.has(r.product_code)?`<br><span class="pill p-none">${esc(lineBatchCodes[r.order_batch_id]||"lệnh #"+r.order_batch_id)}</span>`:""):hasLenh(r)?"":`<br><span class="pill p-bad" title="Không tìm thấy mã này trong lệnh sản xuất nào của KHSX cho line/ngày này">⚠ Không có lệnh SX</span>`}</td><td class="num">${rowKh!=null?fmt(rowKh):"—"}</td><td class="num">${fmt(r.good_qty)}${c.kh!=null?"<br>"+sxPill("out",c.kh,1,fmt(c.kh,0)+"%"):""}</td>
+    return `<tr><td><b class="mono">${esc(r.product_code)}</b><br><span class="small">${esc(p.name||"")}</span>${r.order_batch_id?(dupCodes.has(r.product_code)?`<br><span class="pill p-none">${esc(lineBatchCodes[r.order_batch_id]||"lệnh #"+r.order_batch_id)}</span>`:""):hasLenh(r)?"":`<br><span class="pill p-bad" title="Không tìm thấy mã này trong lệnh sản xuất nào của KHSX cho line/ngày này">⚠ Không có lệnh SX</span>`}${rowPulled>0?`<br><span class="pill p-warn" title="Đã kéo ${fmt(rowPulled)} từ lệnh ngày khác vào hôm nay — phần này KHÔNG tính vào KH ngày khi tính năng suất">⚠ Sản xuất ngoài lệnh ngày (${fmt(rowPulled)})</span>`:""}</td><td class="num">${rowKh!=null?fmt(rowKh):"—"}</td><td class="num">${fmt(r.good_qty)}${c.kh!=null?"<br>"+sxPill("out",c.kh,1,fmt(c.kh,0)+"%"):""}</td>
       <td class="num">${fmt(r.ng_op)}${r.ng_op?`<br><span class="small">${esc(r.defect_op||"")}</span>`:""}</td><td class="num">${fmt(r.ng_sup)}${r.ng_sup?`<br><span class="small">${esc(r.defect_sup||"")}</span>`:""}</td>
       <td class="num">${fmt(r.headcount)} × ${fmt(+r.hours+ +r.ot_hours,1)}h${r.start_time&&r.end_time?`<br><span class="small">${esc(r.start_time.slice(0,5))}–${esc(r.end_time.slice(0,5))}${r.break_min?" (nghỉ "+fmt(r.break_min)+"p)":""}</span>`:+r.ot_hours?`<br><span class="small">TC ${fmt(r.ot_hours,1)}h</span>`:""}</td>
       <td class="num">${c.act==null?"—":fmt(c.act,1)+" / "+fmt(p.norm_per_hour||sxStd())}${c.ns!=null?"<br>"+sxPill("prod",c.ns,1,fmt(c.ns,0)+"%"):""}${c.noNorm?' <span class="pill p-warn">thiếu ĐM</span>':""}</td>
@@ -3483,7 +3489,11 @@ Dây chuyền SXHN 01	LSX11/26-018(2026-11-03)	TLC-BML-40W-01	Đèn led búp Max
     ${(b.production_orders||[]).filter(r=>+r.qty_planned>0).slice().sort((x,y)=>x.item_code<y.item_code?-1:x.item_code>y.item_code?1:0).map(r=>{
       const act=actualMap[r.item_code]||0,remain=Math.max(0,+r.qty_planned-act);
       const pauseBadge=r.pause_reason?`<div style="margin-top:4px"><span class="pill p-warn" ${r.pause_note?`title="${esc(r.pause_note)}"`:""}>⏸ ${r.pause_reason==="defect"?"Tạm dừng – chờ xử lý lỗi":"Tạm dừng – đổi lệnh gấp"}</span>${r.orig_qty_planned!=null&&+r.orig_qty_planned!==+r.qty_planned?` <span class="small">(KH gốc ${fmt(r.orig_qty_planned)})</span>`:""}</div>`:"";
-      return `<tr><td class="mono">${esc(r.item_code)}</td><td>${esc((C.byCode[r.item_code]||{}).name||"")}</td><td class="num">${fmt(r.qty_planned)}</td><td class="num">${fmt(act)}</td>
+      // GĐ76 (27/11): mã nào có SL được KÉO vào (pulled_qty>0, từ
+      // lsx_move_qty/lsx_pull_tomorrow) thì gắn ghi chú "Sản xuất ngoài
+      // lệnh ngày" — phần này không tính vào KH ngày khi tính năng suất.
+      const pulledBadge=+r.pulled_qty>0?`<div style="margin-top:4px"><span class="pill p-warn" title="SL này được kéo từ lệnh ngày khác vào hôm nay — không tính vào KH ngày khi tính năng suất">⚠ Sản xuất ngoài lệnh ngày (${fmt(r.pulled_qty)})</span></div>`:"";
+      return `<tr><td class="mono">${esc(r.item_code)}</td><td>${esc((C.byCode[r.item_code]||{}).name||"")}</td><td class="num">${fmt(r.qty_planned)}${pulledBadge}</td><td class="num">${fmt(act)}</td>
      ${canKind?(remain>0?`<td style="white-space:nowrap"><input data-backqty="${r.id}" inputmode="decimal" style="width:70px;text-align:right" placeholder="${fmt(remain)}"> <button class="btn ghost" type="button" data-lsxback="${r.id}|${remain}" style="padding:2px 8px" title="Thiếu ${fmt(remain)} so với KH — chuyển sang lệnh ngày mai, giữ nguyên mã lệnh">Chuyển thiếu sang ngày mai</button> <button class="btn ghost" type="button" data-lsxpauseopen="${r.id}" style="padding:2px 8px">Tạm dừng lệnh</button> <button class="btn ghost" type="button" data-lsxcdopen="${r.id}" style="padding:2px 8px" title="Linh kiện chỉ đủ 1 phần KH — nhập số lượng thực có, kế hoạch đổi luôn thành số đó">Lỗi linh kiện</button> <button class="btn ghost" type="button" data-lsxsplitopen="${r.id}" style="padding:2px 8px" title="Giao 1 phần KH của mã này cho line khác cùng làm song song trong ngày">Chia sang line khác…</button>${KHF.pauseItem===r.id?lsxPauseFormHTML(r,remain,act):""}${KHF.cdItem===r.id?lsxCompDefectFormHTML(r):""}${KHF.splitItem===r.id?lsxSplitFormHTML(r,b):""}${pauseBadge}</td>`:`<td>${pauseBadge}</td>`):""}</tr>`}).join("")}
     </table></div></div>`}).join(""):`<div class="empty">${lsxQv?"Không tìm thấy lệnh nào khớp \""+esc(LSX.q)+"\"":"Chưa có lệnh sản xuất ngày này"}</div>`}
   <p class="small" style="margin:8px 0 0">Lệnh <b>Tranh thủ ngoài KH</b> = line dư công suất, tự làm thêm lệnh mới trong ngày (không nằm trong kế hoạch chốt từ đầu) — được tính là "TP ngoài KH (làm vượt)" ở Báo cáo điều hành. Mã nào làm KHÔNG hết kế hoạch trong ngày (ví dụ KH 1.000, làm được 900) hệ thống <b>TỰ ĐỘNG</b> chuyển phần còn thiếu (100) sang lệnh NGÀY MAI vào rạng sáng hôm sau — giữ nguyên mã lệnh, tính là kế hoạch chính thức của ngày hôm sau, kèm ghi chú vàng trên lệnh đích; kế hoạch hôm nay tự giảm còn đúng số đã làm (900) nên không bị chấm thiếu hàng oan. Muốn chuyển ngay (không chờ tự động) thì bấm <b>"Chuyển thiếu sang ngày mai"</b> ở bảng mã hàng.</p>`;

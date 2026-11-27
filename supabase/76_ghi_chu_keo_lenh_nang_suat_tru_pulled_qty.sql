@@ -1,0 +1,51 @@
+-- =====================================================================
+-- GĐ76 (27/11): "Phần nào mà có thao tác kéo lệnh, thì có hiển thị ghi
+-- chú là sản xuất ngoài lệnh ngày. Và xem hôm đó năng suất được tính
+-- tổng số lượng sản xuất (bao gồm cả lệnh kéo)/số lượng kế hoạch theo
+-- ngày (không bao gồm lệnh kéo)."
+--
+-- HIỆN TRẠNG TRƯỚC KHI SỬA:
+-- • "Kéo lệnh tồn…" (lsx_move_qty) và "Kéo lệnh ngày mai" (lsx_pull_tomorrow)
+--   KHÔNG ghi chú gì lên lệnh đích, và KHÔNG có cách nào tách phần SL
+--   được kéo vào ra khỏi phần SL kế hoạch gốc của lệnh đích — nếu lệnh
+--   đích đã tồn tại sẵn (kind='planned'), phần kéo vào sẽ bị "ẩn" làm
+--   như là kế hoạch gốc, khiến mẫu số năng suất (KH ngày) bị tính dư,
+--   không đúng ý "không bao gồm lệnh kéo".
+-- • prod_line_status() chỉ loại trừ được lệnh kéo khi nó tạo thành 1
+--   lệnh overflow MỚI hoàn toàn — không loại trừ được phần kéo MERGE
+--   vào lệnh planned có sẵn.
+--
+-- SỬA:
+-- 1. Cột mới production_orders.pulled_qty (numeric, mặc định 0) — theo
+--    dõi RIÊNG phần SL của 1 dòng mã hàng đến từ việc "kéo" từ lệnh
+--    ngày khác (không phải SL kế hoạch gốc lập từ đầu).
+-- 2. lsx_move_qty: khi kéo sang ĐÚNG NGÀY HÔM NAY (current_date) — dù
+--    merge vào lệnh có sẵn hay tạo lệnh overflow mới — cộng dồn đúng
+--    phần p_qty vào pulled_qty của dòng đích, và ghi chú lên lệnh đích:
+--    "Kéo <SL> từ lệnh <mã> ngày <ngày nguồn> — sản xuất ngoài lệnh
+--    ngày". Kéo sang ngày KHÁC hôm nay (ví dụ dự trù cho ngày mai) thì
+--    không tính là "ngoài lệnh ngày" của ngày đó, không cộng pulled_qty.
+-- 3. lsx_pull_tomorrow: luôn nhắm đúng lệnh HÔM NAY (theo định nghĩa
+--    hàm) — luôn cộng pulled_qty + ghi chú tương tự.
+-- 4. prod_line_status(d): SL KH (plan_qty, dùng ở khung tổng hợp theo
+--    line) nay = tổng (qty_planned − pulled_qty) của TỪNG DÒNG mã hàng
+--    thuộc lệnh kind='planned' của line/ngày đó (không âm) — tức LUÔN
+--    loại trừ phần kéo vào dù nó nằm trong lệnh planned hay overflow.
+--    SL thực tế (good_qty) KHÔNG đổi — vẫn cộng TOÀN BỘ sản lượng thực
+--    tế đã báo cáo (bao gồm cả phần sản xuất từ lệnh kéo), đúng yêu
+--    cầu "tổng SL sản xuất (bao gồm cả lệnh kéo) / KH ngày (không bao
+--    gồm lệnh kéo)".
+-- 5. Frontend:
+--    • Form A (viewSx()): thêm linePulledMap (song song lineKhMap) —
+--      dòng báo cáo nào có pulled_qty>0 của ĐÚNG line đang xem thì hiện
+--      ghi chú "⚠ Sản xuất ngoài lệnh ngày (<SL>)" ngay dưới mã sản
+--      phẩm.
+--    • Kế hoạch (lsxTabHTML()): mỗi dòng mã trong bảng chi tiết lệnh có
+--      pulled_qty>0 hiện cùng ghi chú ngay dưới cột "SL kế hoạch".
+--
+-- KHÔNG áp dụng cho lsx_split_line (chia SONG SONG cùng ngày sang line
+-- khác) và lsx_pull_line (chuyển NGUYÊN lệnh sang line khác cùng ngày)
+-- — cả 2 hàm này chỉ phân bổ lại đúng tổng KH CỦA NGÀY đó giữa các
+-- line, không phải "kéo" SL từ ngày khác vào, nên không tính là sản
+-- xuất ngoài lệnh ngày.
+-- =====================================================================
