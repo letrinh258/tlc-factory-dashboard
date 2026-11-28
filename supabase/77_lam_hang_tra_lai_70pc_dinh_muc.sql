@@ -33,3 +33,10 @@
 -- 6. Form A — bảng chi tiết từng dòng báo cáo hiện thêm nhãn "↻ Hàng trả
 --    lại" cho dòng nào có is_rework=true.
 -- =====================================================================
+
+-- GĐ77b (28/11): lỗi "Could not choose the best candidate function" khi
+-- bấm Lưu — do bước 2 ở trên dùng CREATE OR REPLACE FUNCTION nhưng đổi
+-- SỐ LƯỢNG tham số (thêm p_is_rework), nên Postgres tạo thêm 1 OVERLOAD
+-- mới thay vì thay thế hàm cũ, để lại 2 hàm save_prod_row cùng tên làm
+-- PostgREST không biết chọn hàm nào. Đã DROP hẳn overload CŨ (không có
+-- p_is_rework), chỉ giữ lại đúng 1 bản có p_is_rework.
