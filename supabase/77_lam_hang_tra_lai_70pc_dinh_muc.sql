@@ -1,0 +1,35 @@
+-- =====================================================================
+-- GĐ77 (28/11): "Cần có thêm nút làm hàng trả lại ở phân hệ sản xuất cho
+-- mỗi lệnh. Nếu tích vào đó thì nếu làm nhiều mã hàng thì cũng chỉ chọn
+-- khung giờ bắt đầu cho tới khi kết thúc. Chứ không ghi giờ cho từng mã."
+--
+-- Hỏi lại và anh xác nhận:
+-- • "Hàng trả lại" chỉ là 1 NHÃN đơn giản trên dòng báo cáo — không liên
+--   kết phiếu bảo hành/khiếu nại nào khác.
+-- • SL vẫn tính vào SL KH/SL đạt bình thường như các dòng khác, NHƯNG
+--   định mức áp dụng khi tính năng suất CHỈ BẰNG 70% định mức niêm yết
+--   (làm lại khó/chậm hơn, để ra năng suất đúng hơn cho riêng mặt hàng
+--   trả lại).
+-- • Nút đặt RIÊNG cạnh mỗi lệnh sản xuất (card lệnh) ở Form A (Sản
+--   xuất) — tách hẳn luồng "+ Thêm mã sản phẩm" thường.
+--
+-- SỬA:
+-- 1. production_reports: thêm cột is_rework (boolean, mặc định false).
+-- 2. save_prod_row: thêm tham số p_is_rework (mặc định false), lưu vào
+--    cột is_rework khi thêm dòng mới hoặc sửa dòng.
+-- 3. sxCalc() (frontend): định mức hiệu lực = định mức niêm yết × 0,7
+--    khi dòng có is_rework=true (áp dụng cho cột "NS thực/ĐM" ở Form A).
+-- 4. prod_line_status(d): giờ công chuẩn (std_hours, dùng để tính %
+--    năng suất tổng line) cũng áp dụng định mức × 0,7 cho dòng
+--    is_rework=true.
+-- 5. UI Form A — mỗi lệnh sản xuất của line (card "Lệnh sản xuất hôm nay
+--    của line này") có thêm nút "Làm hàng trả lại…" — mở 1 form RIÊNG
+--    (sxReworkFormHTML/bindSxRework), liệt kê TẤT CẢ mã hàng của đúng
+--    lệnh đó (giống bảng ở phân hệ Kế hoạch) để nhập SL đạt/NG/dừng máy/
+--    ghi chú cho TỪNG mã cùng lúc — CHỈ 1 khung giờ bắt đầu/kết thúc
+--    DÙNG CHUNG cho cả lượt nhập (không ghi giờ riêng từng mã). Mã nào
+--    không nhập gì (bỏ trống) sẽ không được lưu. Mỗi dòng lưu ra đều có
+--    is_rework=true và order_batch_id = đúng lệnh đang làm hàng trả lại.
+-- 6. Form A — bảng chi tiết từng dòng báo cáo hiện thêm nhãn "↻ Hàng trả
+--    lại" cho dòng nào có is_rework=true.
+-- =====================================================================

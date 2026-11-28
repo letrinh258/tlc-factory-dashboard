@@ -5,7 +5,7 @@
      ISO) — dùng để tự phát hiện trình duyệt đang chạy bản cache cũ và
      nhắc tải lại, tránh lỗi kiểu "KB/KPW is not defined" sau khi đổi tên
      biến ở các giai đoạn trước (GĐ34). -->
-<meta name="app-build" content="2026-11-27T08:33:38Z">
+<meta name="app-build" content="2026-11-28T04:43:21Z">
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#20409A">
@@ -1909,7 +1909,10 @@ function sxAutoBreakFromStr(startStr,endStr){
 }
 function sxCalc(r,norm){ // r: dòng báo cáo
   const mh=(+r.headcount||0)*((+r.hours||0)+(+r.ot_hours||0));const out=(+r.good_qty||0)+(+r.ng_op||0)+(+r.ng_sup||0);
-  const n=norm||sxStd();const act=mh?(+r.good_qty||0)/mh:null;
+  // GĐ77 (28/11): dòng "hàng trả lại" (is_rework) chỉ tính 70% định mức
+  // niêm yết khi tính năng suất — làm lại hàng NG/trả về khó/chậm hơn
+  // bình thường, tránh chấm năng suất oan cho tổ.
+  const n=(norm||sxStd())*(r.is_rework?0.7:1);const act=mh?(+r.good_qty||0)/mh:null;
   return{mh,act,ns:act==null?null:act/n*100,kh:r.plan_qty?(+r.good_qty||0)/r.plan_qty*100:null,
     op:out?(+r.ng_op||0)/out*100:null,sup:out?(+r.ng_sup||0)/out*100:null,noNorm:!norm}
 }
@@ -2030,9 +2033,11 @@ async function viewSx(){
    ${lsxBatchesAll.map(b=>`<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;padding:4px 0"><span><b class="mono">${esc(b.code)}</b> <span class="small">${fmt((b.production_orders||[]).length)} mã · tổng KH ${fmt(b.qty_total)}</span></span>
     <span><span class="pill p-${b.kind==="overflow"?"warn":"ok"}">${b.kind==="overflow"?"Tranh thủ ngoài KH":"Kế hoạch"}</span>
      <button class="btn ghost" type="button" data-lsxkind="${b.id}|${b.kind==="overflow"?"planned":"overflow"}" style="padding:2px 8px;margin-left:6px">${b.kind==="overflow"?"Chuyển về Kế hoạch":"Đánh dấu Tranh thủ ngoài KH"}</button>
-     <button class="btn ghost" type="button" data-lsxpullopen="${b.id}" style="padding:2px 8px;margin-left:6px">Kéo lệnh tồn…</button></span></div>
+     <button class="btn ghost" type="button" data-lsxpullopen="${b.id}" style="padding:2px 8px;margin-left:6px">Kéo lệnh tồn…</button>
+     <button class="btn ghost" type="button" data-sxreworkopen="${b.id}" style="padding:2px 8px;margin-left:6px">Làm hàng trả lại…</button></span></div>
     ${b.note?`<div class="small" style="margin:2px 0 6px;padding:4px 8px;border-radius:6px;background:var(--warn-bg,rgba(234,179,8,.12));color:var(--warn-fg,#92620a)">⚠ ${esc(b.note)}</div>`:""}
-    ${PULL.batchId===b.id?lsxPullPanelHTML(sxPullItems||[],C,D):""}`).join("")}
+    ${PULL.batchId===b.id?lsxPullPanelHTML(sxPullItems||[],C,D):""}
+    ${SXF.reworkBatch===b.id?sxReworkFormHTML(b,C):""}`).join("")}
   </div>`:""}
   ${SXF.unlockOpen?`<div class="card" style="margin-bottom:10px"><div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
     <div class="fld"><label for="sxUlH">Trong (giờ)</label><input id="sxUlH" value="4" inputmode="numeric" style="width:80px"></div>
@@ -2047,7 +2052,7 @@ async function viewSx(){
     const rowKh=r.product_code in lineKhMap?lineKhMap[r.product_code]:(r.product_code in khMap?khMap[r.product_code]:null);
     const rowPulled=linePulledMap[r.product_code]||0;
     const c=sxCalc(rowKh!=null?{...r,plan_qty:rowKh}:r,p.norm_per_hour);
-    return `<tr><td><b class="mono">${esc(r.product_code)}</b><br><span class="small">${esc(p.name||"")}</span>${r.order_batch_id?(dupCodes.has(r.product_code)?`<br><span class="pill p-none">${esc(lineBatchCodes[r.order_batch_id]||"lệnh #"+r.order_batch_id)}</span>`:""):hasLenh(r)?"":`<br><span class="pill p-bad" title="Không tìm thấy mã này trong lệnh sản xuất nào của KHSX cho line/ngày này">⚠ Không có lệnh SX</span>`}${rowPulled>0?`<br><span class="pill p-warn" title="Đã kéo ${fmt(rowPulled)} từ lệnh ngày khác vào hôm nay — phần này KHÔNG tính vào KH ngày khi tính năng suất">⚠ Sản xuất ngoài lệnh ngày (${fmt(rowPulled)})</span>`:""}</td><td class="num">${rowKh!=null?fmt(rowKh):"—"}</td><td class="num">${fmt(r.good_qty)}${c.kh!=null?"<br>"+sxPill("out",c.kh,1,fmt(c.kh,0)+"%"):""}</td>
+    return `<tr><td><b class="mono">${esc(r.product_code)}</b><br><span class="small">${esc(p.name||"")}</span>${r.order_batch_id?(dupCodes.has(r.product_code)?`<br><span class="pill p-none">${esc(lineBatchCodes[r.order_batch_id]||"lệnh #"+r.order_batch_id)}</span>`:""):hasLenh(r)?"":`<br><span class="pill p-bad" title="Không tìm thấy mã này trong lệnh sản xuất nào của KHSX cho line/ngày này">⚠ Không có lệnh SX</span>`}${rowPulled>0?`<br><span class="pill p-warn" title="Đã kéo ${fmt(rowPulled)} từ lệnh ngày khác vào hôm nay — phần này KHÔNG tính vào KH ngày khi tính năng suất">⚠ Sản xuất ngoài lệnh ngày (${fmt(rowPulled)})</span>`:""}<${r.is_rework?`<br><span class="pill p-none" title="Định mức tính năng suất chỉ áp dụng 70% khi chấm điểm mã này">↻ Hàng trả lại</span>`:""}</td><td class="num">${rowKh!=null?fmt(rowKh):"—"}</td><td class="num">${fmt(r.good_qty)}${c.kh!=null?"<br>"+sxPill("out",c.kh,1,fmt(c.kh,0)+"%"):""}</td>
       <td class="num">${fmt(r.ng_op)}${r.ng_op?`<br><span class="small">${esc(r.defect_op||"")}</span>`:""}</td><td class="num">${fmt(r.ng_sup)}${r.ng_sup?`<br><span class="small">${esc(r.defect_sup||"")}</span>`:""}</td>
       <td class="num">${fmt(r.headcount)} × ${fmt(+r.hours+ +r.ot_hours,1)}h${r.start_time&&r.end_time?`<br><span class="small">${esc(r.start_time.slice(0,5))}–${esc(r.end_time.slice(0,5))}${r.break_min?" (nghỉ "+fmt(r.break_min)+"p)":""}</span>`:+r.ot_hours?`<br><span class="small">TC ${fmt(r.ot_hours,1)}h</span>`:""}</td>
       <td class="num">${c.act==null?"—":fmt(c.act,1)+" / "+fmt(p.norm_per_hour||sxStd())}${c.ns!=null?"<br>"+sxPill("prod",c.ns,1,fmt(c.ns,0)+"%"):""}${c.noNorm?' <span class="pill p-warn">thiếu ĐM</span>':""}</td>
@@ -2207,7 +2212,7 @@ function bindSx(){
   document.querySelectorAll("[data-sxtab]").forEach(b=>b.onclick=()=>{SXF.tab=b.dataset.sxtab;render()});
   if(SXF.tab==="hist")return bindSxHist();
   const today=ME.today||todayISO();const sh=n=>{const s=addDays(SXF.date,n);return s>today?today:s};
-  const go=()=>{SXF.edit=null;SXF.del=null;SXF.unlockOpen=false;SXF.manualProd=false;SXF.lsxPick=null;render()};
+  const go=()=>{SXF.edit=null;SXF.del=null;SXF.unlockOpen=false;SXF.manualProd=false;SXF.lsxPick=null;SXF.reworkBatch=null;render()};
   const dt=$("#sxDate");if(dt)dt.onchange=e=>{SXF.date=e.target.value||today;go()};
   const p=$("#sxPrev");if(p)p.onclick=()=>{SXF.date=sh(-1);go()};const n=$("#sxNext");if(n)n.onclick=()=>{SXF.date=sh(1);go()};
   document.querySelectorAll("[data-line]").forEach(b=>b.onclick=()=>{SXF.line=+b.dataset.line;go()});
@@ -2223,6 +2228,8 @@ function bindSx(){
   });
   document.querySelectorAll("[data-lsxpullopen]").forEach(b=>b.onclick=()=>{PULL.batchId=PULL.batchId===+b.dataset.lsxpullopen?null:+b.dataset.lsxpullopen;render()});
   bindLsxPull(()=>{PULL.batchId=null;render()});
+  document.querySelectorAll("[data-sxreworkopen]").forEach(b=>b.onclick=()=>{SXF.reworkBatch=SXF.reworkBatch===+b.dataset.sxreworkopen?null:+b.dataset.sxreworkopen;render()});
+  if(SXF.reworkBatch)q(SB.from("production_order_batches").select("*,production_orders(*)").eq("id",SXF.reworkBatch).single()).then(bt=>bindSxRework(bt));
   const ug=$("#sxUlGo");if(ug)ug.onclick=async()=>{const h=+$("#sxUlH").value||4,r=$("#sxUlR").value.trim();if(r.length<3){setMsg("sxUlMsg","Ghi lý do mở khóa","bad");return}
     try{await rpc("unlock_report",{p_code:"LINE-"+SXF.line,p_date:SXF.date,p_hours:h,p_reason:r});SXF.unlockOpen=false;toast("Đã mở khóa");render()}catch(e){setMsg("sxUlMsg",sbErr(e),"bad")}};
   const nb=$("#sxNew");if(nb)nb.onclick=()=>{SXF.edit="new";SXF.manualProd=false;SXF.lsxPick=null;render().then(()=>{const f=$("#f_prod")||$("#f_lsxPick");if(f)f.focus()})};
@@ -3288,6 +3295,96 @@ function bindLsxPull(afterOk){
     catch(err){alert(sbErr(err));btn.disabled=false}
   });
   document.querySelectorAll("[data-lsxpullclose]").forEach(b=>b.onclick=()=>{PULL.batchId=null;render()});
+}
+// GĐ77 (28/11): "Làm hàng trả lại…" — nút riêng cạnh mỗi lệnh sản xuất ở
+// Form A, tách hẳn luồng "+ Thêm mã sản phẩm" thường. Nếu lệnh có nhiều
+// mã hàng, chỉ cần chọn 1 khung giờ bắt đầu/kết thúc DÙNG CHUNG cho cả
+// lượt nhập (không ghi giờ riêng từng mã) — mỗi mã chỉ nhập SL đạt/NG/
+// dừng máy/ghi chú riêng. Các dòng lưu được đánh dấu is_rework=true,
+// định mức tính năng suất chỉ áp dụng 70% (xem sxCalc()).
+function sxReworkFormHTML(b,C){
+  const ordRows=(b.production_orders||[]).slice().sort((x,y)=>x.item_code<y.item_code?-1:x.item_code>y.item_code?1:0);
+  return `<div class="card" style="margin:6px 0 10px;border-left:4px solid var(--accent)"><h3 style="margin:0 0 6px">Làm hàng trả lại — lệnh <span class="mono">${esc(b.code)}</span></h3>
+   <p class="small" style="margin:0 0 8px">Dùng khi làm lại hàng NG/hàng trả về cho (các) mã của lệnh này — định mức tính năng suất chỉ áp dụng <b>70%</b> định mức niêm yết cho các dòng này. Chỉ cần chọn 1 khung giờ bắt đầu/kết thúc dùng chung cho cả lượt nhập; mã nào không nhập gì sẽ không được lưu.</p>
+   <form id="rwForm" novalidate>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;align-items:end;margin-bottom:10px">
+     <div class="fld"><label for="rw_start">Giờ bắt đầu (24h)</label><input id="rw_start" type="text" inputmode="numeric" placeholder="HH:MM" maxlength="5"></div>
+     <div class="fld"><label for="rw_end">Giờ kết thúc (24h)</label><input id="rw_end" type="text" inputmode="numeric" placeholder="HH:MM" maxlength="5"></div>
+     <div class="fld"><label for="rw_break">Giờ nghỉ (phút) — tự động</label><input id="rw_break" inputmode="numeric" value="0" readonly style="background:var(--muted-bg,#f3f4f6)"></div>
+    </div>
+    <div class="tbl"><table><tr><th>Mã SP</th><th class="num">SL đạt</th><th class="num">Số người</th><th class="num">NG thao tác</th><th>Loại lỗi TT</th><th class="num">NG NCC</th><th>Loại lỗi NCC</th><th class="num">Dừng máy</th><th>Nguyên nhân</th><th>Ghi chú</th></tr>
+    ${ordRows.map(o=>{const p=C.byCode[o.item_code]||{};return `<tr>
+      <td><b class="mono">${esc(o.item_code)}</b><br><span class="small">${esc(p.name||"")}</span></td>
+      <td><input id="rwr_${o.id}_good" inputmode="numeric" style="width:80px;text-align:right"></td>
+      <td><input id="rwr_${o.id}_hc" inputmode="decimal" style="width:60px;text-align:right"></td>
+      <td><input id="rwr_${o.id}_op" inputmode="numeric" value="0" style="width:70px;text-align:right"></td>
+      <td><input id="rwr_${o.id}_dop" placeholder="Gõ loại lỗi" autocomplete="off" style="width:110px"></td>
+      <td><input id="rwr_${o.id}_sup" inputmode="numeric" value="0" style="width:70px;text-align:right"></td>
+      <td><input id="rwr_${o.id}_dsup" placeholder="Gõ loại lỗi" autocomplete="off" style="width:110px"></td>
+      <td><input id="rwr_${o.id}_dt" inputmode="numeric" value="0" style="width:70px;text-align:right"></td>
+      <td><select id="rwr_${o.id}_dtr"><option value="">—</option>${opt(C.dtReasons,null)}</select></td>
+      <td><input id="rwr_${o.id}_note" style="width:120px"></td>
+     </tr>`}).join("")}
+    </table></div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px">
+     <button class="btn" type="submit" id="rw_save">Lưu hàng trả lại</button>
+     <button class="btn ghost" type="button" id="rw_cancel">Đóng</button>
+     <span class="msg" id="rw_msg" role="status"></span>
+    </div>
+   </form></div>`;
+}
+function bindSxRework(b){
+  const f=$("#rwForm");if(!f)return;
+  const toMin=t=>{if(!t||!/^\d{1,2}:\d{2}/.test(t))return null;const[h,mi]=t.split(":").map(Number);return h*60+mi};
+  const autoBreak=()=>{const sm=toMin($("#rw_start")?.value),em0=toMin($("#rw_end")?.value);if(sm==null||em0==null)return;let em=em0;if(em<=sm)em+=24*60;const fb=$("#rw_break");if(fb)fb.value=sxAutoBreakMin(sm,em)};
+  bindTimeMask("rw_start");bindTimeMask("rw_end");
+  ["rw_start","rw_end"].forEach(id=>{const el=$("#"+id);if(el)el.addEventListener("input",autoBreak)});
+  const rb=$("#rw_cancel");if(rb)rb.onclick=()=>{SXF.reworkBatch=null;render()};
+  f.addEventListener("submit",async e=>{
+    e.preventDefault();
+    const m="rw_msg";f.querySelectorAll(".err").forEach(x=>x.classList.remove("err"));
+    const bad=(id,t)=>{const el=$("#"+id);if(el)el.classList.add("err");setMsg(m,t,"bad")};
+    const ordRows=(b.production_orders||[]);
+    const startV=$("#rw_start").value,endV=$("#rw_end").value;
+    const rowsToSave=[];
+    for(const o of ordRows){
+      const g=numOrNull($("#rwr_"+o.id+"_good").value);
+      const hc=numOrNull($("#rwr_"+o.id+"_hc").value);
+      const op=numOrNull($("#rwr_"+o.id+"_op").value)||0;
+      const sup=numOrNull($("#rwr_"+o.id+"_sup").value)||0;
+      const dt=numOrNull($("#rwr_"+o.id+"_dt").value)||0;
+      const dop=$("#rwr_"+o.id+"_dop").value.trim();
+      const dsup=$("#rwr_"+o.id+"_dsup").value.trim();
+      const dtr=$("#rwr_"+o.id+"_dtr").value;
+      const note=$("#rwr_"+o.id+"_note").value.trim();
+      if(g==null&&!op&&!sup&&!dt)continue;
+      if(Number.isNaN(g)||(g!=null&&g<0))return bad("rwr_"+o.id+"_good","SL đạt: nhập số không âm.");
+      if(Number.isNaN(hc)||(hc!=null&&hc<0))return bad("rwr_"+o.id+"_hc","Số người: nhập số không âm.");
+      if(((g||0)+op+sup)>0&&!(hc>0))return bad("rwr_"+o.id+"_hc","Nhập số người làm cho mã "+o.item_code+".");
+      if(op>0&&!dop)return bad("rwr_"+o.id+"_dop","Nhập loại lỗi thao tác cho mã "+o.item_code+".");
+      if(sup>0&&!dsup)return bad("rwr_"+o.id+"_dsup","Nhập loại lỗi NCC cho mã "+o.item_code+".");
+      if(dt>0&&!dtr)return bad("rwr_"+o.id+"_dtr","Chọn nguyên nhân dừng máy cho mã "+o.item_code+".");
+      rowsToSave.push({o,good:g||0,hc:hc||0,op,sup,dt,dop,dsup,dtr,note});
+    }
+    if(!rowsToSave.length)return setMsg(m,"Chưa nhập thông tin cho mã nào — nhập ít nhất 1 mã (SL đạt, NG, hoặc dừng máy).","bad");
+    if(!startV)return bad("rw_start","Nhập giờ bắt đầu.");
+    if(!endV)return bad("rw_end","Nhập giờ kết thúc.");
+    const sm=toMin(startV);let em=toMin(endV);if(em!=null&&sm!=null&&em<=sm)em+=24*60;
+    const brk=numOrNull($("#rw_break").value)||0;
+    const wm=sm!=null&&em!=null?em-sm-brk:null;
+    if(wm==null||wm<=0)return bad("rw_end","Giờ nghỉ phải nhỏ hơn thời gian làm việc (Kết thúc − Bắt đầu).");
+    if(wm>16*60)return bad("rw_end","Thời gian làm việc sau khi trừ giờ nghỉ không quá 16 giờ.");
+    $("#rw_save").disabled=true;setMsg(m,"Đang lưu "+fmt(rowsToSave.length)+" mã…");
+    try{
+      for(const row of rowsToSave){
+        await rpc("save_prod_row",{d:SXF.date,p_line:b.line_id,p_product:row.o.item_code,p_plan:+row.o.qty_planned,p_good:row.good,
+          p_ng_op:row.op,p_ng_sup:row.sup,p_defect_op:row.dop||null,p_defect_sup:row.dsup||null,p_headcount:row.hc,
+          p_start_time:startV,p_end_time:endV,p_break_min:brk,p_downtime:row.dt,p_dt_reason:row.dtr||null,p_note:row.note||null,
+          p_order_batch_id:b.id,p_row_id:null,p_is_rework:true});
+      }
+      SXF.reworkBatch=null;toast("Đã lưu "+fmt(rowsToSave.length)+" mã hàng trả lại của lệnh "+b.code);render();
+    }catch(err){setMsg(m,sbErr(err),"bad");$("#rw_save").disabled=false}
+  });
 }
 function bindLsxBack(afterOk){
   document.querySelectorAll("[data-lsxback]").forEach(btn=>btn.onclick=async()=>{
@@ -4822,7 +4919,7 @@ function startApp(){
   $("#user").innerHTML=`${esc(ME.full_name)}<small>${esc(ME.username)} · ${esc(ME.position_name)}</small>`;
   const c=$("#conn");c.classList.toggle("live",RUN==="LIVE");
   c.textContent=RUN==="LIVE"?"Đã kết nối máy chủ · số liệu thật":"DEMO · dùng thử, không lưu máy chủ";
-  ST.screen=homeMod();cfgTab="tbp";RP.code=null;RP.date=null;RP.editIssue=RP.editPlan=RP.editSr=null;SM.date=null;SXF.date=null;SXF.line=null;SXF.edit=null;SXF.assignOpen=false;SXF.unlockOpen=false;SX_CACHE=null;Object.keys(FM).forEach(k=>delete FM[k]);NM.q="";NM.f="all";NM.page=0;NM.dirty={};NM.bulkOpen=false;FS.date=null;FS.per="week";FS.tab="stat";FS.fstat="open";FS.fs="";FS.newOpen=false;FS.newS="";FS_CRIT=null;VD.tab="issue";VD.fSev="";VD.fSt="open";VD.fDept="";VD.q="";VD.projOpen=false;VD.editProj=null;KP.tab="dash";KP.defOpen=false;KP.editDef=null;KP.tgtOpenFor=null;KP.resKpi="";KP.resPs=null;KP.resPe=null;KT.tab="list";KT.fStatus="pending";KT.newOpen=false;KT.ctype="norm";KT.histCode="";LH.tab="session";LH.typeOpen=false;LH.editType=null;LH.sessOpen=false;LH.openId=null;LH.decOpen=null;LD.period="day";LD.date=null;LD.scope="all";LD.demo=false;LD.customFrom=null;LD.customTo=null;DH.mode="week";DH.date=null;DH.tgOpen=false;DH.wkOpen=false;GV.f="open";GV.pos="";GV.q="";accQ="";accDept="";ACC_SECRET=null;accConfirm=null;PULL.batchId=null;render();pushInit();
+  ST.screen=homeMod();cfgTab="tbp";RP.code=null;RP.date=null;RP.editIssue=RP.editPlan=RP.editSr=null;SM.date=null;SXF.date=null;SXF.line=null;SXF.edit=null;SXF.assignOpen=false;SXF.unlockOpen=false;SXF.reworkBatch=null;SX_CACHE=null;Object.keys(FM).forEach(k=>delete FM[k]);NM.q="";NM.f="all";NM.page=0;NM.dirty={};NM.bulkOpen=false;FS.date=null;FS.per="week";FS.tab="stat";FS.fstat="open";FS.fs="";FS.newOpen=false;FS.newS="";FS_CRIT=null;VD.tab="issue";VD.fSev="";VD.fSt="open";VD.fDept="";VD.q="";VD.projOpen=false;VD.editProj=null;KP.tab="dash";KP.defOpen=false;KP.editDef=null;KP.tgtOpenFor=null;KP.resKpi="";KP.resPs=null;KP.resPe=null;KT.tab="list";KT.fStatus="pending";KT.newOpen=false;KT.ctype="norm";KT.histCode="";LH.tab="session";LH.typeOpen=false;LH.editType=null;LH.sessOpen=false;LH.openId=null;LH.decOpen=null;LD.period="day";LD.date=null;LD.scope="all";LD.demo=false;LD.customFrom=null;LD.customTo=null;DH.mode="week";DH.date=null;DH.tgOpen=false;DH.wkOpen=false;GV.f="open";GV.pos="";GV.q="";accQ="";accDept="";ACC_SECRET=null;accConfirm=null;PULL.batchId=null;render();pushInit();
 }
 $("#logout").onclick=()=>logout();
 $("#bell").onclick=e=>{e.stopPropagation();const p=$("#notif");p.hidden=!p.hidden;$("#bell").setAttribute("aria-expanded",String(!p.hidden))};
